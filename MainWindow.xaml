@@ -1,0 +1,72 @@
+﻿<Window x:Class="DynamicIslandDemo.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DynamicIsland"
+        Width="500" Height="200"
+        WindowStyle="None" 
+        AllowsTransparency="True" 
+        Background="Transparent"
+        Topmost="True" 
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual"
+        Deactivated="Window_Deactivated"
+        Loaded="Window_Loaded">
+
+    <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
+        <!-- 灵动岛主体 -->
+        <Border x:Name="IslandBody"
+                Background="#F2080808"
+                BorderBrush="#25FFFFFF"
+                BorderThickness="1"
+                Width="130" Height="10"
+                CornerRadius="0 0 10 10"
+                ClipToBounds="True"
+                Cursor="Hand"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                MouseEnter="IslandBody_MouseEnter"
+                MouseDown="IslandBody_MouseDown">
+
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="IslandTranslate" X="0" Y="0"/>
+            </Border.RenderTransform>
+
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Color="Black" Opacity="0.55"/>
+            </Border.Effect>
+
+            <Grid>
+                <!-- 独立 Siri 炫彩球：收缩时平滑滑向正中心充当球体窗口 -->
+                <Ellipse x:Name="SiriOrb" Width="26" Height="26" 
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Opacity="0">
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform x:Name="SiriOrbTranslate" X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#00F0FF" Offset="0.0"/>
+                            <GradientStop Color="#7000FF" Offset="0.6"/>
+                            <GradientStop Color="#FF007A" Offset="1.0"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+
+                <!-- 展开时的文字与指示器 -->
+                <Grid x:Name="ExpandedContent" Opacity="0" Margin="54,0,16,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="灵动岛已就绪" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock Text="点击外部或点击岛体即可收起" Foreground="#77FFFFFF" FontSize="10" Margin="0,2,0,0"/>
+                    </StackPanel>
+
+                    <Ellipse Grid.Column="1" Width="6" Height="6" Fill="#00FF66" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
