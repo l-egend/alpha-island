@@ -1,9 +1,14 @@
-﻿<Application x:Class="alpha_island.App"
+<Application x:Class="alpha_island.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:alpha_island"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 液态玻璃主题：画刷、播放按钮、开关、设置卡片样式集中在这里 -->
+                <ResourceDictionary Source="Themes/LiquidGlass.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

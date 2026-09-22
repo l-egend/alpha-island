@@ -1,70 +1,330 @@
-﻿<Window x:Class="DynamicIslandDemo.MainWindow"
+<Window x:Class="alpha_island.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="DynamicIsland"
-        Width="500" Height="200"
-        WindowStyle="None" 
-        AllowsTransparency="True" 
-        Background="Transparent"
-        Topmost="True" 
+        xmlns:controls="clr-namespace:alpha_island.Controls"
+        Title="Alpha Island"
+        Width="640" Height="340"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="{x:Null}"
+        Topmost="True"
         ShowInTaskbar="False"
+        ResizeMode="NoResize"
         WindowStartupLocation="Manual"
-        Deactivated="Window_Deactivated"
-        Loaded="Window_Loaded">
+        FontFamily="Segoe UI, Microsoft YaHei UI, Microsoft YaHei"
+        TextOptions.TextRenderingMode="Grayscale"
+        TextOptions.TextFormattingMode="Ideal"
+        UseLayoutRounding="True"
+        Loaded="Window_Loaded"
+        Closed="Window_Closed">
 
+    <!-- 根容器：岛体始终水平居中、贴屏幕顶部 -->
     <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
-        <!-- 灵动岛主体 -->
+
+        <!-- ============ 岛体本体：液态玻璃 ============
+             所有材质层共用 IslandBody.CornerRadius（用 Binding 跟随），
+             所以动画器只改一个 CornerRadius，内阴影/流光/高光全部同步变形。 -->
         <Border x:Name="IslandBody"
-                Background="#F2080808"
-                BorderBrush="#25FFFFFF"
-                BorderThickness="1"
                 Width="130" Height="10"
-                CornerRadius="0 0 10 10"
+                CornerRadius="0,0,10,10"
                 ClipToBounds="True"
                 Cursor="Hand"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Top"
+                BorderThickness="1"
+                BorderBrush="{StaticResource GlassEdgeBrush}"
                 MouseEnter="IslandBody_MouseEnter"
-                MouseDown="IslandBody_MouseDown">
-
+                MouseLeftButtonDown="IslandBody_MouseLeftButtonDown"
+                RenderTransformOrigin="0.5,0.5">
+            <Border.Background>
+                <LinearGradientBrush x:Name="GlassGradient" StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop x:Name="GlassTopStop" Color="#D916161D" Offset="0"/>
+                    <GradientStop x:Name="GlassBottomStop" Color="#E509090D" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
             <Border.RenderTransform>
-                <TranslateTransform x:Name="IslandTranslate" X="0" Y="0"/>
+                <!-- 顺序很重要：先挤压形变，再位移。
+                     反过来的话 IsolaTranslate.Y 会被 ScaleY 在窗口坐标里缩放，
+                     贴顶位置会随挤压量上下漂。 -->
+                <TransformGroup>
+                    <ScaleTransform x:Name="IslandSquash" ScaleX="1" ScaleY="1"/>
+                    <TranslateTransform x:Name="IslandTranslate" X="0" Y="0"/>
+                </TransformGroup>
             </Border.RenderTransform>
-
             <Border.Effect>
-                <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Color="Black" Opacity="0.55"/>
+                <DropShadowEffect x:Name="IslandShadow" BlurRadius="26" ShadowDepth="7" Direction="270"
+                                  Color="#000000" Opacity="0.55"/>
             </Border.Effect>
 
             <Grid>
-                <!-- 独立 Siri 炫彩球：收缩时平滑滑向正中心充当球体窗口 -->
-                <Ellipse x:Name="SiriOrb" Width="26" Height="26" 
-                         HorizontalAlignment="Center" VerticalAlignment="Center"
-                         Opacity="0">
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform x:Name="SiriOrbTranslate" X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#00F0FF" Offset="0.0"/>
-                            <GradientStop Color="#7000FF" Offset="0.6"/>
-                            <GradientStop Color="#FF007A" Offset="1.0"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
+                <!-- ⓪ 流体波浪层：整岛最底层，满幅出血。
+                     必须放在"岛体根容器"里（而不是 CardLayer 里）——
+                     放在 CardLayer 里时它的绘制区域会被 CardLayer 的 392 宽布局盒裁掉，
+                     左右各剩 14px 的纯玻璃黑边（实测屏幕 764..1152 vs 岛体 750..1170）。
+                     放在这里由 IslandBody.ClipToBounds 按圆角裁切，左右铺满、圆角自然。 -->
+                <controls:WaveVisualizer x:Name="CardWave"
+                                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                         Margin="-2"
+                                         IsHitTestVisible="False"
+                                         Opacity="0"
+                                         PointCount="56"
+                                         Amplitude="1.0"
+                                         BassBoost="0.55" Smoothing="0.35"
+                                         FillOpacity="0.50"
+                                         GlowRadius="14" GlowOpacity="0.55"
+                                         IsActive="False">
+                    <!-- 下缘化开：波浪的色量本来就堆在底部，正好压着进度条。
+                         用户要求"淡一点、融进其他元素"，所以整体再降一档 alpha。 -->
+                    <controls:WaveVisualizer.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#FFFFFFFF" Offset="0"/>
+                            <GradientStop Color="#B3FFFFFF" Offset="0.55"/>
+                            <GradientStop Color="#59FFFFFF" Offset="1"/>
+                        </LinearGradientBrush>
+                    </controls:WaveVisualizer.OpacityMask>
+                </controls:WaveVisualizer>
 
-                <!-- 展开时的文字与指示器 -->
-                <Grid x:Name="ExpandedContent" Opacity="0" Margin="54,0,16,0">
+                <!-- ① 内层厚度：让玻璃看起来有壁厚而不是一张纸 -->
+                <Border Margin="1"
+                        CornerRadius="{Binding CornerRadius, ElementName=IslandBody}"
+                        Background="{StaticResource GlassInnerShadowBrush}"
+                        IsHitTestVisible="False"/>
+
+                <!-- ② 折射流光：凝胶形变时横向扫过（IslandAnimator 驱动 SheenTranslate.X） -->
+                <Border x:Name="SheenLayer"
+                        CornerRadius="{Binding CornerRadius, ElementName=IslandBody}"
+                        Background="{StaticResource GlassSheenBrush}"
+                        Opacity="0.55"
+                        IsHitTestVisible="False">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="SheenTranslate" X="0" Y="0"/>
+                    </Border.RenderTransform>
+                </Border>
+
+                <!-- ③ 顶缘高光 -->
+                <Rectangle Height="1" VerticalAlignment="Top" Margin="14,1,14,0"
+                           Fill="{StaticResource GlassTopHighlightBrush}"
+                           IsHitTestVisible="False"/>
+
+                <!-- ③b 镜面高光条：凝胶形变时随形变量加长，并沿顶边滑行
+                     （IslandAnimator 逐帧驱动 Width / Opacity / SpecularTranslate.X） -->
+                <Rectangle x:Name="SpecularBar" Height="2" RadiusX="1" RadiusY="1"
+                           Width="90" Opacity="0"
+                           VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,1,0,0"
+                           Fill="{StaticResource GlassTopHighlightBrush}"
+                           IsHitTestVisible="False">
+                    <Rectangle.RenderTransform>
+                        <TranslateTransform x:Name="SpecularTranslate" X="0" Y="0"/>
+                    </Rectangle.RenderTransform>
+                </Rectangle>
+
+                <!-- ================= 一级展开：长椭圆 =================
+                     左侧圆角封面 + 中间当前歌词 + 右侧可视化 -->
+                <Grid x:Name="PillLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="灵动岛已就绪" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                        <TextBlock Text="点击外部或点击岛体即可收起" Foreground="#77FFFFFF" FontSize="10" Margin="0,2,0,0"/>
-                    </StackPanel>
+                    <Border x:Name="PillCoverHost" Grid.Column="0"
+                            Width="32" Height="32" CornerRadius="16"
+                            BorderBrush="#33FFFFFF" BorderThickness="1">
+                        <Border.Background>
+                            <ImageBrush x:Name="PillCoverBrush" Stretch="UniformToFill"/>
+                        </Border.Background>
+                    </Border>
 
-                    <Ellipse Grid.Column="1" Width="6" Height="6" Fill="#00FF66" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    <TextBlock x:Name="PillLyric" Grid.Column="1"
+                               Margin="10,0" VerticalAlignment="Center"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}"
+                               TextAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Text="Alpha Island"/>
+
+                    <!-- 一级胶囊右侧：5 根等宽圆角柱，两端恒定是半圆（胶囊形）。
+                         颜色由 MainWindow.ApplyArtwork 从专辑封面主色调注入，半透叠在黑色底上。 -->
+                    <Grid Grid.Column="2" Width="74" Height="26">
+                        <controls:SpectrumVisualizer x:Name="PillSpectrum"
+                                                     Width="74" Height="26"
+                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                     BarCount="5" BarGap="5"
+                                                     MinBarHeight="7" CenterEmphasis="0.34"
+                                                     GlowRadius="3" GlowOpacity="0.30"
+                                                     IsActive="False"/>
+
+                        <!-- 换曲提示：右侧的"接下来"指示。排版刻意与频谱同宽同高，切换时不会推动中间歌词。 -->
+                        <StackPanel x:Name="PillUpNext" Orientation="Horizontal"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Visibility="Collapsed" IsHitTestVisible="False">
+                            <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource AccentCyan}"/>
+                            <TextBlock x:Name="PillUpNextText" Text="接下来"
+                                       FontSize="11" FontWeight="SemiBold" Margin="4,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+
+                <!-- ================= 二级展开：完整卡片 ================= -->
+                <Grid x:Name="CardLayer" Opacity="0" Width="392" Margin="14,12,14,10"
+                      HorizontalAlignment="Center" IsHitTestVisible="False">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="64"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="34"/>
+                        <RowDefinition Height="14"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 波浪层已上移到岛体根容器（CardLayer 会把它裁成 392 宽，左右留黑边） -->
+                    <!-- 行 0：封面 + 曲目信息 + 传输控制 -->
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Width="64" Height="64" CornerRadius="14"
+                                BorderBrush="#26FFFFFF" BorderThickness="1">
+                            <Border.Background>
+                                <ImageBrush x:Name="CardCoverBrush" Stretch="UniformToFill"/>
+                            </Border.Background>
+                        </Border>
+
+                        <StackPanel Grid.Column="1" Margin="12,2,8,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="TitleText" FontSize="14.5" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       TextTrimming="CharacterEllipsis" Text="未在播放"/>
+                            <TextBlock x:Name="ArtistText" FontSize="11.5" Margin="0,3,0,0"
+                                       Foreground="{StaticResource TextSecondary}"
+                                       TextTrimming="CharacterEllipsis" Text=""/>
+                            <TextBlock x:Name="AlbumText" FontSize="10.5" Margin="0,2,0,0"
+                                       Foreground="{StaticResource TextTertiary}"
+                                       TextTrimming="CharacterEllipsis" Text=""/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="PrevButton" Style="{StaticResource TransportButton}"
+                                    Content="&#xE892;" Click="PrevButton_Click"/>
+                            <Button x:Name="PlayPauseButton" Style="{StaticResource TransportButton}"
+                                    Margin="6,0" Click="PlayPauseButton_Click">
+                                <TextBlock x:Name="PlayPauseGlyph" Text="&#xE768;"/>
+                            </Button>
+                            <Button x:Name="NextButton" Style="{StaticResource TransportButton}"
+                                    Content="&#xE893;" Click="NextButton_Click"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 行 1：歌词区（四级行高 15/24/14/15）。
+                         用户要求：上下一句预览透明度更低，当前句略微透明但仍清晰可读。
+                         卡拉OK 擦除 = Dim 全句打底 + Bright 同文本叠一层 + RectangleGeometry 裁剪。 -->
+                    <Grid x:Name="LyricsArea" Grid.Row="1" Visibility="Collapsed" Margin="0,6,0,2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="15"/>
+                            <RowDefinition Height="24"/>
+                            <RowDefinition Height="14"/>
+                            <RowDefinition Height="15"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock x:Name="LyricPrev" Grid.Row="0"
+                                   FontSize="11" Foreground="#3DFFFFFF"
+                                   MaxWidth="380" HorizontalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+
+                        <Grid Grid.Row="1" MaxWidth="380" HorizontalAlignment="Center">
+                            <TextBlock x:Name="LyricCurrentDim"
+                                       FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#59FFFFFF"
+                                       TextTrimming="CharacterEllipsis" TextAlignment="Center"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="LyricCurrentBright"
+                                       FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#EBFFFFFF"
+                                       TextTrimming="CharacterEllipsis" TextAlignment="Center"
+                                       HorizontalAlignment="Center"/>
+                        </Grid>
+
+                        <TextBlock x:Name="LyricTranslation" Grid.Row="2"
+                                   FontSize="11" Foreground="#B300F0FF"
+                                   MaxWidth="380" HorizontalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+
+                        <TextBlock x:Name="LyricNext" Grid.Row="3"
+                                   FontSize="11" Foreground="#3DFFFFFF"
+                                   MaxWidth="380" HorizontalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+                    </Grid>
+
+                    <!-- 行 2：留空。用户要求完全展开态**只保留底层的流体波浪**，
+                         不要离散柱状频谱和波浪并存（元素会显得混乱）。
+                         这 34px 就是波浪露出来的主视区。 -->
+
+                    <!-- 行 3：进度条 -->
+                    <Grid Grid.Row="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock x:Name="PositionText" Grid.Column="0" FontSize="10"
+                                   VerticalAlignment="Center"
+                                   Foreground="#8CFFFFFF" Text="0:00"/>
+
+                        <Border x:Name="ProgressTrack" Grid.Column="1" Height="12" Margin="8,0"
+                                Background="Transparent" Cursor="Hand"
+                                MouseLeftButtonDown="ProgressTrack_MouseLeftButtonDown">
+                            <Grid VerticalAlignment="Center">
+                                <Border Height="4" CornerRadius="2" Background="#26FFFFFF"/>
+                                <Border x:Name="ProgressFill" Height="4" CornerRadius="2"
+                                        HorizontalAlignment="Left" Width="0">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#00F0FF" Offset="0"/>
+                                            <GradientStop Color="#7000FF" Offset="0.55"/>
+                                            <GradientStop Color="#FF007A" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock x:Name="DurationText" Grid.Column="2" FontSize="10"
+                                   VerticalAlignment="Center"
+                                   Foreground="#8CFFFFFF" Text="0:00"/>
+                    </Grid>
+                </Grid>
+
+                <!-- 收回动画中间态那颗球：默认显示**专辑封面**（圆形裁剪），取不到封面时退回 Siri 炫彩渐变。
+                     外层名字保留 SiriOrb / SiriOrbTranslate，代码里的滑入与淡入淡出动画不用改。 -->
+                <Grid x:Name="SiriOrb" Width="46" Height="46"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Opacity="0" IsHitTestVisible="False">
+                    <Ellipse x:Name="OrbGradient">
+                        <Ellipse.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop Color="#00F0FF" Offset="0"/>
+                                <GradientStop Color="#7000FF" Offset="0.6"/>
+                                <GradientStop Color="#FF007A" Offset="1"/>
+                            </RadialGradientBrush>
+                        </Ellipse.Fill>
+                    </Ellipse>
+
+                    <Ellipse x:Name="OrbCover" Margin="5" Opacity="0">
+                        <Ellipse.Fill>
+                            <ImageBrush x:Name="OrbCoverBrush" Stretch="UniformToFill"/>
+                        </Ellipse.Fill>
+                    </Ellipse>
+                    <Ellipse x:Name="OrbCoverRing" Margin="5" Opacity="0"
+                             Stroke="#4DFFFFFF" StrokeThickness="1"/>
+
+                    <Grid.RenderTransform>
+                        <TranslateTransform x:Name="SiriOrbTranslate" X="-40" Y="0"/>
+                    </Grid.RenderTransform>
                 </Grid>
             </Grid>
         </Border>

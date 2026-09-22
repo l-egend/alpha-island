@@ -1,0 +1,244 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ==================================================================
+         液态玻璃主题资源
+         之前这些画刷和样式分散在 MainWindow.xaml / SettingsWindow.xaml 里各写一遍，
+         改一次强调色要改三处。现在集中到这里，App.xaml 统一合并。
+         ================================================================== -->
+
+    <!-- = 强调色 = -->
+    <Color x:Key="AccentCyanColor">#FF00F0FF</Color>
+    <Color x:Key="AccentVioletColor">#FF7000FF</Color>
+    <Color x:Key="AccentMagentaColor">#FFFF007A</Color>
+
+    <SolidColorBrush x:Key="AccentCyan" Color="#00F0FF" />
+    <SolidColorBrush x:Key="AccentViolet" Color="#7000FF" />
+    <SolidColorBrush x:Key="AccentMagenta" Color="#FF007A" />
+
+    <!-- = 文字层级 = -->
+    <SolidColorBrush x:Key="TextPrimary" Color="#F2FFFFFF" />
+    <SolidColorBrush x:Key="TextSecondary" Color="#A6FFFFFF" />
+    <SolidColorBrush x:Key="TextTertiary" Color="#66FFFFFF" />
+    <SolidColorBrush x:Key="TextFaint" Color="#38FFFFFF" />
+
+    <!-- = 玻璃边缘：上亮下暗的 1px 竖向渐变，模拟玻璃断面的高光 = -->
+    <LinearGradientBrush x:Key="GlassEdgeBrush" StartPoint="0.5,0" EndPoint="0.5,1">
+        <GradientStop Color="#65FFFFFF" Offset="0" />
+        <GradientStop Color="#25FFFFFF" Offset="0.45" />
+        <GradientStop Color="#0DFFFFFF" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- 底部内阴影：让玻璃有厚度 -->
+    <LinearGradientBrush x:Key="GlassInnerShadowBrush" StartPoint="0.5,0" EndPoint="0.5,1">
+        <GradientStop Color="#00000000" Offset="0" />
+        <GradientStop Color="#00000000" Offset="0.7" />
+        <GradientStop Color="#40000000" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- 顶缘镜面高光条 -->
+    <LinearGradientBrush x:Key="GlassTopHighlightBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#00FFFFFF" Offset="0" />
+        <GradientStop Color="#59FFFFFF" Offset="0.22" />
+        <GradientStop Color="#59FFFFFF" Offset="0.78" />
+        <GradientStop Color="#00FFFFFF" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- 折射流光：一条斜向的宽渐变，靠 RenderTransform 平移制造"光影随形变流动" -->
+    <LinearGradientBrush x:Key="GlassSheenBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#00FFFFFF" Offset="0" />
+        <GradientStop Color="#12FFFFFF" Offset="0.30" />
+        <GradientStop Color="#3CFFFFFF" Offset="0.46" />
+        <GradientStop Color="#12FFFFFF" Offset="0.60" />
+        <GradientStop Color="#00FFFFFF" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- = 玻璃染色层 =
+         压在"真实背景折射"（Controls/GlassBackdrop 抓屏 + 模糊得到的那一层）之上。
+         没有它，透过来的桌面就是一张清晰的照片，看着像开洞而不是玻璃；
+         有了这层低饱和青灰染色 + 上浅下深的 alpha，才有"奶感"。
+         alpha 故意留得比较低（约 0.6~0.78），整体浓度由选项里的"玻璃不透明度"再乘一次。 -->
+    <LinearGradientBrush x:Key="GlassTintBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#A3151520" Offset="0" />
+        <GradientStop Color="#B60C0C14" Offset="0.45" />
+        <GradientStop Color="#C208080E" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- 边缘色散：液态玻璃在强光下会有轻微青/品红分离 -->
+    <LinearGradientBrush x:Key="ChromaticCyanBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#0000F0FF" Offset="0" />
+        <GradientStop Color="#5400F0FF" Offset="0.06" />
+        <GradientStop Color="#0000F0FF" Offset="0.14" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="ChromaticMagentaBrush" StartPoint="1,0" EndPoint="0,0">
+        <GradientStop Color="#00FF007A" Offset="0" />
+        <GradientStop Color="#4CFF007A" Offset="0.06" />
+        <GradientStop Color="#00FF007A" Offset="0.14" />
+    </LinearGradientBrush>
+
+    <!-- = 设置窗口面板 = -->
+    <SolidColorBrush x:Key="PanelBrush" Color="#1E1E24" />
+    <SolidColorBrush x:Key="PanelBorderBrush" Color="#15FFFFFF" />
+    <SolidColorBrush x:Key="PanelHoverBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="PanelActiveBrush" Color="#1FFFFFFF" />
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#141418" />
+
+    <!-- ==================================================================
+         播放控制按钮（卡片右下角的上一首 / 播放暂停 / 下一首）
+         ================================================================== -->
+    <Style x:Key="TransportButton" TargetType="Button">
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="#F2FFFFFF" />
+        <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Ellipse x:Name="Bg" Fill="#1CFFFFFF" />
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Fill" Value="#38FFFFFF" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bg" Property="Fill" Value="#55FFFFFF" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.28" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ==================================================================
+         开关（CheckBox 伪装成 iOS 风格开关）
+         ================================================================== -->
+    <Style x:Key="Switch" TargetType="CheckBox">
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="22" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid>
+                        <Border x:Name="Track" CornerRadius="11" Background="#33FFFFFF" />
+                        <Border x:Name="Knob" Width="16" Height="16" CornerRadius="8" Background="#FFFFFF"
+                                HorizontalAlignment="Left" Margin="3,0,0,0">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="5" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.35" />
+                            </Border.Effect>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="#7000FF" />
+                            <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                            <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.85" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.32" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ==================================================================
+         设置窗口：左侧分类导航
+         用 RadioButton 是因为它天然互斥，不需要手写"当前选中项"的簿记。
+         ================================================================== -->
+    <Style x:Key="SettingsNavItem" TargetType="RadioButton">
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Margin" Value="0,0,0,3" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="#8CFFFFFF" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Grid>
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="9" />
+                        <Border x:Name="Mark" Width="3" Height="16" CornerRadius="1.5"
+                                HorizontalAlignment="Left" Background="Transparent" />
+                        <ContentPresenter Margin="15,0,10,0" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="#14FFFFFF" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="#1FFFFFFF" />
+                            <Setter TargetName="Mark" Property="Background" Value="#00F0FF" />
+                            <Setter Property="Foreground" Value="#FFFFFFFF" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ==================================================================
+         设置窗口：内容卡片
+         ================================================================== -->
+    <Style x:Key="SettingsCard" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="14,12" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+
+    <Style x:Key="SettingsSectionTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="#F2FFFFFF" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+
+    <Style x:Key="SettingsRowLabel" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Foreground" Value="#E6FFFFFF" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="SettingsRowHint" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="#66FFFFFF" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,4,0,0" />
+    </Style>
+
+    <Style x:Key="SettingsValue" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Foreground" Value="#8000F0FF" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="MinWidth" Value="34" />
+        <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+
+    <!-- 分类页标题 -->
+    <Style x:Key="PageTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="17" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="#FFFFFFFF" />
+    </Style>
+
+    <Style x:Key="PageSubtitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Foreground" Value="#66FFFFFF" />
+        <Setter Property="Margin" Value="0,3,0,16" />
+    </Style>
+
+</ResourceDictionary>
