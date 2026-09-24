@@ -20,7 +20,7 @@ namespace alpha_island.Services
     }
 
     /// <summary>一次「当前正在播放」的完整快照，UI 只依赖这个不可变对象。</summary>
-    public sealed class NowPlayingInfo
+    public sealed record NowPlayingInfo
     {
         public string Title { get; init; } = "";
         public string Artist { get; init; } = "";
@@ -101,15 +101,67 @@ namespace alpha_island.Services
         private void OnSessionsChanged(GlobalSystemMediaTransportControlsSessionManager sender,
                                        SessionsChangedEventArgs args) => QueueRefresh();
 
-        private void OnSessionEvent(GlobalSystemMediaTransportControlsSession sender, object args) => QueueRefresh();
+        private void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender,
+                                              MediaPropertiesChangedEventArgs args) => QueueRefresh();
+
+        private void OnTimelinePropertiesChanged(GlobalSystemMediaTransportControlsSession sender,
+                                                 TimelinePropertiesChangedEventArgs args)
+        {
+            CheckFastPlaybackState();
+            QueueRefresh();
+        }
+
+        private void OnPlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender,
+                                           PlaybackInfoChangedEventArgs args)
+        {
+            CheckFastPlaybackState();
+            QueueRefresh();
+        }
+
+        /// <summary>
+        /// 极速同步检测当前会话播放状态。
+        /// 在主界面定时器（每 200~250ms）或媒体事件触发时调用，开销 &lt;0.01ms。
+        /// 彻底防止部分播放器（网易云、QQ音乐等）丢发 WinRT PlaybackInfoChanged 事件导致状态不同步。
+        /// </summary>
+        public void CheckFastPlaybackState()
+        {
+            if (_disposed) return;
+            var session = _session;
+            if (session == null || _current == null) return;
+
+            try
+            {
+                var playback = session.GetPlaybackInfo();
+                if (playback != null)
+                {
+                    var newState = MapState(playback.PlaybackStatus);
+                    if (newState != _current.State)
+                    {
+                        var controls = playback.Controls;
+                        var updated = _current with
+                        {
+                            State = newState,
+                            CanNext = controls?.IsNextEnabled ?? _current.CanNext,
+                            CanPrevious = controls?.IsPreviousEnabled ?? _current.CanPrevious
+                        };
+                        _current = updated;
+                        Publish(updated);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[SMTC] CheckFastPlaybackState 异常: " + ex.Message);
+            }
+        }
 
         private void Attach()
         {
             _session = _manager?.GetCurrentSession();
             if (_session == null) return;
-            _session.MediaPropertiesChanged += OnSessionEvent;
-            _session.PlaybackInfoChanged += OnSessionEvent;
-            _session.TimelinePropertiesChanged += OnSessionEvent;
+            _session.MediaPropertiesChanged += OnMediaPropertiesChanged;
+            _session.PlaybackInfoChanged += OnPlaybackInfoChanged;
+            _session.TimelinePropertiesChanged += OnTimelinePropertiesChanged;
         }
 
         private void Detach()
@@ -117,9 +169,9 @@ namespace alpha_island.Services
             if (_session == null) return;
             try
             {
-                _session.MediaPropertiesChanged -= OnSessionEvent;
-                _session.PlaybackInfoChanged -= OnSessionEvent;
-                _session.TimelinePropertiesChanged -= OnSessionEvent;
+                _session.MediaPropertiesChanged -= OnMediaPropertiesChanged;
+                _session.PlaybackInfoChanged -= OnPlaybackInfoChanged;
+                _session.TimelinePropertiesChanged -= OnTimelinePropertiesChanged;
             }
             catch (Exception ex) { Debug.WriteLine(ex); }
             _session = null;
@@ -156,11 +208,25 @@ namespace alpha_island.Services
         /// <summary>强制刷新一次（供外部在需要时调用）。</summary>
         public Task RefreshAsync() => RefreshSafeAsync();
 
+        private static bool IsSameSession(GlobalSystemMediaTransportControlsSession? a, GlobalSystemMediaTransportControlsSession? b)
+        {
+            if (a == null && b == null) return true;
+            if (a == null || b == null) return false;
+            try
+            {
+                return string.Equals(a.SourceAppUserModelId, b.SourceAppUserModelId, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private async Task RefreshCoreAsync()
         {
             var session = _manager?.GetCurrentSession();
 
-            if (!ReferenceEquals(session, _session))
+            if (!IsSameSession(session, _session))
             {
                 Detach();
                 Attach();
@@ -201,7 +267,27 @@ namespace alpha_island.Services
             if (position < TimeSpan.Zero) position = TimeSpan.Zero;
             if (duration > TimeSpan.Zero && position > duration) position = duration;
 
-            _positionStampUtc = DateTime.UtcNow;
+            DateTimeOffset lastUpdated = timeline.LastUpdatedTime;
+            if (lastUpdated != default)
+            {
+                var now = DateTimeOffset.UtcNow;
+                if (lastUpdated > now && lastUpdated <= now.AddSeconds(1))
+                {
+                    lastUpdated = now;
+                }
+                if (lastUpdated <= now)
+                {
+                    _positionStampUtc = lastUpdated.UtcDateTime;
+                }
+                else
+                {
+                    _positionStampUtc = DateTime.UtcNow;
+                }
+            }
+            else
+            {
+                _positionStampUtc = DateTime.UtcNow;
+            }
 
             Publish(new NowPlayingInfo
             {
@@ -222,7 +308,17 @@ namespace alpha_island.Services
         private void Publish(NowPlayingInfo? info)
         {
             _current = info;
-            NowPlayingChanged?.Invoke(this, info);
+            if (_dispatcher.CheckAccess())
+            {
+                NowPlayingChanged?.Invoke(this, info);
+            }
+            else
+            {
+                _dispatcher.BeginInvoke(new Action(() =>
+                {
+                    NowPlayingChanged?.Invoke(this, info);
+                }));
+            }
         }
 
         private static PlaybackState MapState(Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus? s)
@@ -241,8 +337,8 @@ namespace alpha_island.Services
         }
 
         /// <summary>
-        /// 估算当前播放位置：SMTC 的 TimelineProperties 只在换曲/拖动时刷新，
-        /// 所以播放中用本地时钟外推，界面进度条才走得动。
+        /// 估算当前播放位置：以 SMTC 的 TimelineProperties.LastUpdatedTime 为基准，
+        /// 结合高精度时钟实时外推，消除媒体事件到达延迟与本地时钟脱节的问题。
         /// </summary>
         public TimeSpan EstimatedPosition
         {
@@ -252,7 +348,40 @@ namespace alpha_island.Services
                 if (info == null) return TimeSpan.Zero;
                 if (!info.IsPlaying || info.Duration <= TimeSpan.Zero) return info.Position;
 
+                var session = _session;
+                if (session != null)
+                {
+                    try
+                    {
+                        var tl = session.GetTimelineProperties();
+                        if (tl != null)
+                        {
+                            var lastUpdated = tl.LastUpdatedTime;
+                            if (lastUpdated != default)
+                            {
+                                var now = DateTimeOffset.UtcNow;
+                                var sinceUpdate = now - lastUpdated;
+                                // 允许系统时钟与媒体时间戳之间 1 秒以内的微小超前抖动
+                                if (sinceUpdate < TimeSpan.Zero && sinceUpdate >= TimeSpan.FromSeconds(-1))
+                                {
+                                    sinceUpdate = TimeSpan.Zero;
+                                }
+
+                                if (sinceUpdate >= TimeSpan.Zero)
+                                {
+                                    var realPos = (tl.Position - tl.StartTime) + TimeSpan.FromSeconds(sinceUpdate.TotalSeconds * _playbackRate);
+                                    if (realPos < TimeSpan.Zero) realPos = TimeSpan.Zero;
+                                    if (info.Duration > TimeSpan.Zero && realPos > info.Duration) realPos = info.Duration;
+                                    return realPos;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
                 var elapsed = DateTime.UtcNow - _positionStampUtc;
+                if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
                 var pos = info.Position + TimeSpan.FromSeconds(elapsed.TotalSeconds * _playbackRate);
                 return pos > info.Duration ? info.Duration : pos;
             }
@@ -296,6 +425,7 @@ namespace alpha_island.Services
             if (s == null) return;
             try { await s.TryTogglePlayPauseAsync().AsTask(); }
             catch (Exception ex) { Debug.WriteLine(ex); }
+            CheckFastPlaybackState();
             QueueRefresh();
         }
 

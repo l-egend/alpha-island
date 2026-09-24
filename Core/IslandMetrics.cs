@@ -60,14 +60,34 @@ namespace alpha_island.Core
         /// <summary>一级 → 二级的过冲时长（比从细条展开稍短）。</summary>
         public static readonly Duration GrowDuration = new(TimeSpan.FromMilliseconds(340));
 
-        public static readonly Duration CollapseStage1 = new(TimeSpan.FromMilliseconds(260)); // 卡片 → 圆球
-        public static readonly Duration CollapseStage2 = new(TimeSpan.FromMilliseconds(220)); // 圆球 → 吸顶
-        public static readonly Duration CollapseStage3 = new(TimeSpan.FromMilliseconds(220)); // 吸顶 → 细条
+        /// <summary>
+        /// 收回全程只跑一条主弹簧（旧的 260+220+220 三段式已废弃）。
+        /// 标称 620ms 对应"两条通道都进 ±1.2%"的实际观感 ≈ 750ms，和三段式的 700ms 基本重合，
+        /// 但速度不再在接缝处归零。
+        /// </summary>
+        public static readonly Duration CollapseDuration = new(TimeSpan.FromMilliseconds(620));
+
+        /// <summary>正圆路径点在收回路径上的相对位置（0..1）。0.38 ≈ 620ms 里的 235ms，对齐旧的 CollapseStage1。</summary>
+        public const double CollapseViaAt = 0.38;
 
         /// <summary>
-        /// 内容层退场时长。只用来避开"硬切"那一下的跳变 —— 真正的过渡由材质形变完成：
-        /// IslandBody 开着 ClipToBounds，内容是被展开/收拢的轮廓裁出来的。
+        /// 跟随通道（高度）相对主通道的时间倍数。&gt;1 = 滞后，细条的"肚子"拖在轮廓后面才像胶体。
+        /// 1.25 时高度比宽度晚约 40ms 到位。
         /// </summary>
-        public static readonly Duration ContentFadeOut = new(TimeSpan.FromMilliseconds(70));
+        public const double CollapseFollowLag = 1.25;
+
+        /// <summary>
+        /// 内容层显露窗口：形变进度 t 从 Start 到 End 的区间里，目标层从 0 露到 1、源层从 1 退到 0。
+        /// 这不是独立的淡入淡出时间轴 —— 它直接由主弹簧的进度驱动，
+        /// 也就是"材质展开到哪儿、内容就露到哪儿"，没有自己的起止时间。
+        /// </summary>
+        public const double ContentRevealStart = 0.04;
+        public const double ContentRevealEnd = 0.34;
+
+        /// <summary>收回途中"封面球"的显形窗口（同样是主弹簧进度，不是独立时间轴）。</summary>
+        public const double OrbRevealStart = 0.32;
+        public const double OrbRevealEnd = 0.46;
+        public const double OrbFadeStart = 0.95;
+        public const double OrbFadeSpan = 0.42;
     }
 }

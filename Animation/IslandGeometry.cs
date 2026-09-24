@@ -11,11 +11,21 @@ namespace alpha_island.Animation
     {
         public IslandGeometry(double width, double height, double top, CornerRadius corner)
         {
-            Width = width;
-            Height = height;
+            // 宽/高/圆角一律钳到非负。插值的 t 允许超过 1（凝胶过冲），
+            // 而 CornerRadius 的外插会算出负数 —— WPF 的 Border.CornerRadius 直接抛
+            // ArgumentException（"不是属性 CornerRadius 的有效值"），
+            // 且是在 CompositionTarget.Rendering 里抛，等于每帧都炸、动画永远收不了尾。
+            Width = width < 0 ? 0 : width;
+            Height = height < 0 ? 0 : height;
             Top = top;
-            Corner = corner;
+            Corner = new CornerRadius(
+                NonNegative(corner.TopLeft),
+                NonNegative(corner.TopRight),
+                NonNegative(corner.BottomRight),
+                NonNegative(corner.BottomLeft));
         }
+
+        private static double NonNegative(double v) => v < 0 ? 0 : v;
 
         public double Width { get; }
         public double Height { get; }

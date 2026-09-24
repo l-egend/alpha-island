@@ -8,7 +8,14 @@
             <ResourceDictionary.MergedDictionaries>
                 <!-- 液态玻璃主题：画刷、播放按钮、开关、设置卡片样式集中在这里 -->
                 <ResourceDictionary Source="Themes/LiquidGlass.xaml" />
+                <!-- Windows 11 深色主题：设置界面专用（与灵动岛本体主题互不干扰） -->
+                <ResourceDictionary Source="Themes/Win11Settings.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- 全局消除按钮的虚线焦点边框 -->
+            <Style TargetType="Button">
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

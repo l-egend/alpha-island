@@ -47,12 +47,30 @@ namespace alpha_island
         private SmtcService? _smtc;
         private AudioSpectrumService? _audio;
         private LyricsService? _lyrics;
+        private BluetoothService? _bluetooth;
+        private VolumeService? _volumeService;
+
+        // ================= 音量调节 =================
+        private bool _volumeNotifying;
+        private DateTime _volumeNotifyUntil = DateTime.MinValue;
+        private bool VolumeNotifyActive => DateTime.UtcNow < _volumeNotifyUntil;
+
+        // ================= 蓝牙通知 =================
+        /// <summary>蓝牙通知正在显示。Pill 形态时 PillLayer 与 BtNotifyLayer 互斥。</summary>
+        private bool _btNotifying;
+        private DateTime _btNotifyUntil = DateTime.MinValue;
+        private bool BtNotifyActive => DateTime.UtcNow < _btNotifyUntil;
+
+        // ================= 启动问候 =================
+        private bool _greetingShowing;
+        private DateTime _greetingUntil = DateTime.MinValue;
+        private bool GreetingActive => DateTime.UtcNow < _greetingUntil;
 
         // ================= 状态机 =================
         private IslandState _state = IslandState.Bar;
-        private readonly DispatcherTimer _hoverTimer;
-        private readonly DispatcherTimer _progressTimer;
-        private readonly DispatcherTimer _mediaLostTimer;
+        private readonly DispatcherTimer? _hoverTimer;
+        private readonly DispatcherTimer? _progressTimer;
+        private readonly DispatcherTimer? _mediaLostTimer;
 
         /// <summary>光标连续不在热区里的次数。3 次 ≈ 360ms 降一级，6 次 ≈ 720ms 收成细条。</summary>
         private int _hoverOutTicks;
@@ -74,12 +92,13 @@ namespace alpha_island
         private BitmapSource? _lastArt;
 
         /// <summary>
-        /// 换曲提示（一级胶囊右侧的"接下来"）。SMTC 只给当前曲目、拿不到真正的"下一首"，
-        /// 所以这里显示的就是刚切进来的这一首，也就是用户口中的"下一首"。
+        /// 换曲 / 暂停提示（一级胶囊右侧指示）。
         /// </summary>
         private DateTime _upNextUntil = DateTime.MinValue;
         private string _upNextTitle = "";
+        private string _upNextKind = "upnext"; // "upnext" | "pause"
         private bool _upNextShowing;
+        private bool? _lastIsPlaying;
 
         private bool UpNextActive => DateTime.UtcNow < _upNextUntil;
 
@@ -113,6 +132,8 @@ namespace alpha_island
 
             _animator = new IslandAnimator(IslandBody, IslandTranslate, IslandSquash, SheenTranslate,
                 IslandShadow, SpecularBar, SpecularTranslate);
+            // 内容层显露与封面球都挂在主弹簧的进度上：共用同一条时间轴，没有各自独立的淡入淡出。
+            _animator.ProgressHook = OnMorphProgress;
             _animator.SetImmediate(BarGeometry);
 
             _hoverTimer = new DispatcherTimer(DispatcherPriority.Input)
@@ -151,6 +172,7 @@ namespace alpha_island
         /// 且悬停轮询不再自动收回。仅为自动化截图/测量服务，正常启动时该值为 null。
         /// </summary>
         private readonly string? _forcedState = Environment.GetEnvironmentVariable("ALPHA_ISLAND_STATE");
+        private string? _pillLyricForce;
 
         // ================= 启动 =================
 
@@ -177,11 +199,54 @@ namespace alpha_island
             // 歌词：网易云
             _lyrics = new LyricsService { Enabled = _options.LyricsEnabled };
 
-            _progressTimer.Start();
+            // 蓝牙：设备连接通知
+            if (_options.BluetoothNotifyEnabled)
+            {
+                try
+                {
+                    _bluetooth = new BluetoothService(Dispatcher);
+                    _bluetooth.DeviceConnected += OnBluetoothDeviceConnected;
+                    _bluetooth.BatteryUpdated += OnBluetoothBatteryUpdated;
+                    _bluetooth.Start();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[Bluetooth] 初始化失败: " + ex.Message);
+                }
+            }
+
+            // 系统主音量监听
+            if (_options.VolumeNotifyEnabled)
+            {
+                try
+                {
+                    _volumeService = new VolumeService(Dispatcher);
+                    _volumeService.VolumeChanged += OnVolumeChanged;
+                    _volumeService.Start();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[Volume] 初始化失败: " + ex.Message);
+                }
+            }
+
+            _progressTimer?.Start();
 
             ApplyOptions();   // 建/刷新真实玻璃层，并按"有没有真实模糊"重算本色浓度
 
             await _smtc.InitializeAsync();
+
+            // 启动问候：开机后展开胶囊展示“欢迎回来”，随后平滑收回细条
+            if (_forcedState == null && _options.GreetingEnabled)
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_state == IslandState.Bar && _forcedState == null)
+                    {
+                        ShowStartupGreeting();
+                    }
+                }), DispatcherPriority.Loaded);
+            }
 
             if (_forcedState != null)
             {
@@ -217,10 +282,23 @@ namespace alpha_island
                         SyncUpNextContent();
                         SyncVisualizers();
                     }
+                    else if (_forcedState.Equals("bluetooth", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 调试定态：一级胶囊 + 蓝牙连接提示（3D模型旋转 + 设备名称 + 电量）
+                        ShowBluetoothNotify(new BluetoothDeviceInfo("test-id", "AirPods Pro", BluetoothDeviceCategory.Audio, 85, true));
+                    }
                 }
             }
-        }
 
+            // 调试：ALPHA_ISLAND_PILL_LYRIC 可以灌一段超长文本，专门用来验证胶囊歌词的跑马灯。
+            string? forcedLyric = Environment.GetEnvironmentVariable("ALPHA_ISLAND_PILL_LYRIC");
+            if (!string.IsNullOrEmpty(forcedLyric))
+            {
+                _pillLyricForce = forcedLyric;
+                _pillLyricNormal = forcedLyric;
+                ApplyPillLyricText(forcedLyric);
+            }
+        }
         /// <summary>窗口永远水平居中、贴屏幕顶部。</summary>
         private void PositionWindow()
         {
@@ -270,32 +348,110 @@ namespace alpha_island
             IslandState prev = _state;
             _state = next;
 
-            // 离开细条就立刻掐掉收回动画中间态那颗球。
-            // 否则会出现"收回还没跑完、用户又点开"——球（带封面）和胶囊里的封面同时可见 = 两个专辑图标。
+            // 离开细条就立刻掐掉收回动画中间态那颗球；若收缩回细条，则装配当前左侧状态的圆形过渡内容
+            if (next == IslandState.Bar && prev != IslandState.Bar)
+            {
+                PrepareSiriOrbContent();
+            }
             if (next != IslandState.Bar) CancelSiriOrb();
 
             bool growing = next > prev || (force && next == prev);
             var duration = growing ? IslandMetrics.ExpandDuration : IslandMetrics.GrowDuration;
 
-            _animator?.MorphTo(GeometryFor(next), _options.GelAnimation, duration,
-                new CubicEase { EasingMode = EasingMode.EaseInOut });
+            // 内容层不做独立时间轴的淡入淡出：显露度由主弹簧进度驱动（见 ApplyReveal），
+            // 材质展开到哪儿内容就露到哪儿，源层在同一个进度上退场。
+            _revealFrom = prev;
+            _revealTo = next;
+            _reveal = 0.0;
+            ApplyReveal();
 
-            // 内容层不做传统交叉淡入淡出：IslandBody 开着 ClipToBounds，材质展开/收拢的过程中
-            // 内容本来就是被轮廓"裁"出来的，过渡由形变本身完成。这里只留一个极短的淡入/淡出，
-            // 纯粹为了避开硬切那一下的跳变。
-            int fadeMs = 70;
-            int beginMs = growing ? 70 : 0;
-            FadeLayer(PillLayer, next == IslandState.Pill ? 1 : 0, fadeMs, beginMs);
-            FadeLayer(CardLayer, next == IslandState.Card ? 1 : 0, fadeMs, beginMs);
-            // 波浪层已上移到岛体根容器，不再跟着 CardLayer 一起淡入淡出，得单独驱动。
-            FadeLayer(CardWave, next == IslandState.Card ? 1 : 0, fadeMs, beginMs);
-            PillLayer.IsHitTestVisible = next == IslandState.Pill;
+            if (_animator != null)
+            {
+                _animator.MorphTo(GeometryFor(next), _options.GelAnimation, duration,
+                    new CubicEase { EasingMode = EasingMode.EaseInOut });
+            }
+            else
+            {
+                _reveal = 1.0;
+                ApplyReveal();
+            }
+
+            // 歌词跑马灯只在胶囊态跑，其它形态停掉，别白耗动画帧。
+            bool isPillNormal = next == IslandState.Pill && !_btNotifying && !_greetingShowing && !_volumeNotifying;
+            SetPillLyricScrollRunning(isPillNormal);
+            PillLayer.IsHitTestVisible = isPillNormal;
+            BtNotifyLayer.IsHitTestVisible = next == IslandState.Pill && _btNotifying;
+            GreetingLayer.IsHitTestVisible = next == IslandState.Pill && _greetingShowing;
+            VolumeNotifyLayer.IsHitTestVisible = next == IslandState.Pill && _volumeNotifying;
             CardLayer.IsHitTestVisible = next == IslandState.Card;
+            if (next != IslandState.Card)
+            {
+                Keyboard.ClearFocus();
+            }
 
             SyncVisualizers();
             SyncUpNextContent();
+            SyncBtNotifyContent();
+            SyncGreetingContent();
+            SyncVolumeContent();
             UpdateKaraokeHook();
             SyncBackdrop();
+        }
+
+        /// <summary>
+        /// 缩回成圆过渡态：根据当前灵动岛左侧实时状态（音量/外设/问候/专辑），在圆内装配对应的专属图标与背景色。
+        /// 使形变收缩过渡极其自然连续，避免一律用专辑封面。
+        /// </summary>
+        private void PrepareSiriOrbContent()
+        {
+            if (_volumeNotifying)
+            {
+                OrbCover.Opacity = 0;
+                OrbCoverRing.Opacity = 0;
+                OrbGradient.Opacity = 0;
+                OrbIconContainer.Opacity = 1;
+                OrbIconContainer.Background = VolumeIconContainer.Background;
+                OrbIcon.Text = VolumeIcon.Text;
+                OrbIcon.Foreground = VolumeIcon.Foreground;
+            }
+            else if (_btNotifying)
+            {
+                OrbCover.Opacity = 0;
+                OrbCoverRing.Opacity = 0;
+                OrbGradient.Opacity = 0;
+                OrbIconContainer.Opacity = 1;
+                OrbIconContainer.Background = BtIconContainer.Background;
+                if (BtDeviceIcon.Visibility == Visibility.Visible && !string.IsNullOrEmpty(BtDeviceIcon.Text))
+                {
+                    OrbIcon.Text = BtDeviceIcon.Text;
+                    OrbIcon.Foreground = BtDeviceIcon.Foreground;
+                }
+                else
+                {
+                    // 耳机 3D 旋转模型在圆球中以经典微光耳机图标呈现
+                    OrbIcon.Text = "\uE7F6";
+                    OrbIcon.Foreground = new SolidColorBrush(Colors.White);
+                }
+            }
+            else if (_greetingShowing)
+            {
+                OrbCover.Opacity = 0;
+                OrbCoverRing.Opacity = 0;
+                OrbGradient.Opacity = 0;
+                OrbIconContainer.Opacity = 1;
+                OrbIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x44, 0x00, 0xE5, 0xFF));
+                OrbIcon.Text = "\uE735";
+                OrbIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF));
+            }
+            else
+            {
+                // 音乐媒体状态：有封面显示封面，无封面显示 Siri 渐变
+                OrbIconContainer.Opacity = 0;
+                bool hasCover = OrbCoverBrush.ImageSource != null;
+                OrbCover.Opacity = hasCover ? 1 : 0;
+                OrbCoverRing.Opacity = hasCover ? 1 : 0;
+                OrbGradient.Opacity = hasCover ? 0 : 1;
+            }
         }
 
         /// <summary>把"收回动画中间态那颗球"复位：停掉两条动画并把不可见状态写实。</summary>
@@ -303,6 +459,7 @@ namespace alpha_island
         {
             SiriOrb.BeginAnimation(OpacityProperty, null);
             SiriOrb.Opacity = 0;
+            OrbIconContainer.Opacity = 0;
             SiriOrbTranslate.BeginAnimation(TranslateTransform.XProperty, null);
             SiriOrbTranslate.X = -40;
         }
@@ -310,12 +467,94 @@ namespace alpha_island
         /// <summary>PillLyric 的唯一写入口 —— 顺手记住"正常文本"，换曲提示结束后好还原。</summary>
         private void SetPillLyric(string text)
         {
+            // 调试灌词期间屏蔽真实歌词，否则歌词服务每 ~100ms 覆盖一次会把跑马灯动画一直打回起点。
+            if (_pillLyricForce != null) return;
+
             _pillLyricNormal = text;
-            if (!UpNextActive) PillLyric.Text = text;
+            if (!UpNextActive) ApplyPillLyricText(text);
+        }
+
+        // ===================== 一级胶囊歌词的跑马灯 =====================
+
+        private const double PillLyricGap = 56.0;      // 两份文本之间的空档，和 XAML 里 Echo 的 Margin 对齐
+        private const double PillLyricSpeed = 36.0;    // 滚动速度 px/s
+        private const double PillLyricLeadIn = 1.4;    // 第一遍之前的停顿（秒）
+        private const double PillLyricTailPause = 0.9; // 一轮结束后的停顿（秒）
+
+        /// <summary>写入胶囊歌词：文本变化时重新量宽度，决定居中静止还是跑马灯滚动。</summary>
+        private void ApplyPillLyricText(string text)
+        {
+            text = text ?? string.Empty;
+
+            if (PillLyric != null && PillLyric.Text == text) return;
+
+            if (PillLyric != null) PillLyric.Text = text;
+            if (PillLyricEcho != null) PillLyricEcho.Text = text;
+
+            UpdatePillLyricScroll();
+        }
+
+        private void PillLyricHost_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdatePillLyricScroll();
         }
 
         /// <summary>
-        /// 换曲提示期间：一级胶囊右侧的频谱整块换成"接下来"指示，中间显示新曲名。
+        /// 放得下 → 收起副本、整条居中；放不下 → 亮出副本，挂一个"停顿 · 滚动 · 停顿"的循环动画。
+        /// 宽度还没算出来（ActualWidth ≈ 0）时直接返回，等 SizeChanged 再来一次。
+        /// </summary>
+        private void UpdatePillLyricScroll()
+        {
+            if (PillLyric == null || PillLyricEcho == null || PillLyricHost == null || PillLyricScroll == null) return;
+
+            PillLyricScroll.BeginAnimation(TranslateTransform.XProperty, null);
+
+            double available = PillLyricHost.ActualWidth;
+            if (available <= 1.0) return;
+
+            // 必须重新量一次：刚写完 Text 时 DesiredSize 还是上一段文本的宽度（实测会拿到 73px 这种陈旧值），
+            // 直接用它判断会把长歌词误判成"放得下"。用无限宽度量，得到的就是整句话的自然宽度。
+            PillLyric.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+            double textWidth = PillLyric.DesiredSize.Width;
+            if (textWidth <= 1.0) return;
+
+            if (textWidth <= available - 1.0)
+            {
+                if (PillLyricEcho.Visibility != Visibility.Collapsed) PillLyricEcho.Visibility = Visibility.Collapsed;
+                PillLyricScroll.X = Math.Max(0.0, (available - textWidth) / 2.0);
+                return;
+            }
+
+            if (PillLyricEcho.Visibility != Visibility.Visible) PillLyricEcho.Visibility = Visibility.Visible;
+
+            double dist = textWidth + PillLyricGap;
+            var travel = TimeSpan.FromSeconds(dist / PillLyricSpeed);
+            var anim = new DoubleAnimationUsingKeyFrames { RepeatBehavior = RepeatBehavior.Forever };
+            anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(0.0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(0.0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(PillLyricLeadIn))));
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(-dist, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(PillLyricLeadIn) + travel)));
+            anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(-dist,
+                KeyTime.FromTimeSpan(TimeSpan.FromSeconds(PillLyricLeadIn) + travel + TimeSpan.FromSeconds(PillLyricTailPause))));
+            PillLyricScroll.BeginAnimation(TranslateTransform.XProperty, anim);
+        }
+
+        /// <summary>进入/离开胶囊态时起停跑马灯，细条状态下不白耗动画帧。</summary>
+        private void SetPillLyricScrollRunning(bool running)
+        {
+            if (PillLyricScroll == null) return;
+
+            if (running)
+            {
+                UpdatePillLyricScroll();
+            }
+            else
+            {
+                PillLyricScroll.BeginAnimation(TranslateTransform.XProperty, null);
+            }
+        }
+
+        /// <summary>
+        /// 换曲 / 暂停提示期间：一级胶囊右侧的频谱整块换成状态指示，中间显示曲名。
         /// 提示结束后原样还原（歌词由 UpdateKaraokeHook / ApplyLyricTexts 重新驱动）。
         /// </summary>
         private void SyncUpNextContent()
@@ -323,7 +562,33 @@ namespace alpha_island
             bool up = UpNextActive;
             PillSpectrum.Visibility = up ? Visibility.Collapsed : Visibility.Visible;
             PillUpNext.Visibility = up ? Visibility.Visible : Visibility.Collapsed;
-            PillLyric.Text = up ? _upNextTitle : _pillLyricNormal;
+
+            if (up)
+            {
+                if (_upNextKind == "pause")
+                {
+                    PillUpNextIcon.Text = "\uE769"; // 暂停图标
+                    PillUpNextIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xAA, 0x00)); // 柔和橙黄
+                    PillUpNextText.Text = "已暂停";
+                }
+                else if (_upNextKind == "play")
+                {
+                    PillUpNextIcon.Text = "\uE768"; // 播放图标
+                    PillUpNextIcon.Foreground = (System.Windows.Media.Brush)FindResource("AccentCyan");
+                    PillUpNextText.Text = "正在播放";
+                }
+                else
+                {
+                    PillUpNextIcon.Text = "\uE893"; // 下一曲图标
+                    PillUpNextIcon.Foreground = (System.Windows.Media.Brush)FindResource("AccentCyan");
+                    PillUpNextText.Text = "接下来";
+                }
+                ApplyPillLyricText(_upNextTitle);
+            }
+            else
+            {
+                ApplyPillLyricText(_pillLyricNormal);
+            }
         }
 
         /// <summary>
@@ -335,11 +600,277 @@ namespace alpha_island
             if (!_options.UpNextEnabled) return;
 
             _upNextTitle = info.DisplayTitle;
+            _upNextKind = "upnext";
             _upNextUntil = DateTime.UtcNow.AddSeconds(_options.UpNextSeconds);
             _upNextShowing = true;
             // 已经展开说明用户正看着，只换内容、不动形态
             if (_state == IslandState.Bar) SetState(IslandState.Pill);
             else SyncUpNextContent();
+        }
+
+        /// <summary>
+        /// 暂停提示：音乐暂停时弹出一级胶囊，中间是曲名、右侧是"已暂停"，持续 UpNextSeconds 秒后自动收回。
+        /// </summary>
+        private void BeginPausePrompt(NowPlayingInfo info)
+        {
+            if (!_options.PauseNotifyEnabled) return;
+
+            _upNextTitle = info.DisplayTitle;
+            _upNextKind = "pause";
+            _upNextUntil = DateTime.UtcNow.AddSeconds(_options.UpNextSeconds);
+            _upNextShowing = true;
+            if (_state == IslandState.Bar) SetState(IslandState.Pill);
+            else SyncUpNextContent();
+        }
+
+        /// <summary>
+        /// 恢复播放提示：音乐继续播放时弹出一级胶囊，中间是曲名、右侧是"正在播放"，持续 UpNextSeconds 秒后自动收回。
+        /// </summary>
+        private void BeginPlayPrompt(NowPlayingInfo info)
+        {
+            if (!_options.PlayNotifyEnabled) return;
+
+            _upNextTitle = info.DisplayTitle;
+            _upNextKind = "play";
+            _upNextUntil = DateTime.UtcNow.AddSeconds(_options.UpNextSeconds);
+            _upNextShowing = true;
+            if (_state == IslandState.Bar) SetState(IslandState.Pill);
+            else SyncUpNextContent();
+        }
+
+        // ================= 启动问候 =================
+
+        private void ShowStartupGreeting()
+        {
+            if (_exiting || !_options.GreetingEnabled) return;
+
+            _greetingShowing = true;
+            _greetingUntil = DateTime.UtcNow.AddSeconds(_options.GreetingSeconds);
+            GreetingText.Text = string.IsNullOrWhiteSpace(_options.GreetingText) ? "欢迎回来" : _options.GreetingText;
+
+            if (_state == IslandState.Bar)
+            {
+                SetState(IslandState.Pill);
+            }
+            else
+            {
+                SyncGreetingContent();
+            }
+        }
+
+        private void SyncGreetingContent()
+        {
+            bool show = _greetingShowing && GreetingActive && _state == IslandState.Pill;
+            GreetingLayer.Opacity = show ? 1 : 0;
+            GreetingLayer.IsHitTestVisible = show;
+            if (show)
+            {
+                PillLayer.Opacity = 0;
+                PillLayer.IsHitTestVisible = false;
+                BtNotifyLayer.Opacity = 0;
+                BtNotifyLayer.IsHitTestVisible = false;
+            }
+            else
+            {
+                _greetingShowing = false;
+                if (_state == IslandState.Pill && !_btNotifying)
+                {
+                    PillLayer.Opacity = 1;
+                    PillLayer.IsHitTestVisible = true;
+                }
+            }
+        }
+
+        // ================= 音量调节 =================
+
+        private void OnVolumeChanged(object? sender, VolumeInfo info)
+        {
+            if (_exiting || !_options.VolumeNotifyEnabled) return;
+            ShowVolumeNotify(info.Percent, info.IsMuted);
+        }
+
+        private void ShowVolumeNotify(int percent, bool isMuted)
+        {
+            _volumeNotifying = true;
+            _volumeNotifyUntil = DateTime.UtcNow.AddSeconds(_options.VolumeNotifySeconds);
+
+            // 更新自适应音量图标及微光颜色
+            if (isMuted || percent == 0)
+            {
+                VolumeIcon.Text = "\uE74F"; // 静音图标
+                VolumeIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x55, 0x55));
+                VolumeIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0xFF, 0x55, 0x55));
+                VolumeIconContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0x55, 0x55));
+                VolumeProgressFill.Background = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+            }
+            else
+            {
+                if (percent < 33) VolumeIcon.Text = "\uE993"; // 音量低
+                else if (percent < 66) VolumeIcon.Text = "\uE994"; // 音量中
+                else VolumeIcon.Text = "\uE995"; // 音量高
+
+                var cyan = (System.Windows.Media.Brush)FindResource("AccentCyan");
+                VolumeIcon.Foreground = cyan;
+                VolumeIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x00, 0xE5, 0xFF));
+                VolumeIconContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x00, 0xE5, 0xFF));
+                VolumeProgressFill.Background = cyan;
+            }
+
+            VolumeText.Text = isMuted ? "静音" : $"{percent}%";
+
+            // 动态计算进度条填充宽度 (根据实际槽体宽度，缺省取 180px)
+            double trackWidth = VolumeTrackContainer.ActualWidth > 0 ? VolumeTrackContainer.ActualWidth : 180.0;
+            VolumeProgressFill.Width = Math.Clamp((trackWidth * percent) / 100.0, 0, trackWidth);
+
+            if (_state == IslandState.Bar)
+            {
+                SetState(IslandState.Pill);
+            }
+            else
+            {
+                SyncVolumeContent();
+            }
+        }
+
+        private void SyncVolumeContent()
+        {
+            bool showVol = _volumeNotifying && VolumeNotifyActive && _state == IslandState.Pill;
+            VolumeNotifyLayer.Opacity = showVol ? 1 : 0;
+            VolumeNotifyLayer.IsHitTestVisible = showVol;
+            if (showVol)
+            {
+                PillLayer.Opacity = 0;
+                PillLayer.IsHitTestVisible = false;
+                GreetingLayer.Opacity = 0;
+                GreetingLayer.IsHitTestVisible = false;
+                BtNotifyLayer.Opacity = 0;
+                BtNotifyLayer.IsHitTestVisible = false;
+            }
+            else
+            {
+                _volumeNotifying = false;
+                if (_state == IslandState.Pill && !_greetingShowing && !_btNotifying)
+                {
+                    PillLayer.Opacity = 1;
+                    PillLayer.IsHitTestVisible = true;
+                }
+            }
+        }
+
+        // ================= 蓝牙通知 =================
+
+        private void OnBluetoothDeviceConnected(object? sender, BluetoothDeviceInfo info)
+        {
+            if (_exiting || !_options.BluetoothNotifyEnabled) return;
+            ShowBluetoothNotify(info);
+        }
+
+        private void OnBluetoothBatteryUpdated(object? sender, BluetoothDeviceInfo info)
+        {
+            if (_btNotifying && BtNotifyActive)
+            {
+                if (info.BatteryPercent.HasValue)
+                {
+                    BtBatteryText.Text = $"{info.BatteryPercent.Value}%";
+                }
+            }
+        }
+
+        /// <summary>
+        /// 蓝牙设备连接时弹出一级胶囊，显示设备名称、分类专属图标/3D模型和电量，一段时间后自动收回。
+        /// </summary>
+        private void ShowBluetoothNotify(BluetoothDeviceInfo info)
+        {
+            _btNotifying = true;
+            _btNotifyUntil = DateTime.UtcNow.AddSeconds(_options.BluetoothNotifySeconds);
+
+            BtDeviceName.Text = info.Name;
+            BtBatteryText.Text = info.BatteryPercent.HasValue ? $"{info.BatteryPercent.Value}%" : "--";
+
+            // 根据设备分类切换 3D 旋转耳机模型或专属硬件矢量图标
+            switch (info.Category)
+            {
+                case BluetoothDeviceCategory.Audio:
+                    BtDeviceModel.Visibility = Visibility.Visible;
+                    BtDeviceModel.IsRotating = true;
+                    BtDeviceIcon.Visibility = Visibility.Collapsed;
+                    BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+                    break;
+                case BluetoothDeviceCategory.Keyboard:
+                    BtDeviceModel.Visibility = Visibility.Collapsed;
+                    BtDeviceModel.IsRotating = false;
+                    BtDeviceIcon.Visibility = Visibility.Visible;
+                    BtDeviceIcon.Text = "\uE765"; // 键盘
+                    BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x4A, 0x90, 0xE2));
+                    BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x4A, 0x90, 0xE2));
+                    break;
+                case BluetoothDeviceCategory.Mouse:
+                    BtDeviceModel.Visibility = Visibility.Collapsed;
+                    BtDeviceModel.IsRotating = false;
+                    BtDeviceIcon.Visibility = Visibility.Visible;
+                    BtDeviceIcon.Text = "\uE962"; // 鼠标
+                    BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x50, 0xE3, 0xC2));
+                    BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x50, 0xE3, 0xC2));
+                    break;
+                case BluetoothDeviceCategory.Gamepad:
+                    BtDeviceModel.Visibility = Visibility.Collapsed;
+                    BtDeviceModel.IsRotating = false;
+                    BtDeviceIcon.Visibility = Visibility.Visible;
+                    BtDeviceIcon.Text = "\uE7FC"; // 游戏手柄
+                    BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xD0, 0x66, 0xFF));
+                    BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0xD0, 0x66, 0xFF));
+                    break;
+                case BluetoothDeviceCategory.Input:
+                    BtDeviceModel.Visibility = Visibility.Collapsed;
+                    BtDeviceModel.IsRotating = false;
+                    BtDeviceIcon.Visibility = Visibility.Visible;
+                    BtDeviceIcon.Text = "\uE92C"; // 输入设备
+                    BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x50, 0xE3, 0xC2));
+                    BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x50, 0xE3, 0xC2));
+                    break;
+                default:
+                    BtDeviceModel.Visibility = Visibility.Collapsed;
+                    BtDeviceModel.IsRotating = false;
+                    BtDeviceIcon.Visibility = Visibility.Visible;
+                    BtDeviceIcon.Text = "\uE702"; // 蓝牙通用图标
+                    BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD7));
+                    BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x00, 0x78, 0xD7));
+                    break;
+            }
+
+            if (_state == IslandState.Bar)
+            {
+                SetState(IslandState.Pill);
+            }
+            else
+            {
+                SyncBtNotifyContent();
+            }
+        }
+
+        /// <summary>蓝牙通知期间隐藏 PillLayer/GreetingLayer、显示 BtNotifyLayer；结束后反转。</summary>
+        private void SyncBtNotifyContent()
+        {
+            bool showBt = _btNotifying && BtNotifyActive && _state == IslandState.Pill;
+            BtNotifyLayer.Opacity = showBt ? 1 : 0;
+            BtNotifyLayer.IsHitTestVisible = showBt;
+            if (showBt)
+            {
+                PillLayer.Opacity = 0;
+                PillLayer.IsHitTestVisible = false;
+                GreetingLayer.Opacity = 0;
+                GreetingLayer.IsHitTestVisible = false;
+            }
+            else
+            {
+                BtDeviceModel.IsRotating = false;
+                _btNotifying = false;
+                if (_state == IslandState.Pill && !_greetingShowing)
+                {
+                    PillLayer.Opacity = 1;
+                    PillLayer.IsHitTestVisible = true;
+                }
+            }
         }
 
         /// <summary>
@@ -455,8 +986,19 @@ namespace alpha_island
             SyncBackdrop();
         }
 
+        /// <summary>
+        /// 只在调试定态里用（把某一层瞬间按到 0 / 1）。ms &lt;= 0 表示直接落值。
+        /// 正常形态切换一律走 ApplyReveal —— 那边的透明度由主弹簧进度驱动，不生成动画。
+        /// </summary>
         private static void FadeLayer(UIElement element, double to, int ms, int beginTime = 0)
         {
+            if (ms <= 0)
+            {
+                element.BeginAnimation(OpacityProperty, null);
+                element.Opacity = to;
+                return;
+            }
+
             element.BeginAnimation(OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms))
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
@@ -468,7 +1010,8 @@ namespace alpha_island
         private void SyncVisualizers()
         {
             bool on = _options.VisualizerEnabled;
-            SetActive(PillSpectrum, on && _state == IslandState.Pill && !UpNextActive);
+            bool pillActive = on && _state == IslandState.Pill && !UpNextActive && !(_btNotifying && BtNotifyActive);
+            SetActive(PillSpectrum, pillActive);
             SetActive(CardWave, on && _state == IslandState.Card && _options.ShowWaveLayer);
         }
 
@@ -487,16 +1030,19 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 收回细条。保留用户定稿的三段式编排：
-        ///   阶段1 卡片/胶囊 → 46px 正圆（Siri 球滑到球心并淡入）
-        ///   阶段2 只做位移，正圆吸到屏幕顶部（保持正圆，绝不变形）
-        ///   阶段3 正圆摊平成 130x10 细条
-        /// 每一段回调开头都检查目标状态，被用户中途打断就整体放弃。
+        /// 收回细条。一条主弹簧跑完全程，途中强制经过"正圆"这个路径点：
+        ///   卡片/胶囊 --(塌向球心)--> 46px 正圆 --(吸顶 + 摊平)--> 130x10 细条
+        /// 编排和之前用户定稿的三段式一样，但不再拆成三次 MorphTo ——
+        /// 每次 MorphTo 都会 Stop() 上一条弹簧，速度在接缝处硬归零，观感是"三段机械动画串起来"。
+        /// 现在只有一条弹簧，路径点在两端用 smoothstep 收速度，所以"顿在球上"是速度真的到 0，
+        /// 而不是两个动画拼接出来的人为停顿。
+        /// 内容层与封面球都不走自己的时间轴，全部挂在主弹簧进度上（见 ApplyReveal）。
         /// </summary>
         private void CollapseToBar()
         {
             if (_exiting) return;
 
+            IslandState prev = _state;
             _state = IslandState.Bar;
             _hoverOutTicks = 0;
 
@@ -505,9 +1051,17 @@ namespace alpha_island
             _upNextShowing = false;
             SyncUpNextContent();
 
-            FadeLayer(PillLayer, 0, 70);
-            FadeLayer(CardLayer, 0, 70);
-            FadeLayer(CardWave, 0, 70);
+            // 蓝牙通知也随收回重置
+            _btNotifyUntil = DateTime.MinValue;
+            _btNotifying = false;
+            BtDeviceModel.IsRotating = false;
+            BtNotifyLayer.IsHitTestVisible = false;
+
+            _revealFrom = prev;
+            _revealTo = IslandState.Bar;
+            _reveal = 0.0;
+            ApplyReveal();
+
             PillLayer.IsHitTestVisible = false;
             CardLayer.IsHitTestVisible = false;
             SetActive(PillSpectrum, false);
@@ -516,39 +1070,108 @@ namespace alpha_island
             _backdrop?.SetVisible(false);
 
             var animator = _animator;
-            if (animator == null) return;
-
-            // Siri 球：从左侧滑到球心并淡入
-            SiriOrbTranslate.X = -40;
-            SiriOrb.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160))
+            if (animator == null)
             {
-                BeginTime = TimeSpan.FromMilliseconds(110)
-            });
-            SiriOrbTranslate.BeginAnimation(TranslateTransform.XProperty,
-                new DoubleAnimation(-40, 0, TimeSpan.FromMilliseconds(160))
-                {
-                    BeginTime = TimeSpan.FromMilliseconds(110),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-                });
+                _reveal = 1.0;
+                ApplyReveal();
+                return;
+            }
 
             const double circle = IslandMetrics.CircleSize;
-            var stage1 = new IslandGeometry(circle, circle, 18, new CornerRadius(circle / 2));
-            var stage2 = new IslandGeometry(circle, circle, 0, new CornerRadius(circle / 2));
+            var via = new IslandGeometry(circle, circle, IslandMetrics.CardTop,
+                new CornerRadius(circle / 2));
 
-            animator.MorphTo(stage1, _options.GelAnimation, IslandMetrics.CollapseStage1,
-                new CubicEase { EasingMode = EasingMode.EaseInOut }, () =>
-                {
-                    if (_state != IslandState.Bar) return;
-                    animator.MorphTo(stage2, false, IslandMetrics.CollapseStage2,
-                        new CubicEase { EasingMode = EasingMode.EaseIn }, () =>
-                        {
-                            if (_state != IslandState.Bar) return;
-                            SiriOrb.BeginAnimation(OpacityProperty,
-                                new DoubleAnimation(0, TimeSpan.FromMilliseconds(120)));
-                            animator.MorphTo(BarGeometry, false, IslandMetrics.CollapseStage3,
-                                new CubicEase { EasingMode = EasingMode.EaseOut });
-                        });
-                });
+            animator.MorphTo(BarGeometry, _options.GelAnimation, IslandMetrics.CollapseDuration,
+                new CubicEase { EasingMode = EasingMode.EaseInOut },
+                via: via,
+                viaAt: IslandMetrics.CollapseViaAt,
+                followLag: IslandMetrics.CollapseFollowLag);
+        }
+
+        // ================= 内容层的显露（挂在主弹簧进度上，没有自己的时间轴） =================
+
+        /// <summary>形变进度 0..1（含过冲），由 IslandAnimator.ProgressHook 每帧回传。</summary>
+        private double _reveal = 1.0;
+        private IslandState _revealFrom = IslandState.Bar;
+        private IslandState _revealTo = IslandState.Bar;
+
+        private void OnMorphProgress(double t)
+        {
+            _reveal = t;
+            ApplyReveal();
+        }
+
+        /// <summary>
+        /// 把内容层透明度和封面球推到"当前形变进度该有的样子"。
+        /// 刻意不生成任何 Opacity 动画：一旦有独立时间轴，它就会和形变错相位，
+        /// 观感上变成"盖在形变上的淡入淡出"，而不是材质本身在开合。
+        /// </summary>
+        private void ApplyReveal()
+        {
+            double t = _reveal;
+            double span = IslandMetrics.ContentRevealEnd - IslandMetrics.ContentRevealStart;
+            double content = span <= 0 ? 1.0 : Math.Clamp((t - IslandMetrics.ContentRevealStart) / span, 0.0, 1.0);
+
+            bool showVol = _volumeNotifying && VolumeNotifyActive;
+            bool showGreeting = _greetingShowing && GreetingActive;
+            bool showBt = _btNotifying && BtNotifyActive;
+
+            if (showVol)
+            {
+                RevealLayer(VolumeNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                PillLayer.Opacity = 0;
+                BtNotifyLayer.Opacity = 0;
+                GreetingLayer.Opacity = 0;
+            }
+            else if (showGreeting)
+            {
+                RevealLayer(GreetingLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                PillLayer.Opacity = 0;
+                BtNotifyLayer.Opacity = 0;
+                VolumeNotifyLayer.Opacity = 0;
+            }
+            else if (showBt)
+            {
+                RevealLayer(BtNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                PillLayer.Opacity = 0;
+                GreetingLayer.Opacity = 0;
+                VolumeNotifyLayer.Opacity = 0;
+            }
+            else
+            {
+                RevealLayer(PillLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                BtNotifyLayer.Opacity = 0;
+                GreetingLayer.Opacity = 0;
+                VolumeNotifyLayer.Opacity = 0;
+            }
+
+            RevealLayer(CardLayer, _revealFrom == IslandState.Card, _revealTo == IslandState.Card, content);
+            RevealLayer(CardWave, _revealFrom == IslandState.Card, _revealTo == IslandState.Card, content);
+
+            bool cardVisible = (_revealFrom == IslandState.Card || _revealTo == IslandState.Card) && CardLayer.Opacity > 0.001;
+            CardLayer.Visibility = cardVisible ? Visibility.Visible : Visibility.Collapsed;
+            if (_revealTo != IslandState.Card)
+            {
+                Keyboard.ClearFocus();
+            }
+
+            // 收回途中那颗"封面球"。显形窗口写死在主弹簧进度上，且起点晚于内容层退场结束点，
+            // 所以不会再出现"胶囊里的封面 + 球上的封面"两个专辑图标同时可见。
+            if (_revealTo == IslandState.Bar && _revealFrom != IslandState.Bar)
+            {
+                double riseSpan = IslandMetrics.OrbRevealEnd - IslandMetrics.OrbRevealStart;
+                double rise = riseSpan <= 0 ? 1.0
+                    : Math.Clamp((t - IslandMetrics.OrbRevealStart) / riseSpan, 0.0, 1.0);
+                double fall = Math.Clamp((IslandMetrics.OrbFadeStart - t) / IslandMetrics.OrbFadeSpan, 0.0, 1.0);
+
+                SiriOrb.Opacity = rise * fall;
+                SiriOrbTranslate.X = -40.0 * (1.0 - rise);
+            }
+        }
+
+        private static void RevealLayer(UIElement element, bool isFrom, bool isTo, double content)
+        {
+            element.Opacity = isTo ? (isFrom ? 1.0 : content) : (isFrom ? 1.0 - content : 0.0);
         }
 
         // ================= 悬停 / 点击 =================
@@ -572,10 +1195,12 @@ namespace alpha_island
         private void HoverTimer_Tick(object? sender, EventArgs e)
         {
             if (_exiting) return;
-            // 调试定态：不参与悬停收回（upnext 例外 —— 它要走真实的提示超时收回）
-            if (_forcedState != null && !_forcedState.Equals("upnext", StringComparison.OrdinalIgnoreCase)) return;
+            // 调试定态：不参与悬停收回（upnext / bluetooth 例外 —— 它要走真实的提示超时收回）
+            if (_forcedState != null
+                && !_forcedState.Equals("upnext", StringComparison.OrdinalIgnoreCase)
+                && !_forcedState.Equals("bluetooth", StringComparison.OrdinalIgnoreCase)) return;
 
-            // 换曲提示期间不收回，等计时走完再回到正常判定
+            // 换曲 / 暂停提示期间不收回，等计时走完再回到正常判定
             if (UpNextActive && _state == IslandState.Pill)
             {
                 _hoverOutTicks = 0;
@@ -587,6 +1212,69 @@ namespace alpha_island
                 _upNextShowing = false;
                 SyncUpNextContent();
                 SyncVisualizers();
+            }
+
+            // 启动问候期间不收回，等计时走完自动收回
+            if (GreetingActive && _state == IslandState.Pill)
+            {
+                _hoverOutTicks = 0;
+                return;
+            }
+            if (_greetingShowing)
+            {
+                _greetingShowing = false;
+                SyncGreetingContent();
+                SyncVisualizers();
+                if (_state == IslandState.Pill && !IsCursorInHotZone())
+                {
+                    if (!_options.KeepCompactWhilePlaying || _smtc?.Current?.IsPlaying != true)
+                    {
+                        CollapseToBar();
+                        return;
+                    }
+                }
+            }
+
+            // 蓝牙通知期间同样不收回，等计时走完自动收回（或切回正常胶囊）
+            if (BtNotifyActive && _state == IslandState.Pill)
+            {
+                _hoverOutTicks = 0;
+                return;
+            }
+            if (_btNotifying)
+            {
+                _btNotifying = false;
+                SyncBtNotifyContent();
+                SyncVisualizers();
+                if (_state == IslandState.Pill && !IsCursorInHotZone())
+                {
+                    if (!_options.KeepCompactWhilePlaying || _smtc?.Current?.IsPlaying != true)
+                    {
+                        CollapseToBar();
+                        return;
+                    }
+                }
+            }
+
+            // 音量调节提示期间同样不收回，等计时走完自动收回（或切回正常胶囊）
+            if (VolumeNotifyActive && _state == IslandState.Pill)
+            {
+                _hoverOutTicks = 0;
+                return;
+            }
+            if (_volumeNotifying)
+            {
+                _volumeNotifying = false;
+                SyncVolumeContent();
+                SyncVisualizers();
+                if (_state == IslandState.Pill && !IsCursorInHotZone())
+                {
+                    if (!_options.KeepCompactWhilePlaying || _smtc?.Current?.IsPlaying != true)
+                    {
+                        CollapseToBar();
+                        return;
+                    }
+                }
             }
 
             if (IsCursorInHotZone())
@@ -665,15 +1353,21 @@ namespace alpha_island
 
         private void OnNowPlayingChanged(object? sender, NowPlayingInfo? info)
         {
-            if (info == null || !info.HasMedia)
+            if (!Dispatcher.CheckAccess())
             {
-                // SMTC 在换曲瞬间会短暂报"无会话"，立刻清空会闪；延迟 1.2s 再确认。
-                _mediaLostTimer.Stop();
-                _mediaLostTimer.Start();
+                Dispatcher.BeginInvoke(new Action(() => OnNowPlayingChanged(sender, info)));
                 return;
             }
 
-            _mediaLostTimer.Stop();
+            if (info == null || !info.HasMedia)
+            {
+                // SMTC 在换曲瞬间会短暂报"无会话"，立刻清空会闪；延迟 1.2s 再确认。
+                _mediaLostTimer?.Stop();
+                _mediaLostTimer?.Start();
+                return;
+            }
+
+            _mediaLostTimer?.Stop();
             ApplyMedia(info);
         }
 
@@ -694,6 +1388,12 @@ namespace alpha_island
             ProgressTrack.Cursor = info.CanSeek ? Cursors.Hand : Cursors.Arrow;
             ProgressTrack.Opacity = info.CanSeek ? 1.0 : 0.6;
 
+            if (!info.IsPlaying)
+            {
+                PillSpectrum.Clear();
+                CardWave.Clear();
+            }
+
             if (_lyricsDoc == null) SetPillLyric(info.DisplayTitle);
 
             string title = info.Title ?? "";
@@ -711,7 +1411,18 @@ namespace alpha_island
                 // _sawMedia 保证只有"真的换了一首"才弹，开机第一首不弹。
                 if (info.IsPlaying && _sawMedia) BeginUpNext(info);
             }
+            else if (_sawMedia && _lastIsPlaying == true && !info.IsPlaying && _options.PauseNotifyEnabled)
+            {
+                // 播放中暂停提示：与换曲提示形态一致，中间为当前曲名、右侧为“已暂停”
+                BeginPausePrompt(info);
+            }
+            else if (_sawMedia && _lastIsPlaying != true && info.IsPlaying && _options.PlayNotifyEnabled)
+            {
+                // 暂停后恢复播放提示：中间为当前曲名、右侧为“正在播放”
+                BeginPlayPrompt(info);
+            }
 
+            _lastIsPlaying = info.IsPlaying;
             _sawMedia = true;
         }
 
@@ -863,7 +1574,7 @@ namespace alpha_island
 
         private void UpdateKaraokeHook()
         {
-            bool should = _state == IslandState.Card
+            bool should = (_state == IslandState.Card || _state == IslandState.Pill)
                           && _options.LyricsEnabled
                           && _lyricsDoc != null
                           && _lyricsDoc.HasLyrics;
@@ -896,6 +1607,11 @@ namespace alpha_island
             if (lines.Count == 0) return;
 
             TimeSpan position = media.EstimatedPosition;
+            if (_options.LyricsOffsetMs != 0)
+            {
+                position += TimeSpan.FromMilliseconds(_options.LyricsOffsetMs);
+                if (position < TimeSpan.Zero) position = TimeSpan.Zero;
+            }
             int index = Math.Clamp(doc.IndexAt(position), 0, lines.Count - 1);
 
             if (index != _lyricIndex)
@@ -903,6 +1619,8 @@ namespace alpha_island
                 _lyricIndex = index;
                 ApplyLyricTexts(lines, index);
             }
+
+            if (_state != IslandState.Card) return;
 
             var line = lines[index];
             double progress = WordProgress(line.Time.TotalSeconds, line.WordEnds, line.WordChars,
@@ -988,6 +1706,9 @@ namespace alpha_island
         {
             if (bands == null || bands.Length == 0 || _exiting) return;
 
+            // 音乐未处于播放状态时，不将系统环境声音灌入频谱，保持归零静止
+            if (_smtc?.Current?.IsPlaying != true) return;
+
             switch (_state)
             {
                 case IslandState.Pill:
@@ -1004,6 +1725,11 @@ namespace alpha_island
         private void ProgressTimer_Tick(object? sender, EventArgs e)
         {
             var media = _smtc;
+            if (media != null)
+            {
+                media.CheckFastPlaybackState();
+            }
+
             var info = media?.Current;
             if (media == null || info == null || !info.HasMedia) return;
 
@@ -1019,14 +1745,20 @@ namespace alpha_island
             double width = ProgressTrack.ActualWidth;
             ProgressFill.Width = Math.Max(0, width * ratio);
 
-            // 胶囊态没有卡拉OK 钩子，这里补上当前歌词
-            if (_state == IslandState.Pill)
+            // 兜底：若未挂上高频钩子，在此更新胶囊态当前歌词
+            if (!_karaokeHooked && _state == IslandState.Pill)
             {
                 var doc = _lyricsDoc;
                 if (doc != null && doc.HasLyrics)
                 {
+                    var lyricPos = position;
+                    if (_options.LyricsOffsetMs != 0)
+                    {
+                        lyricPos += TimeSpan.FromMilliseconds(_options.LyricsOffsetMs);
+                        if (lyricPos < TimeSpan.Zero) lyricPos = TimeSpan.Zero;
+                    }
                     var lines = doc.Lines;
-                    int index = Math.Clamp(doc.IndexAt(position), 0, lines.Count - 1);
+                    int index = Math.Clamp(doc.IndexAt(lyricPos), 0, lines.Count - 1);
                     string text = lines[index].Text;
                     SetPillLyric(string.IsNullOrWhiteSpace(text) ? "♪" : text);
                 }
@@ -1132,6 +1864,45 @@ namespace alpha_island
                 if (_lyricsDoc == null && current != null && current.HasMedia) StartLyricsFetch(current);
             }
 
+            if (_options.BluetoothNotifyEnabled && _bluetooth == null)
+            {
+                try
+                {
+                    _bluetooth = new BluetoothService(Dispatcher);
+                    _bluetooth.DeviceConnected += OnBluetoothDeviceConnected;
+                    _bluetooth.BatteryUpdated += OnBluetoothBatteryUpdated;
+                    _bluetooth.Start();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[Bluetooth] 启动失败: " + ex.Message);
+                }
+            }
+            else if (!_options.BluetoothNotifyEnabled && _bluetooth != null)
+            {
+                _bluetooth.Dispose();
+                _bluetooth = null;
+            }
+
+            if (_options.VolumeNotifyEnabled && _volumeService == null)
+            {
+                try
+                {
+                    _volumeService = new VolumeService(Dispatcher);
+                    _volumeService.VolumeChanged += OnVolumeChanged;
+                    _volumeService.Start();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[Volume] 启动失败: " + ex.Message);
+                }
+            }
+            else if (!_options.VolumeNotifyEnabled && _volumeService != null)
+            {
+                _volumeService.Dispose();
+                _volumeService = null;
+            }
+
             if (_state == IslandState.Card) SetState(IslandState.Card, force: true);
         }
 
@@ -1144,15 +1915,21 @@ namespace alpha_island
 
             try
             {
-                _hoverTimer.Stop();
-                _progressTimer.Stop();
-                _mediaLostTimer.Stop();
+                _hoverTimer?.Stop();
+                _progressTimer?.Stop();
+                _mediaLostTimer?.Stop();
 
                 StopKaraoke();
                 _animator?.Stop();
                 CompositionTarget.Rendering -= OnBackdropTick;
                 _backdrop?.Dispose();
                 _backdrop = null;
+
+                _bluetooth?.Dispose();
+                _bluetooth = null;
+
+                _volumeService?.Dispose();
+                _volumeService = null;
 
                 _lyricsCts?.Cancel();
                 _lyricsCts?.Dispose();

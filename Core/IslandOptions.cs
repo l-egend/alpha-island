@@ -37,6 +37,8 @@ namespace alpha_island.Core
         // ---------- 歌词 ----------
         public bool LyricsEnabled { get; set; } = true;
         public bool ShowTranslation { get; set; } = true;
+        /// <summary>歌词时间微调偏移量（毫秒），用于补偿蓝牙耳机延迟或系统音频缓冲，-2000~+2000。</summary>
+        public int LyricsOffsetMs { get; set; } = 0;
 
         // ---------- 行为 ----------
         /// <summary>关闭时：仅在换曲瞬间弹一下胶囊，之后自动收起。</summary>
@@ -46,6 +48,30 @@ namespace alpha_island.Core
         public bool UpNextEnabled { get; set; } = true;
         /// <summary>换曲提示停留秒数，2~30。</summary>
         public int UpNextSeconds { get; set; } = 5;
+        /// <summary>音乐暂停时是否弹出一级胶囊提示。</summary>
+        public bool PauseNotifyEnabled { get; set; } = true;
+        /// <summary>音乐恢复播放时是否弹出一级胶囊提示。</summary>
+        public bool PlayNotifyEnabled { get; set; } = true;
+
+        // ---------- 音量调节 ----------
+        /// <summary>调节系统音量时是否弹出一级胶囊音量条。</summary>
+        public bool VolumeNotifyEnabled { get; set; } = true;
+        /// <summary>音量调节条停留秒数，1~5。</summary>
+        public int VolumeNotifySeconds { get; set; } = 2;
+
+        // ---------- 启动问候 ----------
+        /// <summary>启动时是否弹出一级胶囊展示欢迎问候语。</summary>
+        public bool GreetingEnabled { get; set; } = true;
+        /// <summary>欢迎问候语文本，默认“欢迎回来”。</summary>
+        public string GreetingText { get; set; } = "欢迎回来";
+        /// <summary>问候语停留秒数，2~10。</summary>
+        public int GreetingSeconds { get; set; } = 4;
+
+        // ---------- 蓝牙 ----------
+        /// <summary>蓝牙设备连接时是否弹出通知。</summary>
+        public bool BluetoothNotifyEnabled { get; set; } = true;
+        /// <summary>蓝牙通知停留秒数，2~30。</summary>
+        public int BluetoothNotifySeconds { get; set; } = 5;
 
         public IslandOptions Clone() => (IslandOptions)MemberwiseClone();
 
@@ -62,9 +88,19 @@ namespace alpha_island.Core
             Sensitivity = other.Sensitivity;
             LyricsEnabled = other.LyricsEnabled;
             ShowTranslation = other.ShowTranslation;
+            LyricsOffsetMs = other.LyricsOffsetMs;
             KeepCompactWhilePlaying = other.KeepCompactWhilePlaying;
             UpNextEnabled = other.UpNextEnabled;
             UpNextSeconds = other.UpNextSeconds;
+            PauseNotifyEnabled = other.PauseNotifyEnabled;
+            PlayNotifyEnabled = other.PlayNotifyEnabled;
+            VolumeNotifyEnabled = other.VolumeNotifyEnabled;
+            VolumeNotifySeconds = other.VolumeNotifySeconds;
+            GreetingEnabled = other.GreetingEnabled;
+            GreetingText = other.GreetingText;
+            GreetingSeconds = other.GreetingSeconds;
+            BluetoothNotifyEnabled = other.BluetoothNotifyEnabled;
+            BluetoothNotifySeconds = other.BluetoothNotifySeconds;
         }
 
         // ================= 持久化 =================
@@ -113,6 +149,7 @@ namespace alpha_island.Core
             GlassOpacity = Math.Clamp(GlassOpacity, 0.2, 0.98);
             Sensitivity = Math.Clamp(Sensitivity, 0.3, 3.0);
             UpNextSeconds = Math.Clamp(UpNextSeconds, 2, 30);
+            BluetoothNotifySeconds = Math.Clamp(BluetoothNotifySeconds, 2, 30);
             return this;
         }
     }

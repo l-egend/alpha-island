@@ -66,8 +66,9 @@
                                          IsHitTestVisible="False"
                                          Opacity="0"
                                          PointCount="56"
-                                         Amplitude="1.0"
-                                         BassBoost="0.55" Smoothing="0.35"
+                                         Amplitude="1.25"
+                                         BassBoost="0.68" Smoothing="0.35"
+                                         Sensitivity="2.0"
                                          FillOpacity="0.50"
                                          GlowRadius="14" GlowOpacity="0.55"
                                          IsActive="False">
@@ -135,30 +136,44 @@
                         </Border.Background>
                     </Border>
 
-                    <TextBlock x:Name="PillLyric" Grid.Column="1"
-                               Margin="10,0" VerticalAlignment="Center"
-                               FontSize="13" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimary}"
-                               TextAlignment="Center"
-                               TextTrimming="CharacterEllipsis"
-                               Text="Alpha Island"/>
+                    <!-- 中间歌词：放得下就居中静止，放不下就走马灯横向滚动。
+                         宽度实测与动画由 MainWindow.UpdatePillLyricScroll() 负责。 -->
+                    <Grid x:Name="PillLyricHost" Grid.Column="1" Margin="10,0"
+                          ClipToBounds="True" VerticalAlignment="Center"
+                          SizeChanged="PillLyricHost_SizeChanged">
+                        <StackPanel x:Name="PillLyricTrack" Orientation="Horizontal"
+                                    HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <StackPanel.RenderTransform>
+                                <TranslateTransform x:Name="PillLyricScroll"/>
+                            </StackPanel.RenderTransform>
+                            <TextBlock x:Name="PillLyric"
+                                       FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       Text="Alpha Island"/>
+                            <!-- 跑马灯的第二份：接在第一份后面，形成无缝循环 -->
+                            <TextBlock x:Name="PillLyricEcho"
+                                       FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       Margin="56,0,0,0" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Grid>
 
-                    <!-- 一级胶囊右侧：5 根等宽圆角柱，两端恒定是半圆（胶囊形）。
+                    <!-- 一级胶囊右侧：iOS 风格的细柱频谱（柱体恒定胶囊形，两端半圆）。
                          颜色由 MainWindow.ApplyArtwork 从专辑封面主色调注入，半透叠在黑色底上。 -->
-                    <Grid Grid.Column="2" Width="74" Height="26">
+                    <Grid Grid.Column="2" Width="96" Height="26">
                         <controls:SpectrumVisualizer x:Name="PillSpectrum"
-                                                     Width="74" Height="26"
+                                                     Width="96" Height="26"
                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                     BarCount="5" BarGap="5"
-                                                     MinBarHeight="7" CenterEmphasis="0.34"
-                                                     GlowRadius="3" GlowOpacity="0.30"
+                                                     BarCount="19" BarGap="2"
+                                                     MinBarHeight="2.5" CenterEmphasis="0.40"
+                                                     GlowRadius="1.6" GlowOpacity="0.26"
                                                      IsActive="False"/>
 
-                        <!-- 换曲提示：右侧的"接下来"指示。排版刻意与频谱同宽同高，切换时不会推动中间歌词。 -->
+                        <!-- 换曲 / 暂停提示：右侧状态指示 -->
                         <StackPanel x:Name="PillUpNext" Orientation="Horizontal"
                                     HorizontalAlignment="Center" VerticalAlignment="Center"
                                     Visibility="Collapsed" IsHitTestVisible="False">
-                            <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                            <TextBlock x:Name="PillUpNextIcon" Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                                        VerticalAlignment="Center"
                                        Foreground="{StaticResource AccentCyan}"/>
                             <TextBlock x:Name="PillUpNextText" Text="接下来"
@@ -169,9 +184,131 @@
                     </Grid>
                 </Grid>
 
+                <!-- ================= 启动问候层（与 PillLayer 同级同尺寸） ================= -->
+                <Grid x:Name="GreetingLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧：问候流光徽标 -->
+                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="16"
+                            Background="#2200E5FF" BorderBrush="#3300E5FF" BorderThickness="1">
+                        <TextBlock Text="&#xE735;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#00E5FF"/>
+                    </Border>
+
+                    <!-- 中间：欢迎文字 -->
+                    <TextBlock x:Name="GreetingText" Grid.Column="1"
+                               Margin="12,0" VerticalAlignment="Center"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}"
+                               Text="欢迎回来"/>
+
+                    <!-- 右侧：品牌徽标 -->
+                    <Border Grid.Column="2" Padding="8,4" CornerRadius="10"
+                            Background="#1AFFFFFF" VerticalAlignment="Center" Margin="0,0,4,0">
+                        <TextBlock Text="Alpha Island" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextSecondary}"/>
+                    </Border>
+                </Grid>
+
+                <!-- ================= 蓝牙通知层（与 PillLayer 同级同尺寸，互斥显示） =================
+                     蓝牙设备连接时弹出：左侧 3D 旋转模型/矢量图标、中间设备名称、右侧电量。
+                     布局尺寸与 PillLayer 完全一致，复用 Pill 形态的 IslandBody 尺寸。 -->
+                <Grid x:Name="BtNotifyLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧：3D 设备模型（耳机）或专属外设矢量图标（键鼠手柄） -->
+                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="16"
+                            ClipToBounds="True" Background="#1AFFFFFF" x:Name="BtIconContainer">
+                        <Grid>
+                            <controls:DeviceModelView x:Name="BtDeviceModel"
+                                                      Width="32" Height="32"
+                                                      IsRotating="False"/>
+                            <TextBlock x:Name="BtDeviceIcon"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="15"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       Visibility="Collapsed"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 中间：蓝牙设备名称 -->
+                    <TextBlock x:Name="BtDeviceName" Grid.Column="1"
+                               Margin="10,0" VerticalAlignment="Center"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}"
+                               TextTrimming="CharacterEllipsis"
+                               Text="蓝牙设备"/>
+
+                    <!-- 右侧：电池图标 + 电量百分比 -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="0,0,4,0">
+                        <TextBlock Text="&#xE83F;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondary}"/>
+                        <TextBlock x:Name="BtBatteryText"
+                                   FontSize="12" FontWeight="SemiBold" Margin="4,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   Text="--"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ================= 系统音量调节层（与 PillLayer 同级同尺寸，互斥显示） =================
+                     音量调节时弹出：左侧自适应音量图标、中间音量进度条、右侧数字百分比。 -->
+                <Grid x:Name="VolumeNotifyLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧：音量状态圆形徽标（随音量大小和静音状态变化） -->
+                    <Border x:Name="VolumeIconContainer" Grid.Column="0" Width="32" Height="32" CornerRadius="16"
+                            Background="#2200E5FF" BorderBrush="#3300E5FF" BorderThickness="1">
+                        <TextBlock x:Name="VolumeIcon" Text="&#xE995;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#00E5FF"/>
+                    </Border>
+
+                    <!-- 中间：音量大小进度条 -->
+                    <Grid x:Name="VolumeTrackContainer" Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Height="20">
+                        <!-- 背景槽 -->
+                        <Border Height="6" CornerRadius="3" Background="#26FFFFFF" VerticalAlignment="Center"/>
+                        <!-- 填充条 -->
+                        <Border x:Name="VolumeProgressFill" Height="6" CornerRadius="3"
+                                Background="{StaticResource AccentCyan}"
+                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Width="0"/>
+                    </Grid>
+
+                    <!-- 右侧：数字形式展现 -->
+                    <TextBlock x:Name="VolumeText" Grid.Column="2"
+                               Margin="0,0,4,0" VerticalAlignment="Center"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}"
+                               Text="50%"/>
+                </Grid>
+
                 <!-- ================= 二级展开：完整卡片 ================= -->
                 <Grid x:Name="CardLayer" Opacity="0" Width="392" Margin="14,12,14,10"
-                      HorizontalAlignment="Center" IsHitTestVisible="False">
+                      HorizontalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="64"/>
                         <RowDefinition Height="Auto"/>
@@ -209,12 +346,15 @@
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="PrevButton" Style="{StaticResource TransportButton}"
+                                    FocusVisualStyle="{x:Null}" Focusable="False"
                                     Content="&#xE892;" Click="PrevButton_Click"/>
                             <Button x:Name="PlayPauseButton" Style="{StaticResource TransportButton}"
+                                    FocusVisualStyle="{x:Null}" Focusable="False"
                                     Margin="6,0" Click="PlayPauseButton_Click">
                                 <TextBlock x:Name="PlayPauseGlyph" Text="&#xE768;"/>
                             </Button>
                             <Button x:Name="NextButton" Style="{StaticResource TransportButton}"
+                                    FocusVisualStyle="{x:Null}" Focusable="False"
                                     Content="&#xE893;" Click="NextButton_Click"/>
                         </StackPanel>
                     </Grid>
@@ -321,6 +461,17 @@
                     </Ellipse>
                     <Ellipse x:Name="OrbCoverRing" Margin="5" Opacity="0"
                              Stroke="#4DFFFFFF" StrokeThickness="1"/>
+
+                    <!-- 收缩过渡状态专属矢量图标（音量、外设、问候等） -->
+                    <Border x:Name="OrbIconContainer" Margin="5" CornerRadius="18"
+                            Opacity="0" ClipToBounds="True">
+                        <TextBlock x:Name="OrbIcon"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="15"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Foreground="#FFFFFFFF"/>
+                    </Border>
 
                     <Grid.RenderTransform>
                         <TranslateTransform x:Name="SiriOrbTranslate" X="-40" Y="0"/>

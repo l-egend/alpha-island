@@ -1,351 +1,705 @@
-<Window AllowsTransparency="False" Background="{StaticResource WindowBackgroundBrush}" Closing="Window_Closing" FontFamily="Segoe UI, Microsoft YaHei UI, Microsoft YaHei" Foreground="White" Height="420" ResizeMode="NoResize" ShowInTaskbar="True" TextOptions.TextRenderingMode="Grayscale" Title="Alpha Island 设置" UseLayoutRounding="True" Width="760" WindowStartupLocation="Manual" WindowStyle="None" x:Class="alpha_island.Settings.SettingsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+<Window AllowsTransparency="False" Background="{StaticResource W11WindowBrush}" Closing="Window_Closing" FontFamily="Segoe UI, Microsoft YaHei UI, Microsoft YaHei" Foreground="{StaticResource W11TextPrimary}" Height="600" ResizeMode="NoResize" ShowInTaskbar="True" TextOptions.TextRenderingMode="Grayscale" Title="Alpha Island 设置" UseLayoutRounding="True" Width="880" WindowStartupLocation="Manual" WindowStyle="None" x:Class="alpha_island.Settings.SettingsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Grid>
+    <!-- ============================================================
+         Windows 11 风格设置界面（框架版）
+         版式：40px 自绘标题栏 + 244px 导航面板 + 内容滚动区
+         卡片 = 32px 图标槽 + 标题/说明 + 右侧控件，行间缩进分隔线
+         图标槽都是具名的 Border（Icon_xxx），后续直接把内容填进去即可。
+         ============================================================ -->
+
+    <Window.Resources>
+        <!-- 用户给的 globe 图标：SVG 里唯一一条 path 的 d 原样搬过来（WPF 路径迷你语言与 SVG 语法互通）。
+             必须显式写 FillRule="Nonzero"：浏览器对没写 fill-rule 的 SVG 用非零规则，WPF 缺省是偶奇，不覆盖会画反。 -->
+        <PathGeometry x:Key="GlobeIcon" FillRule="Nonzero" Figures="M64,126c34.2,0,62-27.8,62-62S98.2,2,64,2S2,29.8,2,64S29.8,126,64,126z M16,88.7l25.2-0.2c2.8,10.1,7.5,19.9,13.9,28.7C38,114.4,23.7,103.5,16,88.7z M47.6,47H79c2.3,11,2.3,22.3,0.2,33.3l-31.6,0.2C45.3,69.4,45.3,58,47.6,47z M63.3,114.9c-6.3-8.1-10.9-17-13.7-26.4l27.5-0.2C74.2,97.7,69.6,106.7,63.3,114.9z M71.3,117.5c6.6-9,11.3-18.9,14.1-29.3l26.9-0.2C104.5,103.7,89.3,115,71.3,117.5z M118,64c0,5.6-0.9,11-2.4,16l-28.3,0.2c2-11,1.9-22.2-0.2-33.2h28.1C117,52.3,118,58.1,118,64z M111.8,39H85.2c-2.9-10-7.5-19.7-13.9-28.5C89,12.9,103.9,23.8,111.8,39z M76.9,39H49.7c2.9-9.2,7.4-17.9,13.6-25.9C69.5,21.1,74,29.8,76.9,39z M55.1,10.8C48.8,19.5,44.2,29,41.4,39H16.2C23.9,24.3,38.1,13.6,55.1,10.8z M39.5,47c-2.1,11.1-2.1,22.4-0.1,33.5l-26.7,0.2C10.9,75.4,10,69.8,10,64c0-5.9,1-11.7,2.8-17H39.5z"/>
+    </Window.Resources>
+
+    <Grid x:Name="RootGrid" Background="Transparent">
         <Grid.RowDefinitions>
-            <RowDefinition Height="44"/>
+            <RowDefinition Height="40"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 自绘标题栏 -->
+        <!-- ================= 标题栏 ================= -->
         <Grid Background="Transparent" Grid.Row="0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
             <StackPanel Margin="16,0,0,0" Orientation="Horizontal" VerticalAlignment="Center">
-                <Ellipse Fill="{StaticResource AccentCyan}" Height="10" Margin="0,0,10,0" Width="10"/>
-                <TextBlock FontSize="14" Style="{StaticResource PageTitle}" Text="Alpha Island 设置" VerticalAlignment="Center"/>
+                <Path Data="{StaticResource GlobeIcon}" Fill="{StaticResource W11AccentBrush}"
+                      Height="16" Stretch="Uniform" VerticalAlignment="Center" Width="16"/>
+                <TextBlock FontSize="12" Foreground="{StaticResource W11TextSecondary}" Margin="10,0,0,0"
+                           Text="Alpha Island 设置" VerticalAlignment="Center"/>
             </StackPanel>
 
-            <Button Click="CloseButton_Click" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11" Height="28" HorizontalAlignment="Right" Margin="0,0,8,0" Style="{StaticResource TransportButton}" VerticalAlignment="Center" Width="36" x:Name="CloseButton"/>
+            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                <Button Click="MinimizeButton_Click" Content="&#xE921;" Style="{StaticResource W11TitleBarButton}" x:Name="MinimizeButton"/>
+                <Button Click="CloseButton_Click" Content="&#xE8BB;" Style="{StaticResource W11CloseButton}" x:Name="CloseButton"/>
+            </StackPanel>
         </Grid>
 
-        <!-- 主体区域 -->
+        <!-- ================= 主体 ================= -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="172"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧导航 -->
-            <Border BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,0,1,0" Grid.Column="0" Padding="12,12,12,12">
-                <StackPanel Orientation="Vertical">
-                    <RadioButton Checked="Nav_Checked" GroupName="nav" IsChecked="True" Style="{StaticResource SettingsNavItem}" Tag="appearance">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE790;" VerticalAlignment="Center" Width="20"/>
-                            <TextBlock Text="外观" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-                    <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource SettingsNavItem}" Tag="island">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE7F4;" VerticalAlignment="Center" Width="20"/>
-                            <TextBlock Text="岛屿与动效" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-                    <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource SettingsNavItem}" Tag="audio">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE9E9;" VerticalAlignment="Center" Width="20"/>
-                            <TextBlock Text="音频可视化" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-                    <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource SettingsNavItem}" Tag="lyrics">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8D2;" VerticalAlignment="Center" Width="20"/>
-                            <TextBlock Text="歌词" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-                    <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource SettingsNavItem}" Tag="behavior">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE713;" VerticalAlignment="Center" Width="20"/>
-                            <TextBlock Text="行为" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-                    <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource SettingsNavItem}" Tag="about">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" VerticalAlignment="Center" Width="20"/>
-                            <TextBlock Text="关于" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-                </StackPanel>
-            </Border>
+            <!-- ===== 导航面板 ===== -->
+            <!-- Width 由代码控制：展开 244 / 收起 48（只留图标） -->
+            <Grid Background="{StaticResource W11NavBrush}" ClipToBounds="True" Grid.Column="0"
+                  Width="244" x:Name="NavPane">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-            <!-- 右侧内容 -->
-            <ScrollViewer Grid.Column="1" Padding="28,16,28,24" VerticalScrollBarVisibility="Auto">
+                <!-- 顶部：收起按钮（三横线）+ 搜索框 -->
+                <Grid Grid.Row="0">
+                    <Button Click="NavCollapse_Click" Height="32" HorizontalAlignment="Left"
+                            Margin="10,4,0,12" Style="{StaticResource W11NavCollapse}"
+                            ToolTip="收起导航栏" Width="32" x:Name="NavCollapseButton"/>
+
+                    <Border Background="{StaticResource W11ControlFill}" BorderBrush="{StaticResource W11ControlBorder}"
+                            BorderThickness="1" CornerRadius="4" Height="32" Margin="46,4,14,12" x:Name="SearchBorder">
+                        <Grid>
+                            <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="{StaticResource W11TextTertiary}"
+                                       HorizontalAlignment="Left" Margin="11,0,0,0" Text="&#xE721;" VerticalAlignment="Center"/>
+                            <TextBlock Foreground="{StaticResource W11TextTertiary}" FontSize="12.5" IsHitTestVisible="False"
+                                       Margin="34,0,0,0" Text="搜索设置" VerticalAlignment="Center" x:Name="SearchPlaceholder"/>
+                            <TextBox Background="Transparent" BorderThickness="0" CaretBrush="{StaticResource W11TextPrimary}"
+                                     FontSize="12.5" Foreground="{StaticResource W11TextPrimary}" Margin="32,0,10,0"
+                                     SelectionBrush="{StaticResource W11AccentBrush}" TextChanged="SearchBox_TextChanged"
+                                     VerticalContentAlignment="Center" x:Name="SearchBox"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- 导航项：Tag = 页面键，Uid = 搜索用的中文名 -->
+                <ScrollViewer Grid.Row="1" Padding="10,0,10,10" VerticalScrollBarVisibility="Auto" x:Name="NavScroll">
+                    <StackPanel Orientation="Vertical" x:Name="NavPanel">
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" IsChecked="True" Style="{StaticResource W11NavItem}"
+                                     Tag="appearance" Uid="外观">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE790;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="外观" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="island" Uid="岛屿与动效 展开 专辑封面">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE7F4;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="岛屿与动效" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="audio" Uid="音频可视化 频谱 灵敏度 设备">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE9E9;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="音频可视化" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="lyrics" Uid="歌词 翻译 数据源">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8D2;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="歌词" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="behavior" Uid="行为 换曲提示 重置">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE713;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="行为" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="about" Uid="关于 版本 运行环境">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE946;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="关于" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <TextBlock Foreground="{StaticResource W11TextTertiary}" FontSize="11" Grid.Row="2"
+                           Margin="18,0,18,14" Text="左键托盘图标可再次打开" TextWrapping="Wrap" x:Name="NavFooter"/>
+            </Grid>
+
+            <!-- ===== 内容区 ===== -->
+            <ScrollViewer Grid.Column="1" Padding="30,20,30,28" VerticalScrollBarVisibility="Auto">
                 <Grid>
-                    <!-- 外观 -->
-                    <Grid Visibility="Visible" x:Name="Page_Appearance">
-                        <StackPanel Orientation="Vertical">
-                            <TextBlock Style="{StaticResource PageTitle}" Text="外观"/>
-                            <TextBlock Margin="0,4,0,16" Style="{StaticResource PageSubtitle}" Text="自定义毛玻璃与视觉渲染效果"/>
 
-                            <Border Style="{StaticResource SettingsCard}">
-                                <StackPanel Orientation="Vertical">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="玻璃不透明度"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="调节悬浮岛主体的半透明模糊深度"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Slider IsSnapToTickEnabled="False" LargeChange="0.05" Maximum="0.96" Minimum="0.45" SmallChange="0.01" Value="0.85" ValueChanged="Slider_Changed" VerticalAlignment="Center" Width="140" x:Name="GlassOpacitySlider"/>
-                                            <TextBlock Margin="8,0,0,0" Style="{StaticResource SettingsValue}" TextAlignment="Right" Width="45" x:Name="GlassOpacityValue"/>
-                                        </StackPanel>
-                                    </Grid>
+                    <!-- ========== 外观 ========== -->
+                    <StackPanel Visibility="Visible" x:Name="Page_Appearance">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="外观"/>
+                        <TextBlock Style="{StaticResource W11PageSubtitle}" Text="自定义毛玻璃与视觉渲染效果"/>
 
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="流动玻璃质感"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="启用液态玻璃高光与边缘微光折射"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="LiquidGlassToggle"/>
-                                    </Grid>
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="玻璃"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_GlassOpacity">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE790;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="玻璃不透明度"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="调节悬浮岛主体的半透明模糊深度"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Slider IsSnapToTickEnabled="False" LargeChange="0.05" Maximum="0.96" Minimum="0.45"
+                                                SmallChange="0.01" Style="{StaticResource W11Slider}" Value="0.85"
+                                                ValueChanged="Slider_Changed" Width="140" x:Name="GlassOpacitySlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="GlassOpacityValue"/>
+                                    </StackPanel>
+                                </Grid>
 
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="果冻弹性动画"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="在展开和收起时应用非线性回弹果冻动效"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="GelAnimationToggle"/>
-                                    </Grid>
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_LiquidGlass">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE7F4;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="流动玻璃质感"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="启用液态玻璃高光与边缘微光折射"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="LiquidGlassToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Gel">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE945;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="果冻弹性动画"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="在展开和收起时应用非线性回弹果冻动效"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="GelAnimationToggle"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ========== 岛屿与动效 ========== -->
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Island">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="岛屿与动效"/>
+                        <TextBlock Style="{StaticResource W11PageSubtitle}" Text="调整灵动岛的展开逻辑与元素显示"/>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="展开行为"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_TwoStep">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8A9;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="两段式展开"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="支持紧凑态到胶囊态、胶囊态到大卡片的分级交互"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="TwoStepExpandToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Cover">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE91B;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="展示专辑封面"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="在扩展区域展示当前播放音轨的封面图"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="ShowCoverToggle"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ========== 音频可视化 ========== -->
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Audio">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="音频可视化"/>
+                        <TextBlock Style="{StaticResource W11PageSubtitle}" Text="WASAPI 环回实时音频能量捕获与呈现"/>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="可视化"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Visualizer">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE9E9;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="启用音频可视化"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="开启频谱律动及能量条反馈"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="VisualizerToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Wave">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE9D9;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="波形渲染层"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="渲染平滑动态波纹背景层"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="ShowWaveToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Sensitivity">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE9E9;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="律动灵敏度"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="调整音频捕获幅度增益"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Slider IsSnapToTickEnabled="False" LargeChange="0.2" Maximum="2.6" Minimum="0.4"
+                                                SmallChange="0.05" Style="{StaticResource W11Slider}" Value="1.0"
+                                                ValueChanged="Slider_Changed" Width="140" x:Name="SensitivitySlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="SensitivityValue"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="设备"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <Grid Style="{StaticResource W11Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Device">
+                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE7F5;"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="监听设备"/>
+                                    <TextBlock Style="{StaticResource W11RowHint}" Text="默认系统输出设备" x:Name="AudioDeviceText"/>
                                 </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
 
-                    <!-- 岛屿与动效 -->
-                    <Grid Visibility="Collapsed" x:Name="Page_Island">
-                        <StackPanel Orientation="Vertical">
-                            <TextBlock Style="{StaticResource PageTitle}" Text="岛屿与动效"/>
-                            <TextBlock Margin="0,4,0,16" Style="{StaticResource PageSubtitle}" Text="调整灵动岛的展开逻辑与元素显示"/>
+                    <!-- ========== 歌词 ========== -->
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Lyrics">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="歌词"/>
+                        <TextBlock Style="{StaticResource W11PageSubtitle}" Text="配置歌词解析与双语对照展示"/>
 
-                            <Border Style="{StaticResource SettingsCard}">
-                                <StackPanel Orientation="Vertical">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="两段式展开"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="支持紧凑态到胶囊态、胶囊态到大卡片的分级交互"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="TwoStepExpandToggle"/>
-                                    </Grid>
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="歌词"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Lyrics">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8D2;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="启用实时歌词"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="在岛屿扩展态中滚动展示动态歌词"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="LyricsToggle"/>
+                                </Grid>
 
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="展示专辑封面"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="在扩展区域展示当前播放音轨的封面图"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="ShowCoverToggle"/>
-                                    </Grid>
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Translation">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8C1;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="展示翻译歌词"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="如果源歌词包含译文，则同时显示双语"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="TranslationToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_LyricsOffset">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE916;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="歌词时间微调"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="补偿蓝牙耳机延迟或音频缓冲（负数提前，正数延后）"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Slider IsSnapToTickEnabled="True" LargeChange="100" Maximum="1500" Minimum="-1500"
+                                                SmallChange="50" Style="{StaticResource W11Slider}" TickFrequency="50"
+                                                Value="0" ValueChanged="Slider_Changed" Width="140" x:Name="LyricsOffsetSlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="LyricsOffsetValue"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="数据源"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <Grid Style="{StaticResource W11Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Source">
+                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE774;"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="歌词源"/>
+                                    <TextBlock Style="{StaticResource W11RowHint}" Text="未连接" x:Name="LyricsSourceText"/>
                                 </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
 
-                    <!-- 音频可视化 -->
-                    <Grid Visibility="Collapsed" x:Name="Page_Audio">
-                        <StackPanel Orientation="Vertical">
-                            <TextBlock Style="{StaticResource PageTitle}" Text="音频可视化"/>
-                            <TextBlock Margin="0,4,0,16" Style="{StaticResource PageSubtitle}" Text="WASAPI 环回实时音频能量捕获与呈现"/>
+                    <!-- ========== 行为 ========== -->
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Behavior">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="行为"/>
+                        <TextBlock Style="{StaticResource W11PageSubtitle}" Text="交互逻辑与运行配置"/>
 
-                            <Border Style="{StaticResource SettingsCard}">
-                                <StackPanel Orientation="Vertical">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="启用音频可视化"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="开启频谱律动及能量条反馈"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="VisualizerToggle"/>
-                                    </Grid>
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="交互"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_KeepCompact">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE7C4;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="播放时保持紧凑"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="媒体播放时不自动扩展为胶囊状态"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" Style="{StaticResource W11Switch}"
+                                              Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="KeepCompactToggle"/>
+                                </Grid>
 
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="波形渲染层"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="渲染平滑动态波纹背景层"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="ShowWaveToggle"/>
-                                    </Grid>
+                                <Border Style="{StaticResource W11RowDivider}"/>
 
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="律动灵敏度"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="调整音频捕获幅度增益"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Slider IsSnapToTickEnabled="False" LargeChange="0.2" Maximum="2.6" Minimum="0.4" SmallChange="0.05" Value="1.0" ValueChanged="Slider_Changed" VerticalAlignment="Center" Width="140" x:Name="SensitivitySlider"/>
-                                            <TextBlock Margin="8,0,0,0" Style="{StaticResource SettingsValue}" TextAlignment="Right" Width="45" x:Name="SensitivityValue"/>
-                                        </StackPanel>
-                                    </Grid>
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_UpNext">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE893;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="换曲提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="切歌时弹出胶囊，显示新曲名和「接下来」"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="UpNextToggle"/>
+                                </Grid>
 
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="监听设备"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="默认系统输出设备" x:Name="AudioDeviceText"/>
-                                        </StackPanel>
-                                    </Grid>
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Pause">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE769;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="暂停提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="音乐暂停时弹出胶囊，显示曲名和「已暂停」"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="PauseNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_PlayPrompt">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE768;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="继续播放提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="音乐恢复播放时弹出胶囊，显示曲名和「正在播放」"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="PlayNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Duration">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE916;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="提示停留时长"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="超过这个时间没有操作就自动收回细条"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Slider IsSnapToTickEnabled="True" LargeChange="1" Maximum="20" Minimum="2"
+                                                SmallChange="1" Style="{StaticResource W11Slider}" TickFrequency="1"
+                                                Value="5" ValueChanged="Slider_Changed" Width="140" x:Name="UpNextSlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="UpNextValue"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Volume">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE995;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="音量调节提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="调节系统主音量时弹出胶囊，展示动态音量条与数字"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="VolumeNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Bluetooth">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE702;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="蓝牙连接提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="蓝牙设备连接时弹出一级胶囊，展示 3D 旋转模型与电量"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="BluetoothNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_BtDuration">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE916;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="蓝牙提示停留时长"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="展示指定时长后自动收回细条"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Slider IsSnapToTickEnabled="True" LargeChange="1" Maximum="20" Minimum="2"
+                                                SmallChange="1" Style="{StaticResource W11Slider}" TickFrequency="1"
+                                                Value="5" ValueChanged="Slider_Changed" Width="140" x:Name="BluetoothNotifySlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="BluetoothNotifyValue"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="启动问候"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Greeting">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE735;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="开机欢迎提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="软件启动时弹出一级胶囊展示问候语"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="GreetingToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_GreetingText">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8D2;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="问候语文字"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="启动时展示的自定义文本"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="2" Background="#0FFFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1" CornerRadius="4" Padding="8,4" VerticalAlignment="Center">
+                                        <TextBox x:Name="GreetingTextBox" Background="Transparent" BorderThickness="0"
+                                                 CaretBrush="{StaticResource W11TextPrimary}"
+                                                 Foreground="{StaticResource W11TextPrimary}"
+                                                 FontSize="12" Width="120" TextChanged="TextBox_Changed"/>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="维护"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <Grid Style="{StaticResource W11Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Reset">
+                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE777;"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="重置所有设置"/>
+                                    <TextBlock Style="{StaticResource W11RowHint}" Text="将偏好设置还原至系统默认初始状态"/>
                                 </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
+                                <Button Click="ResetDefaultsButton_Click" Content="恢复默认设置" Grid.Column="2"
+                                        Style="{StaticResource W11Button}" VerticalAlignment="Center" x:Name="ResetDefaultsButton"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
 
-                    <!-- 歌词 -->
-                    <Grid Visibility="Collapsed" x:Name="Page_Lyrics">
-                        <StackPanel Orientation="Vertical">
-                            <TextBlock Style="{StaticResource PageTitle}" Text="歌词"/>
-                            <TextBlock Margin="0,4,0,16" Style="{StaticResource PageSubtitle}" Text="配置歌词解析与双语对照展示"/>
+                    <!-- ========== 关于 ========== -->
+                    <StackPanel Visibility="Collapsed" x:Name="Page_About">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="关于"/>
+                        <TextBlock Style="{StaticResource W11PageSubtitle}" Text="软件与运行时信息"/>
 
-                            <Border Style="{StaticResource SettingsCard}">
-                                <StackPanel Orientation="Vertical">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="启用实时歌词"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="在岛屿扩展态中滚动展示动态歌词"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="LyricsToggle"/>
-                                    </Grid>
-
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="展示翻译歌词"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="如果源歌词包含译文，则同时显示双语"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="TranslationToggle"/>
-                                    </Grid>
-
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="歌词源"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="未连接" x:Name="LyricsSourceText"/>
-                                        </StackPanel>
-                                    </Grid>
+                        <Border Margin="0,26,0,0" Style="{StaticResource W11Card}">
+                            <Grid Style="{StaticResource W11Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Path Data="{StaticResource GlobeIcon}" Fill="{StaticResource W11AccentBrush}"
+                                      Height="44" Stretch="Uniform" VerticalAlignment="Center" Width="44"/>
+                                <StackPanel Grid.Column="1" Margin="18,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource W11TextPrimary}"
+                                               Text="Alpha Island"/>
+                                    <TextBlock Margin="0,4,0,0" Style="{StaticResource W11RowHint}"
+                                               Text="Windows 灵动岛原型 · 占位图标用的就是你给的 globe SVG，WPF 直接支持它的路径数据"/>
                                 </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
+                            </Grid>
+                        </Border>
 
-                    <!-- 行为 -->
-                    <Grid Visibility="Collapsed" x:Name="Page_Behavior">
-                        <StackPanel Orientation="Vertical">
-                            <TextBlock Style="{StaticResource PageTitle}" Text="行为"/>
-                            <TextBlock Margin="0,4,0,16" Style="{StaticResource PageSubtitle}" Text="交互逻辑与运行配置"/>
-
-                            <Border Style="{StaticResource SettingsCard}">
-                                <StackPanel Orientation="Vertical">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="播放时保持紧凑"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="媒体播放时不自动扩展为胶囊状态"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="KeepCompactToggle"/>
-                                    </Grid>
-
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="换曲提示"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="切歌时弹出胶囊，显示新曲名和「接下来」"/>
-                                        </StackPanel>
-                                        <CheckBox Checked="Setting_Changed" Grid.Column="1" IsChecked="True" Style="{StaticResource Switch}" Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="UpNextToggle"/>
-                                    </Grid>
-
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="提示停留时长"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="超过这个时间没有操作就自动收回细条"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Slider IsSnapToTickEnabled="True" LargeChange="1" Maximum="20" Minimum="2" SmallChange="1" TickFrequency="1" Value="5" ValueChanged="Slider_Changed" VerticalAlignment="Center" Width="140" x:Name="UpNextSlider"/>
-                                            <TextBlock Margin="8,0,0,0" Style="{StaticResource SettingsValue}" TextAlignment="Right" Width="45" x:Name="UpNextValue"/>
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Style="{StaticResource SettingsRowLabel}" Text="重置所有设置"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHint}" Text="将偏好设置还原至系统默认初始状态"/>
-                                        </StackPanel>
-                                        <Button Background="#1FFFFFFF" Click="ResetDefaultsButton_Click" Content="恢复默认设置" Foreground="White" Grid.Column="1" Padding="14,7" VerticalAlignment="Center" x:Name="ResetDefaultsButton">
-                                            <Button.Resources>
-                                                <Style TargetType="Border">
-                                                    <Setter Property="CornerRadius" Value="9"/>
-                                                </Style>
-                                            </Button.Resources>
-                                        </Button>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- 关于 -->
-                    <Grid Visibility="Collapsed" x:Name="Page_About">
-                        <StackPanel Orientation="Vertical">
-                            <TextBlock Style="{StaticResource PageTitle}" Text="关于"/>
-                            <TextBlock Margin="0,4,0,16" Style="{StaticResource PageSubtitle}" Text="软件与运行时信息"/>
-
-                            <Border Style="{StaticResource SettingsCard}">
-                                <StackPanel Orientation="Vertical">
-                                    <TextBlock LineHeight="20" Style="{StaticResource SettingsRowHint}" Text="Alpha Island — Windows 灵动岛原型 / WPF · .NET 8 / 监听 SMTC + WASAPI 环回" TextWrapping="Wrap" x:Name="AboutText"/>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
+                        <TextBlock Margin="2,18,0,8" Style="{StaticResource W11CardTitle}" Text="运行环境"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <TextBlock LineHeight="20" Margin="16,16,16,16" Style="{StaticResource W11RowHint}"
+                                       Text="WPF · .NET 8 · 监听 SMTC + WASAPI 环回" TextWrapping="Wrap" x:Name="AboutText"/>
+                        </Border>
+                    </StackPanel>
                 </Grid>
             </ScrollViewer>
         </Grid>

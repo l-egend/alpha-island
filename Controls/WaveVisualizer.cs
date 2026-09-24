@@ -158,6 +158,15 @@ namespace alpha_island.Controls
             DependencyProperty.Register(nameof(BassBoost), typeof(double), typeof(WaveVisualizer),
                 new FrameworkPropertyMetadata(0.55, FrameworkPropertyMetadataOptions.AffectsRender));
 
+        /// <summary>
+        /// 音频灵敏度：对送进来的频带做整体增益，1.0 = 原型原始响应。
+        /// 调高会让波浪对音乐的反应更明显（代价是大声时容易饱和成一块）。
+        /// </summary>
+        public static readonly DependencyProperty SensitivityProperty =
+            DependencyProperty.Register(nameof(Sensitivity), typeof(double), typeof(WaveVisualizer),
+                new FrameworkPropertyMetadata(1.0, FrameworkPropertyMetadataOptions.AffectsRender,
+                    OnSensitivityChanged));
+
         public bool IsActive
         {
             get => (bool)GetValue(IsActiveProperty);
@@ -248,9 +257,24 @@ namespace alpha_island.Controls
             set => SetValue(BassBoostProperty, value);
         }
 
+        public double Sensitivity
+        {
+            get => (double)GetValue(SensitivityProperty);
+            set => SetValue(SensitivityProperty, value);
+        }
+
+        private static void OnSensitivityChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            // PushFrame 可能来自音频线程，DP 不适合跨线程读 —— 缓存成普通字段。
+            var self = (WaveVisualizer)d;
+            double v = (double)e.NewValue;
+            self._sensitivity = (float)(double.IsFinite(v) ? Math.Clamp(v, 0.1, 6.0) : 1.0);
+        }
+
         // ---------------- 内部状态 ----------------
 
         private readonly object _gate = new();
+        private volatile float _sensitivity = 1f;
         private float[] _incoming = Array.Empty<float>();
 
         private readonly Path[] _paths = new Path[LayerCount];
@@ -348,12 +372,16 @@ namespace alpha_island.Controls
         {
             if (bands == null || bands.Length == 0) return;
 
+            float sens = _sensitivity;
+
             float bass = 0f, all = 0f;
             int bassN = Math.Max(1, bands.Length / 6);
             for (int i = 0; i < bands.Length; i++)
             {
-                all += bands[i];
-                if (i < bassN && bands[i] > bass) bass = bands[i];
+                float v = bands[i] * sens;
+                if (v > 1f) v = 1f;
+                all += v;
+                if (i < bassN && v > bass) bass = v;
             }
             all /= bands.Length;
             if (bass < 0f) bass = 0f;
@@ -362,7 +390,11 @@ namespace alpha_island.Controls
             lock (_gate)
             {
                 if (_incoming.Length != bands.Length) _incoming = new float[bands.Length];
-                Array.Copy(bands, _incoming, bands.Length);
+                for (int i = 0; i < bands.Length; i++)
+                {
+                    float v = bands[i] * sens;
+                    _incoming[i] = v > 1f ? 1f : v;
+                }
 
                 // 原型 idle=0.18、播放中 0.48±0.18 上下浮动 —— 这里保留同样的"底线不归零"
                 double e = Math.Clamp(all * 1.35, 0.0, 1.0);

@@ -93,14 +93,28 @@ namespace alpha_island.Animation
 
         private IslandGeometry _from;
         private IslandGeometry _to;
+        /// <summary>可选路径点：形变途中必须经过的中间几何（收回时那个正圆）。null = 直插目标。</summary>
+        private IslandGeometry? _via;
+        private double _viaAt = 0.5;
+        /// <summary>跟随通道相对主通道的时间倍数（&gt;1 滞后）。</summary>
+        private double _followLag = 1.0;
+        private double _followDelay = BulgeDelaySeconds;
         private double _squash;
         private double _elapsed;
         private double _duration = 0.4;
         private IEasingFunction? _fallbackEase;
         private bool _useGel;
         private bool _running;
+        private string _doneReason = "";
         private double _lastTick = -1;
         private Action? _completed;
+
+        /// <summary>
+        /// 每帧回传主通道进度 t（0→1，可过冲；缓动模式下已过缓动函数）。
+        /// 给宿主把内容层透明度、封面球这类"光学量"挂到同一条弹簧上，
+        /// 这样它们和形变共享同一套时间与速度，不再各自跑独立的时间轴。
+        /// </summary>
+        public Action<double>? ProgressHook { get; set; }
 
         public IslandAnimator(Border body, TranslateTransform translate, ScaleTransform squashScale,
             TranslateTransform? sheen = null, DropShadowEffect? shadow = null,
@@ -132,7 +146,7 @@ namespace alpha_island.Animation
         /// <summary>不走动画，直接落到目标几何（初始化 / 关闭形变效果时用）。</summary>
         public void SetImmediate(IslandGeometry geometry)
         {
-            Stop();
+            Stop("SetImmediate");
             _from = geometry;
             _to = geometry;
             _squash = 0;
@@ -147,13 +161,25 @@ namespace alpha_island.Animation
         /// <param name="duration">标称时长，弹簧模式下用来反推劲度。</param>
         /// <param name="ease">缓动模式使用的缓动函数。</param>
         /// <param name="completed">完成回调（弹簧模式为'基本静止'时触发）。</param>
+        /// <param name="via">
+        /// 可选路径点。给定时形变不再是从 _from 直插 _to，而是沿着 _from → via → _to 这条折线走，
+        /// 并在两个接点处用 smoothstep 把速度压到 0（"经过正圆"那一下会明显顿一下再塌下去）。
+        /// 收回动画靠它把"圆球 → 吸顶 → 摊平"从三次 MorphTo 压成一次连续形变。
+        /// </param>
+        /// <param name="viaAt">路径点在 0..1 上的位置。</param>
+        /// <param name="followLag">跟随通道（高度）的时间倍数，&gt;1 表示比主通道慢。</param>
         public void MorphTo(IslandGeometry to, bool gel, Duration duration, IEasingFunction? ease = null,
-            Action? completed = null)
+            Action? completed = null, IslandGeometry? via = null, double viaAt = 0.5,
+            double followLag = 1.0, double? followDelay = null)
         {
-            Stop();
+            Stop("MorphTo");
 
             _from = CurrentGeometry();
             _to = to;
+            _via = via;
+            _viaAt = viaAt;
+            _followLag = followLag;
+            _followDelay = followDelay ?? BulgeDelaySeconds;
             _useGel = gel;
             _completed = completed;
             _elapsed = 0;
@@ -172,8 +198,11 @@ namespace alpha_island.Animation
                 _main.Reset(0, 0);
                 _main.Target = 1;
 
-                _bulge.Stiffness = omega * omega;
-                _bulge.Damping = 2.0 * BulgeZeta * omega;
+                // 跟随通道用更低的角频率 + 更小的阻尼比：既滞后于主通道，过冲也比主通道大，
+                // 高度因此会在宽度已经到位之后再鼓一下再收 —— 各向异性就是这么来的。
+                double omegaFollow = 5.0 / (BulgeZeta * _duration * Math.Max(1.0, _followLag));
+                _bulge.Stiffness = omegaFollow * omegaFollow;
+                _bulge.Damping = 2.0 * BulgeZeta * omegaFollow;
                 _bulge.Mass = 1.0;
                 _bulge.Reset(0, 0);
                 _bulge.Target = 1;
@@ -184,10 +213,18 @@ namespace alpha_island.Animation
         }
 
         /// <summary>中途打断（用户又动鼠标了）。会停在被调用的那一刻，不跳到终点。</summary>
-        public void Stop()
+        public void Stop(string reason = "external")
         {
             if (_running)
             {
+                if (Trace != null)
+                {
+                    Trace.WriteLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "#STOP reason={0} elapsed={1:F3} dur={2:F3} t={3:F4} h={4:F4} from={5:F0}x{6:F0} to={7:F0}x{8:F0}",
+                        reason, _elapsed, _duration, _main.Value, _bulge.Value,
+                        _from.Width, _from.Height, _to.Width, _to.Height));
+                }
+
                 CompositionTarget.Rendering -= OnRendering;
                 _running = false;
             }
@@ -220,7 +257,7 @@ namespace alpha_island.Animation
                 t = _main.Value;
 
                 bool bulgeDone;
-                if (_elapsed < BulgeDelaySeconds)
+                if (_elapsed < _followDelay)
                 {
                     h = 0.0;
                     bulgeDone = false;
@@ -231,11 +268,13 @@ namespace alpha_island.Animation
                     h = _bulge.Value;
                 }
 
-                done = (_elapsed >= _duration
-                        && Math.Abs(t - 1.0) < 0.012
-                        && Math.Abs(h - 1.0) < 0.012)
-                       || (mainDone && bulgeDone)
-                       || _elapsed >= _duration * 2.5;
+                bool c1 = _elapsed >= _duration
+                          && Math.Abs(t - 1.0) < 0.012
+                          && Math.Abs(h - 1.0) < 0.012;
+                bool c2 = mainDone && bulgeDone;
+                bool c3 = _elapsed >= _duration * 2.5;
+                done = c1 || c2 || c3;
+                _doneReason = c1 ? "nominal" : c2 ? "springs-rest" : c3 ? "timeout" : "";
 
                 // 挤压量由主通道速度派生：展开时横向拉伸纵向压扁，回弹时反向。
                 double raw = Math.Clamp(_main.Velocity * SquashGain, -MaxSquash, MaxSquash);
@@ -252,6 +291,7 @@ namespace alpha_island.Animation
                 h = t;
                 phase = t;
                 done = _elapsed / _duration >= 1.0;
+                _doneReason = done ? "linear" : "";
                 _squash += (0 - _squash) * (1.0 - Math.Exp(-dt / SquashSmooth));
             }
 
@@ -261,11 +301,35 @@ namespace alpha_island.Animation
             if (done)
             {
                 var cb = _completed;
-                Stop();
+                Stop("done:" + _doneReason);
                 _squash = 0;
                 ApplyProgress(1.0, 1.0, 1.0);
                 cb?.Invoke();
             }
+        }
+
+        /// <summary>
+        /// 把 0..1 的形变进度映射成一个几何。
+        /// 没有路径点时就是 _from → _to 的直线插值（和以前完全一致）；
+        /// 有路径点时分两段走，段内用 smoothstep 起止 —— 所以经过正圆那一下的"顿"是
+        /// 速度真的降到 0（而不是靠两个动画拼接出的人为停顿）。
+        /// x &gt; 1 时 smoothstep 退化成恒等映射，超出的部分自然变成线性外插，过冲因此不丢。
+        /// </summary>
+        private IslandGeometry PathAt(double x)
+        {
+            if (_via is not IslandGeometry via) return IslandGeometry.Lerp(_from, _to, x);
+
+            double k = Math.Clamp(_viaAt, 0.05, 0.95);
+            return x <= k
+                ? IslandGeometry.Lerp(_from, via, Smoothstep(x / k))
+                : IslandGeometry.Lerp(via, _to, Smoothstep((x - k) / (1.0 - k)));
+        }
+
+        private static double Smoothstep(double u)
+        {
+            if (u <= 0) return 0;
+            if (u >= 1) return u;                 // 超出段尾 → 线性，保留过冲
+            return u * u * (3.0 - 2.0 * u);
         }
 
         /// <summary>
@@ -276,12 +340,11 @@ namespace alpha_island.Animation
         /// <param name="phase">光学相位，0→1 单调。</param>
         private void ApplyProgress(double t, double h, double phase)
         {
-            var lerped = IslandGeometry.Lerp(_from, _to, t);
-            var g = new IslandGeometry(
-                lerped.Width,
-                _from.Height + (_to.Height - _from.Height) * h,
-                lerped.Top,
-                lerped.Corner);
+            // 宽度/位移/圆角走主通道，高度走跟随通道，两条通道都过同一个路径函数 ——
+            // 这样"各向异性"来自两条弹簧的相位差，而不是给高度单独编一套插值。
+            var pm = PathAt(t);
+            var ph = PathAt(h);
+            var g = new IslandGeometry(pm.Width, ph.Height, pm.Top, pm.Corner);
 
             _body.Width = Math.Max(1, g.Width);
             _body.Height = Math.Max(1, g.Height);
@@ -327,6 +390,9 @@ namespace alpha_island.Animation
             {
                 _specularTranslate.X = (-0.5 + phase) * _body.ActualWidth * 0.55;
             }
+
+            // 让宿主把内容层透明度、封面球挂到同一条弹簧上。
+            ProgressHook?.Invoke(t);
         }
 
         private static double EaseOutCubic(double x)
