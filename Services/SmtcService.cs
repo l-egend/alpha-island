@@ -126,8 +126,21 @@ namespace alpha_island.Services
         public void CheckFastPlaybackState()
         {
             if (_disposed) return;
+            if (_manager != null)
+            {
+                var best = GetBestSession();
+                if (best != null && !IsSameSession(best, _session))
+                {
+                    QueueRefresh();
+                    return;
+                }
+            }
+
             var session = _session;
-            if (session == null || _current == null) return;
+            if (session == null || _current == null)
+            {
+                return;
+            }
 
             try
             {
@@ -155,9 +168,52 @@ namespace alpha_island.Services
             }
         }
 
+        private GlobalSystemMediaTransportControlsSession? GetBestSession()
+        {
+            if (_manager == null) return null;
+            try
+            {
+                var cur = _manager.GetCurrentSession();
+                if (cur != null)
+                {
+                    var pb = cur.GetPlaybackInfo();
+                    if (pb != null && pb.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+                    {
+                        return cur;
+                    }
+                }
+
+                // GetCurrentSession 没在播放或为 null 时，遍历系统所有媒体会话，优先拾取正在播放的会话
+                var sessions = _manager.GetSessions();
+                GlobalSystemMediaTransportControlsSession? candidate = null;
+                foreach (var s in sessions)
+                {
+                    try
+                    {
+                        var pb = s.GetPlaybackInfo();
+                        if (pb != null && pb.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+                        {
+                            return s;
+                        }
+                        if (candidate == null)
+                        {
+                            candidate = s;
+                        }
+                    }
+                    catch { }
+                }
+                return cur ?? candidate;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[SMTC] GetBestSession 异常: " + ex.Message);
+                return null;
+            }
+        }
+
         private void Attach()
         {
-            _session = _manager?.GetCurrentSession();
+            _session = GetBestSession();
             if (_session == null) return;
             _session.MediaPropertiesChanged += OnMediaPropertiesChanged;
             _session.PlaybackInfoChanged += OnPlaybackInfoChanged;
@@ -224,7 +280,7 @@ namespace alpha_island.Services
 
         private async Task RefreshCoreAsync()
         {
-            var session = _manager?.GetCurrentSession();
+            var session = GetBestSession();
 
             if (!IsSameSession(session, _session))
             {
@@ -248,6 +304,19 @@ namespace alpha_island.Services
             string source = "";
             try { source = _session.SourceAppUserModelId ?? ""; } catch { }
 
+            // 某些播放器（网易云、QQ音乐等）切歌瞬间属性异步就绪有极短延迟，重试一次
+            if (string.IsNullOrEmpty(title) && playback?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+            {
+                await Task.Delay(100).ConfigureAwait(false);
+                if (_session != null)
+                {
+                    props = await _session.TryGetMediaPropertiesAsync().AsTask();
+                    title = props?.Title ?? "";
+                    artist = props?.Artist ?? "";
+                    album = props?.AlbumTitle ?? "";
+                }
+            }
+
             // 封面：按「曲目身份」缓存，避免每次事件都重新解码
             string key = title + "\u0001" + artist + "\u0001" + album;
             if (!string.Equals(key, _artworkKey, StringComparison.Ordinal))
@@ -261,23 +330,32 @@ namespace alpha_island.Services
             _playbackRate = playback?.PlaybackRate ?? 1.0;
             if (_playbackRate <= 0) _playbackRate = 1.0;
 
-            TimeSpan duration = timeline.EndTime - timeline.StartTime;
-            if (duration < TimeSpan.Zero) duration = TimeSpan.Zero;
-            TimeSpan position = timeline.Position - timeline.StartTime;
-            if (position < TimeSpan.Zero) position = TimeSpan.Zero;
-            if (duration > TimeSpan.Zero && position > duration) position = duration;
-
-            DateTimeOffset lastUpdated = timeline.LastUpdatedTime;
-            if (lastUpdated != default)
+            TimeSpan duration = TimeSpan.Zero;
+            TimeSpan position = TimeSpan.Zero;
+            if (timeline != null)
             {
-                var now = DateTimeOffset.UtcNow;
-                if (lastUpdated > now && lastUpdated <= now.AddSeconds(1))
+                duration = timeline.EndTime - timeline.StartTime;
+                if (duration < TimeSpan.Zero) duration = TimeSpan.Zero;
+                position = timeline.Position - timeline.StartTime;
+                if (position < TimeSpan.Zero) position = TimeSpan.Zero;
+                if (duration > TimeSpan.Zero && position > duration) position = duration;
+
+                DateTimeOffset lastUpdated = timeline.LastUpdatedTime;
+                if (lastUpdated != default)
                 {
-                    lastUpdated = now;
-                }
-                if (lastUpdated <= now)
-                {
-                    _positionStampUtc = lastUpdated.UtcDateTime;
+                    var now = DateTimeOffset.UtcNow;
+                    if (lastUpdated > now && lastUpdated <= now.AddSeconds(1))
+                    {
+                        lastUpdated = now;
+                    }
+                    if (lastUpdated <= now)
+                    {
+                        _positionStampUtc = lastUpdated.UtcDateTime;
+                    }
+                    else
+                    {
+                        _positionStampUtc = DateTime.UtcNow;
+                    }
                 }
                 else
                 {

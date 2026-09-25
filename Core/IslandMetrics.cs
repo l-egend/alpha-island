@@ -25,11 +25,17 @@ namespace alpha_island.Core
         /// <summary>一级展开里左侧圆形封面的边长。</summary>
         public const double PillCoverSize = 32;
         /// <summary>一级展开里右侧可视化区的宽高。</summary>
-        public const double PillSpectrumWidth = 74;
+        public const double PillSpectrumWidth = 28;
         public const double PillSpectrumHeight = 22;
 
+        // ================= 中间托盘：文件中转站 =================
+        public const double TrayWidth = 380;
+        public const double TrayHeight = 88;
+        public const double TrayTop = 14;
+        public static readonly CornerRadius TrayCorner = new(22);
+
         // ================= 二级展开：完整卡片 =================
-        public const double CardWidth = 420;
+        public const double CardWidth = 430;
         /// <summary>无歌词时的卡片高度。</summary>
         public const double CardHeight = 138;
         /// <summary>有歌词时的卡片高度（多出歌词区 68 + 上下间距 8）。</summary>

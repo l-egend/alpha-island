@@ -14,8 +14,8 @@ namespace alpha_island.Core
     public sealed class IslandOptions
     {
         // ---------- 外观 ----------
-        /// <summary>液态玻璃通透度 0.2~0.98。</summary>
-        public double GlassOpacity { get; set; } = 0.85;
+        /// <summary>液态玻璃通透度 0.05~0.98。</summary>
+        public double GlassOpacity { get; set; } = 0.08;
         /// <summary>是否尝试真实背景模糊（做不到时会自动降级，见 Interop/WindowEffects）。</summary>
         public bool LiquidGlassBackdrop { get; set; } = true;
         /// <summary>是否启用凝胶形变动效（关闭则退回普通缓动）。</summary>
@@ -73,6 +73,26 @@ namespace alpha_island.Core
         /// <summary>蓝牙通知停留秒数，2~30。</summary>
         public int BluetoothNotifySeconds { get; set; } = 5;
 
+        // ---------- 电池 ----------
+        /// <summary>电池充电状态或低电量变化时是否弹出通知。</summary>
+        public bool BatteryNotifyEnabled { get; set; } = true;
+        /// <summary>电池通知停留秒数，2~10。</summary>
+        public int BatteryNotifySeconds { get; set; } = 4;
+        /// <summary>充放电时是否播放光波纹特效。</summary>
+        public bool BatteryRippleEnabled { get; set; } = true;
+
+        // ---------- 剪切板与热键 ----------
+        /// <summary>复制内容时是否弹出剪切板通知。</summary>
+        public bool ClipboardNotifyEnabled { get; set; } = true;
+        /// <summary>已复制驻留弹窗下，鼠标右键是否替换为自动粘贴。</summary>
+        public bool ClipboardRightClickPaste { get; set; } = true;
+        /// <summary>粘贴后提示停留秒数，1~5。</summary>
+        public int ClipboardAutoCollapseSeconds { get; set; } = 2;
+
+        // ---------- 文件中转站 ----------
+        /// <summary>是否启用拖拽文件中转站功能。</summary>
+        public bool FileTransferEnabled { get; set; } = true;
+
         public IslandOptions Clone() => (IslandOptions)MemberwiseClone();
 
         /// <summary>把其它实例的值全部拷贝进来（用于"恢复默认"后再回填）。</summary>
@@ -101,6 +121,13 @@ namespace alpha_island.Core
             GreetingSeconds = other.GreetingSeconds;
             BluetoothNotifyEnabled = other.BluetoothNotifyEnabled;
             BluetoothNotifySeconds = other.BluetoothNotifySeconds;
+            BatteryNotifyEnabled = other.BatteryNotifyEnabled;
+            BatteryNotifySeconds = other.BatteryNotifySeconds;
+            BatteryRippleEnabled = other.BatteryRippleEnabled;
+            ClipboardNotifyEnabled = other.ClipboardNotifyEnabled;
+            ClipboardRightClickPaste = other.ClipboardRightClickPaste;
+            ClipboardAutoCollapseSeconds = other.ClipboardAutoCollapseSeconds;
+            FileTransferEnabled = other.FileTransferEnabled;
         }
 
         // ================= 持久化 =================
@@ -135,7 +162,7 @@ namespace alpha_island.Core
             try
             {
                 AppPaths.EnsureRoot();
-                File.WriteAllText(AppPaths.OptionsFile, JsonSerializer.Serialize(this, JsonOptions));
+                File.WriteAllText(AppPaths.OptionsFile, JsonSerializer.Serialize(this, JsonOptions), System.Text.Encoding.UTF8);
             }
             catch (Exception ex)
             {
@@ -146,10 +173,14 @@ namespace alpha_island.Core
         /// <summary>把超范围的值夹回合法区间（配置文件可以被手改坏）。</summary>
         public IslandOptions Normalized()
         {
-            GlassOpacity = Math.Clamp(GlassOpacity, 0.2, 0.98);
+            GlassOpacity = Math.Clamp(GlassOpacity, 0.05, 0.98);
             Sensitivity = Math.Clamp(Sensitivity, 0.3, 3.0);
             UpNextSeconds = Math.Clamp(UpNextSeconds, 2, 30);
             BluetoothNotifySeconds = Math.Clamp(BluetoothNotifySeconds, 2, 30);
+            if (string.IsNullOrWhiteSpace(GreetingText) || GreetingText.Contains("娆") || GreetingText.Contains("鍥") || GreetingText.Contains(""))
+            {
+                GreetingText = "欢迎回来";
+            }
             return this;
         }
     }

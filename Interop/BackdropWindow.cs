@@ -73,6 +73,81 @@ namespace alpha_island.Interop
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WNDCLASSEX
+        {
+            public uint cbSize;
+            public uint style;
+            public IntPtr lpfnWndProc;
+            public int cbClsExtra;
+            public int cbWndExtra;
+            public IntPtr hInstance;
+            public IntPtr hIcon;
+            public IntPtr hCursor;
+            public IntPtr hbrBackground;
+            public string? lpszMenuName;
+            public string lpszClassName;
+            public IntPtr hIconSm;
+        }
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern ushort RegisterClassExW(ref WNDCLASSEX lpwcx);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr DefWindowProcW(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr GetModuleHandleW(string? lpModuleName);
+
+        private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam);
+        private static readonly WndProcDelegate BackdropWndProcDelegate = BackdropWndProc;
+        private static IntPtr _wndProcPtr;
+        private static bool _classRegistered;
+        private static readonly object _classLock = new();
+        private const string BackdropClassName = "AlphaIslandBackdropClass";
+
+        private static IntPtr BackdropWndProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam)
+        {
+            const uint WM_ERASEBKGND = 0x0014;
+            const uint WM_PAINT = 0x000F;
+            if (uMsg == WM_ERASEBKGND)
+            {
+                // 彻底拦截系统背景擦除，绝不让 GDI 绘制白色或黑色色块！
+                return (IntPtr)1;
+            }
+            if (uMsg == WM_PAINT)
+            {
+                return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+            }
+            return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+        }
+
+        private static void EnsureClassRegistered()
+        {
+            lock (_classLock)
+            {
+                if (_classRegistered) return;
+                _wndProcPtr = Marshal.GetFunctionPointerForDelegate(BackdropWndProcDelegate);
+                var wc = new WNDCLASSEX
+                {
+                    cbSize = (uint)Marshal.SizeOf<WNDCLASSEX>(),
+                    style = 0,
+                    lpfnWndProc = _wndProcPtr,
+                    cbClsExtra = 0,
+                    cbWndExtra = 0,
+                    hInstance = GetModuleHandleW(null),
+                    hIcon = IntPtr.Zero,
+                    hCursor = IntPtr.Zero,
+                    hbrBackground = IntPtr.Zero, // NULL 画刷，绝对不让系统默认擦除为白色！
+                    lpszMenuName = null,
+                    lpszClassName = BackdropClassName,
+                    hIconSm = IntPtr.Zero
+                };
+                RegisterClassExW(ref wc);
+                _classRegistered = true;
+            }
+        }
+
         // ------------------------ CoreMessaging / Composition ------------------------
         [StructLayout(LayoutKind.Sequential)]
         private struct DispatcherQueueOptions
@@ -192,10 +267,12 @@ namespace alpha_island.Interop
 
             try
             {
+                EnsureClassRegistered();
+
                 _hwnd = CreateWindowExW(
                     WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
                     WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
-                    "Static", "AlphaIslandBackdrop",
+                    BackdropClassName, "AlphaIslandBackdrop",
                     WS_POPUP | WS_VISIBLE,
                     0, 0, 10, 10, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
@@ -257,6 +334,9 @@ namespace alpha_island.Interop
 
                 if (!Has("noDwm"))
                 {
+                    int darkMode = 1; // DWMWA_USE_IMMERSIVE_DARK_MODE (强制深色模式，绝不允许 DWM 渲染亮色发白亚克力)
+                    DwmSetWindowAttribute(_hwnd, 20, ref darkMode, sizeof(int));
+
                     int transient = 3; // DWMSBT_TRANSIENTWINDOW
                     int hrDwm = DwmSetWindowAttribute(_hwnd, 38, ref transient, sizeof(int));
                     if (hrDwm != 0)
@@ -287,6 +367,15 @@ namespace alpha_island.Interop
             SetWindowPos(_hwnd, overlayHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
 
+        /// <summary>动态调整毛玻璃精灵层的通透度（0.05 ~ 1.0）。</summary>
+        public void SetOpacity(double opacity)
+        {
+            if (_sprite != null)
+            {
+                _sprite.Opacity = (float)Math.Clamp(opacity, 0.05, 1.0);
+            }
+        }
+
         /// <summary>设定窗口位置与尺寸。只在形态**一次性切换**时调，别每帧调（4~6.7ms/帧）。</summary>
         public void SetBounds(int x, int y, int w, int h)
         {
@@ -301,6 +390,8 @@ namespace alpha_island.Interop
             }
             SetWindowPos(_hwnd, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
         }
+
+        private double _lastRgnX = -999, _lastRgnY = -999, _lastRgnW = -999, _lastRgnH = -999, _lastRgnR = -999;
 
         /// <summary>
         /// 只更新圆角裁剪几何（岛体相对玻璃窗的位置/大小/圆角）。
@@ -318,21 +409,32 @@ namespace alpha_island.Interop
             g.Size = new Vector2((float)w, (float)h);
             g.CornerRadius = new Vector2(r, r);
 
-            // 关键：DWM 的窗口级 backdrop 会把**整个窗口矩形**都模糊掉，
-            // Composition 侧的几何裁剪管不住它（实测模糊范围永远等于窗口矩形）。
-            // 所以还得把窗口本身裁成岛的形状。SetWindowRgn 之后 region 归系统所有，
-            // 不能再 DeleteObject。
+            // 关键优化：SetWindowRgn 开销巨大（每次重构 GDI 区域树并强制排队同步绘图），
+            // 且 Composition 侧已有圆角几何裁剪。因此只在几何尺寸变化 >= 3 像素时才同步 GDI 窗口区域，
+            // 并且 redraw 参数传 false，杜绝无谓的 GDI 强制重绘与白色闪烁！
+            if (Math.Abs(w - _lastRgnW) < 3.0 && Math.Abs(h - _lastRgnH) < 3.0 &&
+                Math.Abs(x - _lastRgnX) < 3.0 && Math.Abs(y - _lastRgnY) < 3.0 &&
+                Math.Abs(r - _lastRgnR) < 2.0)
+            {
+                return;
+            }
+
+            _lastRgnX = x; _lastRgnY = y; _lastRgnW = w; _lastRgnH = h; _lastRgnR = r;
+
             IntPtr rgn = CreateRoundRectRgn(
                 (int)Math.Round(x), (int)Math.Round(y),
                 (int)Math.Round(x + w) + 1, (int)Math.Round(y + h) + 1,
                 (int)Math.Round(r * 2), (int)Math.Round(r * 2));
-            int okRgn = rgn != IntPtr.Zero ? SetWindowRgn(_hwnd, rgn, true) : -1;
+            if (rgn != IntPtr.Zero)
+            {
+                SetWindowRgn(_hwnd, rgn, false);
+            }
 
             if (!_loggedIsland)
             {
                 _loggedIsland = true;
                 Log($"SetIsland first: x={x:F1} y={y:F1} w={w:F1} h={h:F1} r={r:F1} " +
-                    $"rgn={(rgn != IntPtr.Zero ? "ok" : "null")} SetWindowRgn={okRgn} " +
+                    $"rgn={(rgn != IntPtr.Zero ? "ok" : "null")} " +
                     $"win={_w}x{_h}@{_x},{_y}");
             }
         }
@@ -347,7 +449,8 @@ namespace alpha_island.Interop
             {
                 // 隐藏时把 region 收掉，避免残留的圆角形状在下次显示前闪一下
                 IntPtr empty = CreateRectRgn(0, 0, 0, 0);
-                if (empty != IntPtr.Zero) SetWindowRgn(_hwnd, empty, true);
+                if (empty != IntPtr.Zero) SetWindowRgn(_hwnd, empty, false);
+                _lastRgnW = -999;
             }
             ShowWindow(_hwnd, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
         }

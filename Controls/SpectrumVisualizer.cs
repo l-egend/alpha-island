@@ -2,9 +2,10 @@ using System;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
-// ImplicitUsings 通过 UseWindowsForms 全局引入了 System.Drawing，Color/Point 会撞名
+// ImplicitUsings 通过 UseWindowsForms 全局引入了 System.Drawing，Color/Point/Brush 会撞名
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
+using Brush = System.Windows.Media.Brush;
 
 namespace alpha_island.Controls
 {
@@ -144,6 +145,16 @@ namespace alpha_island.Controls
             set => SetValue(GlowOpacityProperty, value);
         }
 
+        public static readonly DependencyProperty UniformColorProperty =
+            DependencyProperty.Register(nameof(UniformColor), typeof(bool), typeof(SpectrumVisualizer),
+                new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender, OnBrushChanged));
+
+        public bool UniformColor
+        {
+            get => (bool)GetValue(UniformColorProperty);
+            set => SetValue(UniformColorProperty, value);
+        }
+
         public double CenterEmphasis
         {
             get => (double)GetValue(CenterEmphasisProperty);
@@ -159,8 +170,8 @@ namespace alpha_island.Controls
         private float[] _target = new float[40];
         private float[] _display = new float[40];
 
-        private LinearGradientBrush?[] _barBrushes = Array.Empty<LinearGradientBrush?>();
-        private LinearGradientBrush?[] _glowBrushes = Array.Empty<LinearGradientBrush?>();
+        private Brush?[] _barBrushes = Array.Empty<Brush?>();
+        private Brush?[] _glowBrushes = Array.Empty<Brush?>();
         private bool _brushesDirty = true;
 
         private bool _rendering;
@@ -366,10 +377,24 @@ namespace alpha_island.Controls
             if (!_brushesDirty && _barBrushes.Length == n) return;
             _brushesDirty = false;
 
-            var ramp = new[] { ColorLow, ColorMid, ColorHigh, ColorExtra };
+            _barBrushes = new Brush?[n];
+            _glowBrushes = new Brush?[n];
 
-            _barBrushes = new LinearGradientBrush?[n];
-            _glowBrushes = new LinearGradientBrush?[n];
+            if (UniformColor)
+            {
+                var solid = new SolidColorBrush(Color.FromArgb(0xEE, ColorLow.R, ColorLow.G, ColorLow.B));
+                solid.Freeze();
+                var glow = new SolidColorBrush(Color.FromArgb(0x35, ColorLow.R, ColorLow.G, ColorLow.B));
+                glow.Freeze();
+                for (int i = 0; i < n; i++)
+                {
+                    _barBrushes[i] = solid;
+                    _glowBrushes[i] = glow;
+                }
+                return;
+            }
+
+            var ramp = new[] { ColorLow, ColorMid, ColorHigh, ColorExtra };
 
             for (int i = 0; i < n; i++)
             {

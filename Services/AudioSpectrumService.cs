@@ -35,6 +35,28 @@ namespace alpha_island.Services
         private const int AccCapacity = FftSize * 4;
         private const double PublishIntervalMs = 13.0;
 
+        // —— 采集会话健康检查 ——
+        // 故障背景：StartRecording() 成功、_running == true，但设备（尤其是蓝牙 A2DP 端点）
+        // 当时还在休眠或被系统重新枚举，于是会话活着却永远收不到数据；旧版本没有任何检测，
+        // 结果整轮运行都是"一条直线"，只有重启进程才能恢复。
+        //
+        // 实测（2026-09-25，本机 OPPO Enco Clip2 蓝牙端点）：会话变聋时，同一个端点上
+        // 另起一个进程做回环采集能拿到 2.9MB 音频，而应用的会话 22 秒内只收到 0 字节回调；
+        // 同时 MMDevice.AudioMeterInformation.MasterPeakValue 在**放音时依然是 0**，
+        // 所以电平表不能作为触发条件，只能当"能读到就提前重建"的加速器。
+        // 结论：唯一可靠的恢复手段是重建会话，因此静默超过退避周期就重建，
+        // 退避 3s→10s 且只在真正收到音频数据时归零。上限取 10s 而不是更长，是为了保证
+        // "用户在放音、频谱却是平线"最多持续一个退避周期；空闲时每次重建只是一次廉价的
+        // COM 拆装（不产生任何音频渲染，对蓝牙链路无影响），而一旦真的采到数据，退避立刻
+        // 归零、看门狗在整个播放期间都不会再重建。
+        /// <summary>连续多少毫秒没有采到真实音频数据算"静默"，进入故障判定。</summary>
+        private const double SilentProbeMs = 1000.0;
+        /// <summary>重建会话的起始间隔；之后按 1.5 倍退避到 SilentRebindMaxMs。</summary>
+        private const int SilentRebindBaseMs = 3000;
+        private const int SilentRebindMaxMs = 10000;
+
+        private static readonly Guid SubtypeIeeeFloat = new("00000003-0000-0010-8000-00aa00389b71");
+
         private readonly object _gate = new();
         private readonly object _lifecycle = new();
 
@@ -45,16 +67,19 @@ namespace alpha_island.Services
         private readonly float[] _window = new float[FftSize];
         private readonly double[] _bandFreq = new double[BandCount + 1];
         private readonly float[] _tilt = new float[BandCount];
+        private readonly float[] _tiltDb = new float[BandCount];
         private readonly float[] _smoothed = new float[BandCount];
 
         private WasapiLoopbackCapture? _capture;
         private MMDevice? _device;
+        private AudioMeterInformation? _meter;     // 端点电平表（区分“端点空闲”与“会话坏了”）
         private MMDeviceEnumerator? _enumerator;
 
         // 仅由 _gate 保护
         private int _channels = 2;
         private int _bytesPerSample = 4;
         private int _sampleRate = 48000;
+        private bool _isFloat = true;
         private long _lastPublishTicks;
 
         // 仅由 _lifecycle 保护
@@ -62,6 +87,9 @@ namespace alpha_island.Services
         private long _lastStartAttemptTicks;
 
         private long _lastDataTicks;
+        private long _lastCallbackTicks;          // 任意 DataAvailable（含 0 字节）都刷新
+        private int _rebindBackoffMs = SilentRebindBaseMs;
+        private int _sessionRebinds;              // 诊断：自动重建采集会话的次数
         private volatile bool _running;
         private volatile string? _deviceName;
         private volatile string? _lastError;
@@ -78,12 +106,15 @@ namespace alpha_island.Services
         /// <summary>低于该分贝视为静音（噪声门）。</summary>
         public float NoiseFloorDb { get; set; } = -80f;
 
-        /// <summary>达到该分贝即为满格。</summary>
-        public float CeilingDb { get; set; } = -14f;
+        /// <summary>达到该分贝即为满格。调低该值可使中低音量下频谱柱更明显地跳动。</summary>
+        public float CeilingDb { get; set; } = -24f;
 
         public bool IsRunning => _running;
         public string? LastError => _lastError;
         public string? DeviceName => _deviceName;
+
+        /// <summary>诊断用：因长时间收不到音频数据而自动重建采集会话的次数。</summary>
+        public int SessionRebinds => Volatile.Read(ref _sessionRebinds);
 
         public AudioSpectrumService()
         {
@@ -116,6 +147,11 @@ namespace alpha_island.Services
                 double mid = Math.Sqrt(_bandFreq[b] * _bandFreq[b + 1]);
                 // 音乐频谱天然高频衰减，做一点倾斜补偿，视觉才均衡
                 _tilt[b] = (float)Math.Min(2.3, Math.Pow(Math.Max(mid, 60.0) / 700.0, 0.26));
+                // 补偿必须作用在分贝域。level 本身就是按分贝归一化出来的量，
+                // 早期版本直接 "level *= _tilt[b] * sens"，等于把一个幅度比当增益去乘分贝等级，
+                // 中高音量下多数频段会被顶到 1.0 饱和（实测宽带噪声：64 段里 36 段恒为满格），
+                // 频谱只剩一座不会动的小山。换成等效的 dB 偏移即可保留动态。
+                _tiltDb[b] = (float)(20.0 * Math.Log10(_tilt[b]));
             }
         }
 
@@ -147,7 +183,16 @@ namespace alpha_island.Services
             try
             {
                 _enumerator ??= new MMDeviceEnumerator();
-                device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+                // 优先用 Multimedia 端点（默认播放设备）；若失败，退回 Console 端点
+                try
+                {
+                    device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                }
+                catch
+                {
+                    device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+                }
 
                 capture = new WasapiLoopbackCapture(device);
                 var fmt = capture.WaveFormat;
@@ -157,6 +202,8 @@ namespace alpha_island.Services
                     _channels = Math.Max(1, fmt.Channels);
                     _bytesPerSample = Math.Max(2, fmt.BitsPerSample / 8);
                     _sampleRate = fmt.SampleRate > 0 ? fmt.SampleRate : 48000;
+                    _isFloat = fmt.Encoding == WaveFormatEncoding.IeeeFloat
+                        || (fmt is WaveFormatExtensible we && we.SubFormat == SubtypeIeeeFloat);
                     BuildBandMap(_sampleRate);
                     _accCount = 0;
                     Array.Clear(_smoothed, 0, _smoothed.Length);
@@ -170,7 +217,14 @@ namespace alpha_island.Services
                 _device = device;
                 _deviceId = device.ID;
                 _deviceName = device.FriendlyName;
+                // 端点电平表：用来区分“端点本来就空闲”和“系统在出声但我们的会话坏了”。
+                // 取不到也照常工作（看门狗会退回到兜底重建）。
+                try { _meter = device.AudioMeterInformation; } catch { _meter = null; }
                 Interlocked.Exchange(ref _lastDataTicks, Stopwatch.GetTimestamp());
+                Interlocked.Exchange(ref _lastCallbackTicks, Stopwatch.GetTimestamp());
+                // 注意：这里**不能**把退避重置回 SilentRebindBaseMs。
+                // 重置会让"一直采不到数据"的坏会话永远停在 3s 一次的重建节奏上（实测 25 秒重建 8 次）。
+                // 退避只在真的拿到音频数据时（OnDataAvailable 里）才归零。
                 _lastError = null;
                 _running = true;
 
@@ -192,6 +246,7 @@ namespace alpha_island.Services
                 try { device?.Dispose(); } catch { }
             }
         }
+
 
         /// <summary>必须在 _lifecycle 内调用；不得持有 _gate。</summary>
         private void StopCoreLocked()
@@ -215,6 +270,7 @@ namespace alpha_island.Services
 
             try { _device?.Dispose(); } catch { }
             _device = null;
+            _meter = null;
             _deviceId = null;
             _deviceName = null;
         }
@@ -223,8 +279,15 @@ namespace alpha_island.Services
 
         private void OnDataAvailable(object? sender, WaveInEventArgs e)
         {
-            if (_disposed || e.BytesRecorded <= 0) return;
+            if (_disposed) return;
+
+            // 回调本身就是"会话还活着"的证据：设备空闲时 WASAPI 也会持续回调（只是 0 字节），
+            // 所以这个时间戳要在字节数判断之前刷新，看门狗才能区分"设备空闲"和"会话已死"。
+            Interlocked.Exchange(ref _lastCallbackTicks, Stopwatch.GetTimestamp());
+            if (e.BytesRecorded <= 0) return;
+
             Interlocked.Exchange(ref _lastDataTicks, Stopwatch.GetTimestamp());
+            Volatile.Write(ref _rebindBackoffMs, SilentRebindBaseMs);   // 真的拿到数据了，退避重置
 
             float[]? frame = null;
             try
@@ -254,6 +317,8 @@ namespace alpha_island.Services
 
         private void OnRecordingStopped(object? sender, StoppedEventArgs e)
         {
+            _running = false;
+            _lastStartAttemptTicks = Stopwatch.GetTimestamp();
             if (e.Exception != null)
             {
                 Debug.WriteLine("[Audio] 采集中断: " + e.Exception.Message);
@@ -278,9 +343,22 @@ namespace alpha_island.Services
                 for (int c = 0; c < ch; c++)
                 {
                     int o = off + c * bps;
-                    sum += bps == 4
-                        ? BitConverter.ToSingle(buffer, o)
-                        : BitConverter.ToInt16(buffer, o) / 32768f;
+                    float sample = 0f;
+                    if (bps == 4)
+                    {
+                        // 32-bit WASAPI Loopback 在 Windows 上始终为 IEEE Float
+                        sample = BitConverter.ToSingle(buffer, o);
+                    }
+                    else if (bps == 2)
+                    {
+                        sample = BitConverter.ToInt16(buffer, o) / 32768f;
+                    }
+                    else if (bps == 3)
+                    {
+                        sample = (float)(((sbyte)buffer[o + 2] << 16) | (buffer[o + 1] << 8) | buffer[o]) / 8388608f;
+                    }
+                    if (float.IsNaN(sample) || float.IsInfinity(sample)) sample = 0f;
+                    sum += sample;
                 }
                 _acc[_accCount++] = sum / ch;
             }
@@ -317,19 +395,23 @@ namespace alpha_island.Services
                 {
                     double f = f0 * Math.Pow(f1 / f0, (double)s / Probes);
                     double m = InterpolatedMagnitude(f);
+                    if (double.IsNaN(m) || double.IsInfinity(m)) m = 0;
                     if (m > mag) mag = m;
                 }
                 mag *= MagScale;
 
-                double db = 20.0 * Math.Log10(mag + 1e-7);
+                double db = 20.0 * Math.Log10(mag + 1e-7) + _tiltDb[b];
+                if (double.IsNaN(db) || double.IsInfinity(db)) db = floor;
                 double level = (db - floor) / range;
-                level *= _tilt[b] * sens;
-                if (level < 0) level = 0; else if (level > 1) level = 1;
+                level *= sens;
+                if (level < 0 || double.IsNaN(level)) level = 0; else if (level > 1) level = 1;
 
                 float prev = _smoothed[b];
+                if (float.IsNaN(prev)) prev = 0f;
                 // 快起慢落，观感更"跟手"又不抖
                 float coeff = level > prev ? 0.68f : 0.17f;
                 _smoothed[b] = prev + ((float)level - prev) * coeff;
+                if (float.IsNaN(_smoothed[b])) _smoothed[b] = 0f;
             }
         }
 
@@ -374,14 +456,20 @@ namespace alpha_island.Services
             {
                 long now = Stopwatch.GetTimestamp();
                 double idleMs = (now - Interlocked.Read(ref _lastDataTicks)) * 1000.0 / Stopwatch.Frequency;
+                double callbackIdleMs = (now - Interlocked.Read(ref _lastCallbackTicks)) * 1000.0 / Stopwatch.Frequency;
+
+                // 电平表必须在 _lifecycle 之外读：个别（蓝牙）设备的 COM 调用可能阻塞上百毫秒，
+                // 而 _lifecycle 也是 Stop()/Dispose() 要抢的锁，不能在锁里等 COM。
+                bool endpointHasSignal = idleMs > SilentProbeMs && EndpointHasSignal();
 
                 bool needRestart = false;
+                bool silentRebind = false;
                 lock (_lifecycle)
                 {
                     if (!_running)
                     {
                         double sinceStart = (now - _lastStartAttemptTicks) * 1000.0 / Stopwatch.Frequency;
-                        if (sinceStart > 5000)
+                        if (sinceStart > 1500)
                         {
                             _lastStartAttemptTicks = now;
                             StartCoreLocked();
@@ -389,14 +477,42 @@ namespace alpha_island.Services
                         return;
                     }
 
-                    // 插拔耳机/切换默认设备后，旧设备的 loopback 只会一直吐静音
-                    if (idleMs > 2000 && DefaultDeviceChangedLocked())
+                    // 默认音频终结点切换（如连接/断开蓝牙耳机）时立即重启
+                    if (DefaultDeviceChangedLocked())
+                    {
                         needRestart = true;
+                    }
+                    else if (idleMs > SilentProbeMs)
+                    {
+                        // 长时间收不到任何音频数据。两种可能：
+                        //   a) 端点本来就是空闲的（蓝牙端点空闲时只有 0 字节回调）——正常，重建也无害；
+                        //   b) 我们的采集会话“聋”了：实测在本机蓝牙 A2DP 端点上出现过
+                        //      「同端点上别的进程刚采到 2.9MB 音频，我们自己的会话一个字节都没有」。
+                        // 已证实 (b) 唯一可靠的恢复手段就是重建会话；电平表在部分（蓝牙）驱动上恒为 0，
+                        // 不能当开门条件（实测放音时 MasterPeakValue 仍 ≈0），只能当加速器。
+                        // 因此：静默超过退避周期就重建，退避 3s→10s、只在真正收到数据时归零。
+                        int backoff = Volatile.Read(ref _rebindBackoffMs);
+                        if (endpointHasSignal || idleMs > backoff)
+                        {
+                            needRestart = true;
+                            silentRebind = true;
+                            Volatile.Write(ref _rebindBackoffMs,
+                                Math.Min(SilentRebindMaxMs, backoff + backoff / 2));
+                        }
+                    }
                 }
 
                 if (needRestart)
                 {
-                    Debug.WriteLine("[Audio] 默认播放设备已改变，重启采集");
+                    if (silentRebind)
+                    {
+                        int n = Interlocked.Increment(ref _sessionRebinds);
+                        Debug.WriteLine($"[Audio] 静默 {idleMs:F0}ms（端点{(endpointHasSignal ? "在出声" : "无声")}、回调空闲 {callbackIdleMs:F0}ms），重建采集会话（第 {n} 次）：{_deviceName}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine("[Audio] 播放设备改变，立即重启采集");
+                    }
                     lock (_lifecycle) StartCoreLocked();
                     return;
                 }
@@ -416,6 +532,24 @@ namespace alpha_island.Services
             catch (Exception ex) { Debug.WriteLine("[Audio] watchdog: " + ex.Message); }
         }
 
+        /// <summary>
+        /// 端点此刻是否正在出声（0..1 的电平峰值）。用来区分“端点本来就空闲”和
+        /// “系统在出声、而我们一个字节都采不到”。会访问 COM，必须放在 _lifecycle 之外调用。
+        /// </summary>
+        private bool EndpointHasSignal()
+        {
+            try
+            {
+                var meter = _meter;
+                if (meter == null) return false;
+                return meter.MasterPeakValue > 0.0005f;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>必须在 _lifecycle 内调用。</summary>
         private bool DefaultDeviceChangedLocked()
         {
@@ -423,11 +557,23 @@ namespace alpha_island.Services
             try
             {
                 _enumerator ??= new MMDeviceEnumerator();
-                using var current = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-                return !string.Equals(current.ID, _deviceId, StringComparison.OrdinalIgnoreCase);
+                // 同时检查 Multimedia 和 Console 两个端点
+                // 只要当前采集的设备 ID 与其中任意一个匹配，就认为没有切换
+                using var multi = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                if (string.Equals(multi.ID, _deviceId, StringComparison.OrdinalIgnoreCase))
+                    return false; // 设备没变
+                try
+                {
+                    using var cons = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+                    if (string.Equals(cons.ID, _deviceId, StringComparison.OrdinalIgnoreCase))
+                        return false; // Console 端点也没变
+                }
+                catch { }
+                return true; // 两个都不匹配，设备确实变了
             }
             catch { return false; }
         }
+
 
         public void Dispose()
         {

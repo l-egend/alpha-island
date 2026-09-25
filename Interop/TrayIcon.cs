@@ -21,13 +21,24 @@ namespace alpha_island.Interop
         /// <summary>菜单里的"退出程序"。</summary>
         public event EventHandler? ExitRequested;
 
+        private DateTime _lastSettingsRequestTime = DateTime.MinValue;
+
+        private void TriggerSettingsRequested()
+        {
+            if (_disposed) return;
+            var now = DateTime.UtcNow;
+            if ((now - _lastSettingsRequestTime).TotalMilliseconds < 350) return;
+            _lastSettingsRequestTime = now;
+            SettingsRequested?.Invoke(this, EventArgs.Empty);
+        }
+
         public void Show(string tooltip = "Alpha Island (灵动岛)")
         {
             if (_disposed || _icon != null) return;
 
             _menu = new ContextMenuStrip();
             var settingsItem = new ToolStripMenuItem("⚙️ 打开设置");
-            settingsItem.Click += (_, __) => SettingsRequested?.Invoke(this, EventArgs.Empty);
+            settingsItem.Click += (_, __) => TriggerSettingsRequested();
             var exitItem = new ToolStripMenuItem("退出程序");
             exitItem.Click += (_, __) => ExitRequested?.Invoke(this, EventArgs.Empty);
             _menu.Items.Add(settingsItem);
@@ -43,9 +54,8 @@ namespace alpha_island.Interop
             };
             _icon.MouseClick += (_, e) =>
             {
-                if (e.Button == MouseButtons.Left) SettingsRequested?.Invoke(this, EventArgs.Empty);
+                if (e.Button == MouseButtons.Left) TriggerSettingsRequested();
             };
-            _icon.DoubleClick += (_, __) => SettingsRequested?.Invoke(this, EventArgs.Empty);
         }
 
         public void Dispose()

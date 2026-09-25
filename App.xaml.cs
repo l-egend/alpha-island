@@ -23,6 +23,8 @@ namespace alpha_island
         {
             base.OnStartup(e);
 
+            Exit += (_, args) => Log(new Exception($"Application.Exit fired! Code={args.ApplicationExitCode}"), "AppExit");
+
             // 托盘/设置窗口跑在 WinForms 的消息循环里，异常默认会弹一个
             // "Microsoft .NET 未处理的异常" 模态框，既难看又断掉调试现场。
             // 统一改成写日志 + 继续运行，问题留痕可查。

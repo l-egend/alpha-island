@@ -155,8 +155,8 @@
                                         <TextBlock Style="{StaticResource W11RowHint}" Text="调节悬浮岛主体的半透明模糊深度"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Slider IsSnapToTickEnabled="False" LargeChange="0.05" Maximum="0.96" Minimum="0.45"
-                                                SmallChange="0.01" Style="{StaticResource W11Slider}" Value="0.85"
+                                        <Slider IsSnapToTickEnabled="False" LargeChange="0.05" Maximum="0.98" Minimum="0.05"
+                                                SmallChange="0.01" Style="{StaticResource W11Slider}" Value="0.08"
                                                 ValueChanged="Slider_Changed" Width="140" x:Name="GlassOpacitySlider"/>
                                         <TextBlock Style="{StaticResource W11Value}" x:Name="GlassOpacityValue"/>
                                     </StackPanel>
@@ -649,6 +649,113 @@
                                     </Border>
                                 </Grid>
                             </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="电池与电源"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Battery">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE83F;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="电池状态提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="插拔电源、充满电与低电量时弹出胶囊提示"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="BatteryNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_BatteryRipple">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xEA80;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="充放电动态波纹"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="充电时扩散淡绿光波，耗电时向内收敛暖橙光波"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="BatteryRippleToggle"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="剪切板与热键"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Clipboard">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8C8;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="复制内容时提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="复制内容后弹出提示并保持驻留，可向上滑动收回"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="ClipboardNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_ClipboardPaste">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE77F;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="鼠标右键替换为粘贴"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="在已复制弹窗驻留期间，鼠标右键直接替换为自动粘贴"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="ClipboardRightClickPasteToggle"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="文件中转站"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <Grid Style="{StaticResource W11Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_FileTransfer">
+                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8B7;"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="文件拖拽中转站"/>
+                                    <TextBlock Style="{StaticResource W11RowHint}" Text="拖拽文件至岛体时展开中转托盘，支持复制/剪切分区与拖出"/>
+                                </StackPanel>
+                                <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                          Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                          VerticalAlignment="Center" x:Name="FileTransferToggle"/>
+                            </Grid>
                         </Border>
 
                         <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="维护"/>

@@ -16,6 +16,8 @@
             <Style TargetType="Button">
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             </Style>
+
+            <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

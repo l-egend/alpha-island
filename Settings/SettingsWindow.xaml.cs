@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using alpha_island.Core;
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
@@ -18,6 +19,7 @@ namespace alpha_island.Settings
 
         private IslandOptions _options = new();
         private bool _suppress = true;
+        private readonly DispatcherTimer _saveDebounceTimer;
 
         /// <summary>左侧导航栏是否处于展开态（收起时只留图标，不显示文字）。</summary>
         private bool _navExpanded = true;
@@ -31,6 +33,16 @@ namespace alpha_island.Settings
         public SettingsWindow()
         {
             InitializeComponent();
+
+            _saveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(350)
+            };
+            _saveDebounceTimer.Tick += (_, __) =>
+            {
+                _saveDebounceTimer.Stop();
+                _options.Save();
+            };
 
             var workArea = SystemParameters.WorkArea;
             Left = workArea.Left + (workArea.Width - Width) / 2.0;
@@ -164,6 +176,26 @@ namespace alpha_island.Settings
             if (BluetoothNotifyValue != null)
             {
                 BluetoothNotifyValue.Text = $"{_options.BluetoothNotifySeconds:0}s";
+            }
+            if (BatteryNotifyToggle != null)
+            {
+                BatteryNotifyToggle.IsChecked = _options.BatteryNotifyEnabled;
+            }
+            if (BatteryRippleToggle != null)
+            {
+                BatteryRippleToggle.IsChecked = _options.BatteryRippleEnabled;
+            }
+            if (ClipboardNotifyToggle != null)
+            {
+                ClipboardNotifyToggle.IsChecked = _options.ClipboardNotifyEnabled;
+            }
+            if (ClipboardRightClickPasteToggle != null)
+            {
+                ClipboardRightClickPasteToggle.IsChecked = _options.ClipboardRightClickPaste;
+            }
+            if (FileTransferToggle != null)
+            {
+                FileTransferToggle.IsChecked = _options.FileTransferEnabled;
             }
 
             _suppress = false;
@@ -321,9 +353,30 @@ namespace alpha_island.Settings
             {
                 _options.BluetoothNotifySeconds = (int)Math.Round(BluetoothNotifySlider.Value);
             }
+            if (BatteryNotifyToggle != null)
+            {
+                _options.BatteryNotifyEnabled = BatteryNotifyToggle.IsChecked == true;
+            }
+            if (BatteryRippleToggle != null)
+            {
+                _options.BatteryRippleEnabled = BatteryRippleToggle.IsChecked == true;
+            }
+            if (ClipboardNotifyToggle != null)
+            {
+                _options.ClipboardNotifyEnabled = ClipboardNotifyToggle.IsChecked == true;
+            }
+            if (ClipboardRightClickPasteToggle != null)
+            {
+                _options.ClipboardRightClickPaste = ClipboardRightClickPasteToggle.IsChecked == true;
+            }
+            if (FileTransferToggle != null)
+            {
+                _options.FileTransferEnabled = FileTransferToggle.IsChecked == true;
+            }
 
             UpdateEnabledStates();
-            _options.Save();
+            _saveDebounceTimer.Stop();
+            _saveDebounceTimer.Start();
             OptionsChanged?.Invoke(this, _options);
         }
 
@@ -350,6 +403,14 @@ namespace alpha_island.Settings
             if (BluetoothNotifySlider != null)
             {
                 BluetoothNotifySlider.IsEnabled = BluetoothNotifyToggle?.IsChecked == true;
+            }
+            if (BatteryRippleToggle != null)
+            {
+                BatteryRippleToggle.IsEnabled = BatteryNotifyToggle?.IsChecked == true;
+            }
+            if (ClipboardRightClickPasteToggle != null)
+            {
+                ClipboardRightClickPasteToggle.IsEnabled = ClipboardNotifyToggle?.IsChecked == true;
             }
         }
 
@@ -554,6 +615,7 @@ namespace alpha_island.Settings
 
         private void ResetDefaultsButton_Click(object sender, RoutedEventArgs e)
         {
+            _saveDebounceTimer.Stop();
             _suppress = true;
             LoadFrom(new IslandOptions());
             _suppress = false;
@@ -564,6 +626,8 @@ namespace alpha_island.Settings
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
+            _saveDebounceTimer.Stop();
+            _options.Save();
             if (ForceClose) return;
             e.Cancel = true;
             Hide();
