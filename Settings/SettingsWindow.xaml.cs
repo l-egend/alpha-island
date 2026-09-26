@@ -68,6 +68,11 @@ namespace alpha_island.Settings
                 BluetoothNotifyValue.Text = $"{BluetoothNotifySlider.Value:0}s";
             }
 
+            if (GreetingSecondsSlider != null && GreetingSecondsValue != null)
+            {
+                GreetingSecondsValue.Text = $"{GreetingSecondsSlider.Value:0.#}s";
+            }
+
             _suppress = false;
         }
 
@@ -165,6 +170,10 @@ namespace alpha_island.Settings
             {
                 GreetingTextBox.Text = _options.GreetingText;
             }
+            if (GreetingSecondsSlider != null)
+            {
+                GreetingSecondsSlider.Value = _options.GreetingSeconds;
+            }
             if (BluetoothNotifyToggle != null)
             {
                 BluetoothNotifyToggle.IsChecked = _options.BluetoothNotifyEnabled;
@@ -256,6 +265,13 @@ namespace alpha_island.Settings
                     LyricsOffsetValue.Text = ms > 0 ? $"+{ms}ms" : $"{ms}ms";
                 }
             }
+            else if (ReferenceEquals(sender, GreetingSecondsSlider))
+            {
+                if (GreetingSecondsValue != null)
+                {
+                    GreetingSecondsValue.Text = $"{e.NewValue:0.#}s";
+                }
+            }
 
             if (_suppress) return;
             ApplyChanges();
@@ -345,6 +361,10 @@ namespace alpha_island.Settings
             {
                 _options.GreetingText = string.IsNullOrWhiteSpace(GreetingTextBox.Text) ? "欢迎回来" : GreetingTextBox.Text;
             }
+            if (GreetingSecondsSlider != null)
+            {
+                _options.GreetingSeconds = Math.Clamp(GreetingSecondsSlider.Value, 1.5, 10.0);
+            }
             if (BluetoothNotifyToggle != null)
             {
                 _options.BluetoothNotifyEnabled = BluetoothNotifyToggle.IsChecked == true;
@@ -399,6 +419,10 @@ namespace alpha_island.Settings
             if (GreetingTextBox != null)
             {
                 GreetingTextBox.IsEnabled = GreetingToggle?.IsChecked == true;
+            }
+            if (GreetingSecondsSlider != null)
+            {
+                GreetingSecondsSlider.IsEnabled = GreetingToggle?.IsChecked == true;
             }
             if (BluetoothNotifySlider != null)
             {

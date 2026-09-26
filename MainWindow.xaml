@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:alpha_island.Controls"
         Title="Alpha Island"
-        Width="640" Height="340"
+        Width="800" Height="340"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="{x:Null}"
@@ -58,6 +58,7 @@
                 PreviewMouseMove="IslandBody_PreviewMouseMove"
                 PreviewMouseLeftButtonUp="IslandBody_PreviewMouseLeftButtonUp"
                 PreviewMouseRightButtonUp="IslandBody_PreviewMouseRightButtonUp"
+                PreviewMouseWheel="IslandBody_PreviewMouseWheel"
                 RenderTransformOrigin="0.5,0.5">
             <Border.Background>
                 <LinearGradientBrush x:Name="GlassGradient" StartPoint="0,0" EndPoint="0,1">
@@ -180,26 +181,50 @@
                         </Grid>
                     </Border>
 
-                    <!-- 中间歌词：放得下就居中静止，放不下就走马灯横向滚动。
-                         宽度实测与动画由 MainWindow.UpdatePillLyricScroll() 负责。 -->
+                    <!-- 中间歌词：放得下就居中静止，放不下就先让岛体变宽、实在放不下再走马灯。
+                         宽度实测、换行过场与伸缩动画由 MainWindow.UpdatePillLyricScroll() 负责。
+                         两层结构：Stage 负责换行的"上移 + 淡入"，Track 负责跑马灯的横向位移，
+                         两个通道各用一条 TranslateTransform，互不打断。 -->
                     <Grid x:Name="PillLyricHost" Grid.Column="1" Margin="10,0"
                           ClipToBounds="True" VerticalAlignment="Center"
                           SizeChanged="PillLyricHost_SizeChanged">
-                        <StackPanel x:Name="PillLyricTrack" Orientation="Horizontal"
-                                    HorizontalAlignment="Left" VerticalAlignment="Center">
-                            <StackPanel.RenderTransform>
-                                <TranslateTransform x:Name="PillLyricScroll"/>
-                            </StackPanel.RenderTransform>
-                            <TextBlock x:Name="PillLyric"
-                                       FontSize="13" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimary}"
-                                       Text="Alpha Island"/>
-                            <!-- 跑马灯的第二份：接在第一份后面，形成无缝循环 -->
-                            <TextBlock x:Name="PillLyricEcho"
-                                       FontSize="13" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimary}"
-                                       Margin="56,0,0,0" Visibility="Collapsed"/>
-                        </StackPanel>
+                        <Grid x:Name="PillLyricStage" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Grid.RenderTransform>
+                                <TransformGroup>
+                                    <!-- 换行过场：新歌词从下方 +RollDistance 处上移到 0 -->
+                                    <TranslateTransform x:Name="PillLyricRoll"/>
+                                    <!-- 跑马灯：整条轨道的横向位移（含居中偏移） -->
+                                    <TranslateTransform x:Name="PillLyricScroll"/>
+                                </TransformGroup>
+                            </Grid.RenderTransform>
+                            <StackPanel x:Name="PillLyricTrack" Orientation="Horizontal"
+                                        HorizontalAlignment="Left" VerticalAlignment="Center">
+                                <TextBlock x:Name="PillLyric"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           Text="Alpha Island"/>
+                                <!-- 跑马灯的第二份：接在第一份后面，形成无缝循环 -->
+                                <TextBlock x:Name="PillLyricEcho"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           Margin="56,0,0,0" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 上一句歌词：换行时留在原处继续上移并淡出。单独一层，
+                             所以淡出过程中新歌词已经可以同时从下方上移淡入（交叉过场）。 -->
+                        <TextBlock x:Name="PillLyricGhost"
+                                   HorizontalAlignment="Left" VerticalAlignment="Center"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   Opacity="0" IsHitTestVisible="False">
+                            <TextBlock.RenderTransform>
+                                <TransformGroup>
+                                    <TranslateTransform x:Name="PillLyricGhostRoll"/>
+                                    <TranslateTransform x:Name="PillLyricGhostScroll"/>
+                                </TransformGroup>
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
                     </Grid>
 
                     <!-- 一级胶囊右侧：音频频谱（缩减至五段，统一色相无渐变，柱体胶囊形，多出宽度留给歌词） -->
@@ -317,6 +342,8 @@
                      音量调节时弹出：左侧自适应音量图标、中间音量进度条、右侧数字百分比。 -->
                 <Grid x:Name="VolumeNotifyLayer" Opacity="0" Width="328" Height="32"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Cursor="Hand" ToolTip="点击展开音量调节卡片"
+                      MouseLeftButtonDown="VolumeNotifyLayer_MouseLeftButtonDown"
                       IsHitTestVisible="False">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -848,6 +875,224 @@
                                        FontSize="9" Foreground="{StaticResource TextTertiary}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
+
+                        <!-- 第三层 (Page 2)：系统音量调节卡片 -->
+                        <Grid x:Name="VolumeCardLayer" VerticalAlignment="Center" Height="194" Opacity="0" IsHitTestVisible="False">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="CardPage2Translate" Y="194"/>
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- 行 0：头部栏（音量图标、设备名、当前数值、静音切换） -->
+                            <Grid Grid.Row="0" Margin="6,6,6,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 左侧图标徽标 -->
+                                <Border x:Name="CardVolumeIconContainer" Grid.Column="0" Width="36" Height="36" CornerRadius="18"
+                                        Background="#2200E5FF" BorderBrush="#3300E5FF" BorderThickness="1">
+                                    <TextBlock x:Name="CardVolumeIcon" Text="&#xE995;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="{StaticResource AccentCyan}"/>
+                                </Border>
+
+                                <!-- 标题与当前音频输出设备 -->
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
+                                    <TextBlock Text="系统主音量" FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimary}"/>
+                                    <TextBlock x:Name="CardVolumeDeviceText" Text="默认输出设备" FontSize="10"
+                                               Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                </StackPanel>
+
+                                <!-- 右侧大字百分比与静音按钮 -->
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock x:Name="CardVolumePercentText" Text="50%" FontSize="18" FontWeight="Bold"
+                                               Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                                    <Button x:Name="CardVolumeMuteButton" Width="32" Height="32" Cursor="Hand"
+                                            FocusVisualStyle="{x:Null}" Focusable="False"
+                                            ToolTip="静音 / 恢复" Click="CardVolumeMuteButton_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" Width="32" Height="32" CornerRadius="16" Background="#26FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1">
+                                                    <TextBlock x:Name="MuteGlyph" Text="&#xE74F;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                                               Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#44FFFFFF"/>
+                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#66FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#66FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 行 1：主体交互区（-5% 按钮 | 交互式拖动条 | +5% 按钮 + 预设组） -->
+                            <Grid Grid.Row="1" Margin="6,0,6,0" VerticalAlignment="Center">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- 主滑槽行（-5% 按钮 | 交互式拖动条 | +5% 按钮） -->
+                                <Grid Grid.Row="0" Margin="0,6,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 减少音量微调按钮 -->
+                                    <Button Grid.Column="0" Width="30" Height="30" Cursor="Hand"
+                                            FocusVisualStyle="{x:Null}" Focusable="False"
+                                            ToolTip="降低音量 (-5%)" Click="CardVolumeDown_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" CornerRadius="15" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
+                                                    <TextBlock Text="&#xE993;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="{StaticResource TextSecondary}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+
+                                    <!-- 交互式音量进度条槽（支持点击/拖拽定位） -->
+                                    <Grid x:Name="CardVolumeSliderTrack" Grid.Column="1" Height="28" Margin="10,0" Cursor="Hand"
+                                          Background="Transparent"
+                                          MouseLeftButtonDown="CardVolumeSliderTrack_MouseLeftButtonDown"
+                                          MouseMove="CardVolumeSliderTrack_MouseMove"
+                                          MouseLeftButtonUp="CardVolumeSliderTrack_MouseLeftButtonUp">
+                                        <!-- 背景槽条 -->
+                                        <Border Height="8" CornerRadius="4" Background="#26FFFFFF" VerticalAlignment="Center"/>
+                                        <!-- 动态高亮填充 -->
+                                        <Border x:Name="CardVolumeSliderFill" Height="8" CornerRadius="4"
+                                                Background="{StaticResource AccentCyan}"
+                                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                Width="100"/>
+                                    </Grid>
+
+                                    <!-- 增加音量微调按钮 -->
+                                    <Button Grid.Column="2" Width="30" Height="30" Cursor="Hand"
+                                            FocusVisualStyle="{x:Null}" Focusable="False"
+                                            ToolTip="提高音量 (+5%)" Click="CardVolumeUp_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" CornerRadius="15" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
+                                                    <TextBlock Text="&#xE995;" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="{StaticResource TextSecondary}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </Grid>
+
+                                <!-- 快捷预设按钮组（20%, 50%, 80%, 100%） -->
+                                <UniformGrid Grid.Row="1" Columns="4" Margin="0,2,0,0">
+                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="20" Click="PresetVolume_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
+                                                    <TextBlock Text="20%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="50" Click="PresetVolume_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
+                                                    <TextBlock Text="50%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="80" Click="PresetVolume_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
+                                                    <TextBlock Text="80%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="100" Click="PresetVolume_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
+                                                    <TextBlock Text="100%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </UniformGrid>
+                            </Grid>
+
+                            <!-- 行 2：底部提示 -->
+                            <TextBlock Grid.Row="2" Text="点击或拖拽滑块 · 滚轮微调音量 · 滚轮或右侧切换层级"
+                                       FontSize="9" Foreground="{StaticResource TextTertiary}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,4,0,2"/>
+                        </Grid>
                     </Grid>
 
                     <!-- 右侧：类似 Win11 开始菜单的竖向指示器 -->
@@ -865,6 +1110,14 @@
                                     Margin="0,4,0,0"
                                     MouseLeftButtonDown="PageDot1_MouseLeftButtonDown">
                                 <Border x:Name="PageDot1" Width="5" Height="5" CornerRadius="2.5"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Background="#4DFFFFFF" IsHitTestVisible="False"/>
+                            </Border>
+                            <!-- 点 2 (第三层：系统音量调节) 外层包裹大面积透明点击区 -->
+                            <Border Width="24" Height="22" Background="Transparent" Cursor="Hand" ToolTip="系统音量调节"
+                                    Margin="0,4,0,0"
+                                    MouseLeftButtonDown="PageDot2_MouseLeftButtonDown">
+                                <Border x:Name="PageDot2" Width="5" Height="5" CornerRadius="2.5"
                                         HorizontalAlignment="Center" VerticalAlignment="Center"
                                         Background="#4DFFFFFF" IsHitTestVisible="False"/>
                             </Border>

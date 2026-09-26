@@ -64,8 +64,8 @@ namespace alpha_island.Core
         public bool GreetingEnabled { get; set; } = true;
         /// <summary>欢迎问候语文本，默认“欢迎回来”。</summary>
         public string GreetingText { get; set; } = "欢迎回来";
-        /// <summary>问候语停留秒数，2~10。</summary>
-        public int GreetingSeconds { get; set; } = 4;
+        /// <summary>问候语停留秒数，1.5~10（下限即程序启动到服务就绪的平均耗时）。</summary>
+        public double GreetingSeconds { get; set; } = 4;
 
         // ---------- 蓝牙 ----------
         /// <summary>蓝牙设备连接时是否弹出通知。</summary>
@@ -177,6 +177,7 @@ namespace alpha_island.Core
             Sensitivity = Math.Clamp(Sensitivity, 0.3, 3.0);
             UpNextSeconds = Math.Clamp(UpNextSeconds, 2, 30);
             BluetoothNotifySeconds = Math.Clamp(BluetoothNotifySeconds, 2, 30);
+            GreetingSeconds = Math.Clamp(GreetingSeconds, 1.5, 10.0);
             if (string.IsNullOrWhiteSpace(GreetingText) || GreetingText.Contains("娆") || GreetingText.Contains("鍥") || GreetingText.Contains(""))
             {
                 GreetingText = "欢迎回来";

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
@@ -9,7 +10,18 @@ using System.Threading.Tasks;
 namespace alpha_island.Services
 {
     /// <summary>
-    /// 网易云歌词获取：用 SMTC 给的「曲名 + 艺术家 + 时长」去搜索歌曲 ID，再拉同步歌词（LRC）。
+    /// 歌词获取：用 SMTC 给的「曲名 + 艺术家 + 时长」按顺序尝试多个歌词源。
+    ///
+    /// 源优先级（网易云 > LRCLIB > 酷狗）：
+    ///   1. 网易云  —— 中文曲库最全，还带翻译(tlyric)与逐字(yrc)。
+    ///   2. LRCLIB  —— 社区歌词库，条目自带规范的 trackName/artistName/albumName/duration，
+    ///                 元数据可交叉核验，专门用来纠正同名翻唱、现场版、伴奏被错配的问题。
+    ///   3. 酷狗    —— 兜底，覆盖网易云无版权而酷狗有的曲目。
+    ///
+    /// 三者**并发竞速**而不是串行等待：网易云有 1.2s 优先窗口（它信息最全），
+    /// 超出窗口后谁先拿到合格结果就用谁，整轮 15s 封顶。
+    /// 串行版本实测最坏能拖到一两分钟（网易云 7 条 query + LRCLIB 3 条 + 酷狗 3 条，
+    /// 每条 HTTP 上限 12s），而且任一源超时都会把整条链中止 —— 表现就是"歌都唱一半了还没歌词"。
     ///
     /// 为什么走网络而不是读本地缓存：
     ///  * 网易云 3.x 的歌词不再落地成 .lrc 文件（%LOCALAPPDATA%\Netease\CloudMusic 下翻不到），
@@ -20,7 +32,7 @@ namespace alpha_island.Services
     /// </summary>
     public sealed class LyricsService : IDisposable
     {
-        private const string SearchUrl = "https://music.163.com/api/search/get?s={0}&type=1&limit=10";
+        private const string SearchUrl = "https://music.163.com/api/cloudsearch/pc?s={0}&type=1&limit=10";
         // 注意：lv/kv/tv/rv/yv 都是"只要出现就返回对应段落"，取值本身被忽略。
         // 少写 rv 就拿不到 romalrc（罗马音），少写 tv 就拿不到 tlyric（翻译）。
         private const string LyricUrl = "https://music.163.com/api/song/lyric?id={0}&lv=-1&kv=-1&tv=-1&rv=-1&yv=-1";
@@ -65,23 +77,51 @@ namespace alpha_island.Services
             if (_cache.TryGetValue(key, out var cached)) return cached;
 
             LyricsDocument? doc = null;
-            try
-            {
-                long songId = await SearchSongIdAsync(title, artist, duration, ct).ConfigureAwait(false);
-                if (songId > 0)
-                    doc = await FetchLyricAsync(songId, duration, ct).ConfigureAwait(false);
 
-                // 若网易云无版权/纯音乐未收录/匹配失败，无缝回退到酷狗音乐源
-                if (doc == null || !doc.HasLyrics)
+            // —— 三源并发竞速 ——
+            // 旧实现是「网易云(7 条 query 串行) → LRCLIB(3 条) → 酷狗(3 条)」全串行，每次 HTTP 上限 12s，
+            // 最坏能拖到一两分钟；而且任一源超时抛出的 OperationCanceledException 会把整条链中止
+            //（HttpClient 超时和"切歌取消"在异常上无法区分），表现就是"歌都唱一半了还没歌词"。
+            // 现在三个源同时开跑：网易云信息最全（带翻译/逐字），给它 1.2s 优先窗口，
+            // 超过窗口后谁先拿到合格结果就用谁；整轮由闸门 20s 封顶，绝不无限等。
+            using var gate = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            gate.CancelAfter(TimeSpan.FromSeconds(20));
+
+            var neteaseTask = FetchNetEaseAsync(title, artist, duration, gate.Token);
+            var lrclibTask = FetchLrclibLyricsAsync(title, artist, duration, gate.Token);
+            var kugouTask = FetchKugouLyricsAsync(title, artist, duration, gate.Token);
+
+            var neteaseFirst = await Task.WhenAny(neteaseTask, Task.Delay(1200, gate.Token)).ConfigureAwait(false);
+            if (neteaseFirst == neteaseTask)
+            {
+                try { doc = await neteaseTask.ConfigureAwait(false); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex) { Debug.WriteLine("[Lyrics] 网易云源失败: " + ex.Message); }
+            }
+
+            if (doc == null || !doc.HasLyrics)
+            {
+                var pending = new List<Task<LyricsDocument?>> { neteaseTask, lrclibTask, kugouTask };
+                while (pending.Count > 0)
                 {
-                    doc = await FetchKugouLyricsAsync(title, artist, duration, ct).ConfigureAwait(false);
+                    var done = await Task.WhenAny(pending).ConfigureAwait(false);
+                    pending.Remove(done);
+                    try
+                    {
+                        var got = await done.ConfigureAwait(false);
+                        if (got != null && got.HasLyrics)
+                        {
+                            doc = got;
+                            break;
+                        }
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                    catch (Exception ex) { Debug.WriteLine("[Lyrics] 某个源失败，继续等其它源: " + ex.Message); }
                 }
             }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("[Lyrics] 获取失败: " + ex.Message);
-            }
+
+            // 已经有合格结果：撤掉还在跑的源，别白烧流量
+            if (doc != null && doc.HasLyrics) gate.Cancel();
 
             // 仅对成功拿到歌词的结果持久缓存；网络抖动或偶发未匹配不缓存 null，保留后续重试能力
             if (doc != null && doc.HasLyrics)
@@ -194,30 +234,59 @@ namespace alpha_island.Services
             double globalBestScore = -1;
 
             var seenQueries = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+            var uniqueQueries = new List<string>();
             foreach (var q in queries)
             {
                 if (string.IsNullOrWhiteSpace(q) || !seenQueries.Add(q)) continue;
+                uniqueQueries.Add(q);
+            }
 
-                var songs = await SearchAsync(q, ct).ConfigureAwait(false);
-                if (songs.Count == 0) continue;
-
-                foreach (var s in songs)
+            // 7 条 query 并发发送：串行最坏 7 × 12s = 84s，并发后最大等待只有单次超时。
+            // 单条 query 失败/超时也不再影响其它 query（旧实现里它会让整条歌词链直接中止）。
+            var searchTasks = new List<Task<(List<SongHit> Songs, string Query)>>();
+            foreach (var q in uniqueQueries)
+            {
+                string query = q;
+                searchTasks.Add(Task.Run(async () =>
                 {
-                    double score = EvaluateCandidateScore(title, clean, artist, duration, s.Name, s.Artists, s.DurationMs);
-
-                    if (score > globalBestScore)
+                    try
                     {
-                        globalBestScore = score;
-                        globalBestId = s.Id;
+                        var songs = await SearchAsync(query, ct).ConfigureAwait(false);
+                        return (songs, query);
                     }
-                }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;   // 真的切歌了：整体取消
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[Lyrics] 网易云 query 失败 \"{query}\": {ex.Message}");
+                        return (new List<SongHit>(), query);
+                    }
+                }, ct));
+            }
 
-                // 若已命中高置信度（>= 80分）结果，无需多余网络往返，直接采纳
-                if (globalBestScore >= 80.0)
+            if (searchTasks.Count > 0)
+            {
+                foreach (var (songs, query) in await Task.WhenAll(searchTasks).ConfigureAwait(false))
                 {
-                    Debug.WriteLine($"[Lyrics] 高置信命中 \"{title}\" -> id={globalBestId} score={globalBestScore:F0} (query=\"{q}\")");
-                    return globalBestId;
+                    if (songs.Count == 0) continue;
+
+                    foreach (var s in songs)
+                    {
+                        double score = EvaluateCandidateScore(title, clean, artist, duration, s.Name, s.Artists, s.DurationMs);
+
+                        if (score > globalBestScore)
+                        {
+                            globalBestScore = score;
+                            globalBestId = s.Id;
+                        }
+                    }
+
+                    if (globalBestScore >= 80.0)
+                    {
+                        Debug.WriteLine($"[Lyrics] 高置信命中 \"{title}\" -> id={globalBestId} score={globalBestScore:F0} (query=\"{query}\")");
+                    }
                 }
             }
 
@@ -259,13 +328,19 @@ namespace alpha_island.Services
                 var hit = new SongHit();
                 if (s.TryGetProperty("id", out var idEl)) hit.Id = idEl.GetInt64();
                 if (s.TryGetProperty("name", out var nameEl)) hit.Name = nameEl.GetString() ?? "";
-                if (s.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
+                if (s.TryGetProperty("dt", out var dtEl) && dtEl.ValueKind == JsonValueKind.Number)
+                    hit.DurationMs = dtEl.GetInt64();
+                else if (s.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
                     hit.DurationMs = durEl.GetInt64();
 
-                if (s.TryGetProperty("artists", out var artists) && artists.ValueKind == JsonValueKind.Array)
+                var arArray = s.TryGetProperty("ar", out var arEl) && arEl.ValueKind == JsonValueKind.Array
+                    ? arEl
+                    : (s.TryGetProperty("artists", out var artistsEl) && artistsEl.ValueKind == JsonValueKind.Array ? artistsEl : default);
+
+                if (arArray.ValueKind == JsonValueKind.Array)
                 {
                     var names = new System.Collections.Generic.List<string>();
-                    foreach (var a in artists.EnumerateArray())
+                    foreach (var a in arArray.EnumerateArray())
                         if (a.TryGetProperty("name", out var an)) names.Add(an.GetString() ?? "");
                     hit.Artists = string.Join("/", names);
                 }
@@ -359,6 +434,7 @@ namespace alpha_island.Services
                 else if (deltaSec <= 5.0) score += 16;
                 else if (deltaSec <= 10.0) score += 8;
                 else if (deltaSec <= 18.0) score -= 8;
+                else if (deltaSec <= 30.0) score -= 18;
                 else if (deltaSec > 30.0) score -= 35; // 时长差异过大通常为不同版本或不同曲目
             }
 
@@ -384,6 +460,14 @@ namespace alpha_island.Services
         }
 
         // ---------------- 取歌词 ----------------
+
+        /// <summary>网易云：先搜 id 再取歌词。单包一层是为了让三个源能并发竞速。</summary>
+        private async Task<LyricsDocument?> FetchNetEaseAsync(string title, string artist, TimeSpan duration, CancellationToken ct)
+        {
+            long songId = await SearchSongIdAsync(title, artist, duration, ct).ConfigureAwait(false);
+            if (songId <= 0) return null;
+            return await FetchLyricAsync(songId, duration, ct).ConfigureAwait(false);
+        }
 
         private async Task<LyricsDocument?> FetchLyricAsync(long songId, TimeSpan duration, CancellationToken ct)
         {
@@ -433,6 +517,155 @@ namespace alpha_island.Services
             if (node.ValueKind != JsonValueKind.Object) return null;
             if (!node.TryGetProperty("lyric", out var lyric)) return null;
             return lyric.ValueKind == JsonValueKind.String ? lyric.GetString() : null;
+        }
+
+        // ------------------------------------------------------------------
+        // 源 2：LRCLIB（社区歌词库，https://lrclib.net）
+        //
+        // 放在第二位的原因：
+        //  * 条目元数据规范（trackName / artistName / albumName / duration / instrumental），
+        //    可以先用同一套打分器核验再取词，专治「同名翻唱 / 现场版 / 伴奏」错配；
+        //  * 带时间戳的 syncedLyrics 质量高，能直接驱动卡拉OK 擦除。
+        //  * 但中文冷门曲目覆盖不如网易云与酷狗，所以只作第二顺位。
+        // LRCLIB 官方要求请求携带可识别的 User-Agent，故这里单独发请求头。
+        // ------------------------------------------------------------------
+
+        private const string LrclibSearchUrl = "https://lrclib.net/api/search";
+        private const string LrclibUserAgent = "alpha-island/0.1.01 (Windows desktop lyrics widget)";
+
+        /// <summary>
+        /// 用 LRCLIB 搜索歌词：先按「曲名 + 歌手」做结构化查询（LRCLIB 对这两个字段做较强匹配，
+        /// 不易串歌），若一无所获再用自由文本 q= 兜底。
+        /// 候选一律过 <see cref="EvaluateCandidateScore"/>，低于 <see cref="MinScore"/> 的一律不采纳。
+        /// </summary>
+        private async Task<LyricsDocument?> FetchLrclibLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct)
+        {
+            try
+            {
+                string clean = CleanTitle(title);
+                string wantedTitle = clean.Length > 0 ? clean : title;
+
+                string primaryArtist = FirstArtistForSearch(artist);
+
+                var queries = new System.Collections.Generic.List<string>();
+                if (primaryArtist.Length > 0)
+                {
+                    queries.Add($"{LrclibSearchUrl}?track_name={Uri.EscapeDataString(wantedTitle)}&artist_name={Uri.EscapeDataString(primaryArtist)}");
+                    if (wantedTitle != title)
+                        queries.Add($"{LrclibSearchUrl}?track_name={Uri.EscapeDataString(title)}&artist_name={Uri.EscapeDataString(primaryArtist)}");
+                }
+                // 自由文本兜底：q= 会同时匹配曲名 / 歌手 / 专辑
+                queries.Add($"{LrclibSearchUrl}?q={Uri.EscapeDataString((wantedTitle + " " + primaryArtist).Trim())}");
+
+                bool targetIsInst = ContainsAny(title, "伴奏", "instrumental", "inst", "karaoke", "纯音乐", "off vocal");
+                LyricsDocument? best = null;
+                double bestScore = double.MinValue;
+                string bestLabel = string.Empty;
+
+                foreach (string url in queries)
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                    request.Headers.TryAddWithoutValidation("User-Agent", LrclibUserAgent);
+                    using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+                    if (!response.IsSuccessStatusCode) continue;
+
+                    string json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Array) continue;
+
+                    foreach (JsonElement item in doc.RootElement.EnumerateArray())
+                    {
+                        string hitName = GetStr(item, "trackName");
+                        string hitArtists = GetStr(item, "artistName");
+
+                        long hitDurationMs = 0;
+                        if (item.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
+                            hitDurationMs = (long)Math.Round(durEl.GetDouble() * 1000.0);
+
+                        // 纯音乐条目：只有目标本身就是伴奏/纯音乐时才接受
+                        if (item.TryGetProperty("instrumental", out var instEl)
+                            && instEl.ValueKind == JsonValueKind.True && !targetIsInst)
+                            continue;
+
+                        double score = EvaluateCandidateScore(title, clean, artist, duration, hitName, hitArtists, hitDurationMs);
+                        if (score <= bestScore) continue;
+
+                        TimeSpan hitDuration = hitDurationMs > 0 ? TimeSpan.FromMilliseconds(hitDurationMs) : duration;
+
+                        LyricsDocument? candidate = null;
+                        string synced = GetStr(item, "syncedLyrics");
+                        string plain = GetStr(item, "plainLyrics");
+
+                        if (synced.Length > 0)
+                        {
+                            LyricsDocument parsed = LrcParser.Parse(synced, null, "LRCLIB");
+                            candidate = parsed.HasLyrics ? parsed : null;
+                        }
+                        else if (plain.Length > 0 && hitDuration > TimeSpan.Zero)
+                        {
+                            // LRCLIB 的 plainLyrics 没有时间戳，只能按总时长均分
+                            LyricsDocument parsed = LrcParser.FromPlainText(plain, hitDuration, "LRCLIB");
+                            candidate = parsed.HasLyrics ? parsed : null;
+                        }
+
+                        if (candidate == null) continue;
+
+                        best = candidate;
+                        bestScore = score;
+                        bestLabel = $"{hitName} / {hitArtists}";
+                    }
+
+                    // 高置信 + 带时间戳 → 不必再看后续查询
+                    if (best != null && bestScore >= 80.0 && best.IsSynced) break;
+                }
+
+                if (best != null && bestScore >= MinScore)
+                {
+                    Debug.WriteLine($"[Lyrics] LRCLIB 命中「{bestLabel}」score={bestScore:F1} synced={best.IsSynced}");
+                    return best;
+                }
+
+                Debug.WriteLine($"[Lyrics] LRCLIB 未采纳「{title} / {artist}」bestScore={bestScore:F1}（阈值 {MinScore}）");
+                return null;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[Lyrics] LRCLIB 失败: " + ex.Message);
+                return null;
+            }
+        }
+
+        private static string GetStr(JsonElement element, string name)
+            => element.TryGetProperty(name, out var node) && node.ValueKind == JsonValueKind.String
+                ? (node.GetString() ?? string.Empty)
+                : string.Empty;
+
+        /// <summary>
+        /// 从「A/B、A feat. B」这类演唱者串里取出第一位，**保留原始大小写与空格**。
+        /// 不能直接复用 <see cref="LrcParser.SplitArtists"/> —— 它返回的是归一化片段，
+        /// 会把 "Ed Sheeran" 变成 "edsheeran"（小写且删掉所有空格），
+        /// 拿这种串去请求歌词接口会一个候选都搜不到。
+        /// </summary>
+        private static string FirstArtistForSearch(string artist)
+        {
+            if (string.IsNullOrWhiteSpace(artist)) return string.Empty;
+
+            string[] parts = System.Text.RegularExpressions.Regex.Split(
+                artist,
+                @"[/、,;，；&]|\sfeat\.?\s|\sft\.?\s",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            foreach (string part in parts)
+            {
+                string trimmed = part.Trim();
+                if (trimmed.Length > 0) return trimmed;
+            }
+
+            return artist.Trim();
         }
 
         private async Task<LyricsDocument?> FetchKugouLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct)

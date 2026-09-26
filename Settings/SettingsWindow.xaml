@@ -648,6 +648,29 @@
                                                  FontSize="12" Width="120" TextChanged="TextBox_Changed"/>
                                     </Border>
                                 </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_GreetingDuration">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE916;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="问候语停留时长"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="别短于实际启动耗时（约 1.5 秒），否则问候会在服务就绪前就收回"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Slider IsSnapToTickEnabled="True" LargeChange="0.5" Maximum="10" Minimum="1.5"
+                                                SmallChange="0.5" Style="{StaticResource W11Slider}" TickFrequency="0.5"
+                                                Value="4" ValueChanged="Slider_Changed" Width="140" x:Name="GreetingSecondsSlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="GreetingSecondsValue"/>
+                                    </StackPanel>
+                                </Grid>
                             </StackPanel>
                         </Border>
 

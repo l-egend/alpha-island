@@ -247,32 +247,43 @@ namespace alpha_island.Services
             }
         }
 
-
-        /// <summary>必须在 _lifecycle 内调用；不得持有 _gate。</summary>
+        /// <summary>必须在 _lifecycle 内调用；不得持有 _gate。
+        ///
+        /// 重要：设备被切换/拔除后，WasapiLoopbackCapture.Dispose() 与 MMDevice.Dispose()
+        /// 会永久阻塞在 COM 释放上（实测：StopRecording 立即返回，Dispose 再也不返回）。
+        /// 旧实现把这些释放直接放在 _lifecycle 锁内，结果看门狗永远拿不到锁、采集会话再也无法
+        /// 重建，频谱从此是一条直线，只能重启程序（用户实测现象）。
+        /// 因此这里只做"摘除字段 + 退订事件"，所有 COM 释放丢到独立后台线程，锁内绝不阻塞。</summary>
         private void StopCoreLocked()
         {
             var capture = _capture;
+            var device = _device;
             _capture = null;
-            _running = false;
-
-            if (capture != null)
-            {
-                try
-                {
-                    capture.DataAvailable -= OnDataAvailable;
-                    capture.RecordingStopped -= OnRecordingStopped;
-                    // StopRecording/Dispose 会 Join 采集线程 —— 此时不能持有 _gate
-                    capture.StopRecording();
-                    capture.Dispose();
-                }
-                catch (Exception ex) { Debug.WriteLine(ex); }
-            }
-
-            try { _device?.Dispose(); } catch { }
             _device = null;
             _meter = null;
             _deviceId = null;
             _deviceName = null;
+            _running = false;
+
+            if (capture == null && device == null) return;
+
+            // 先退订：旧采集线程即使还活着，也不会再回调到我们的逻辑（它可能还持有旧端点）
+            if (capture != null)
+            {
+                try { capture.DataAvailable -= OnDataAvailable; } catch { }
+                try { capture.RecordingStopped -= OnRecordingStopped; } catch { }
+            }
+
+            // 独立线程（不是线程池：这里可能会永久卡住，不能耗掉线程池线程）
+            var cleanup = new Thread(() =>
+            {
+                try { capture?.StopRecording(); } catch { }
+                try { capture?.Dispose(); } catch { }
+                try { device?.Dispose(); } catch { }
+            })
+            { IsBackground = true, Name = "AudioSessionCleanup" };
+            cleanup.Start();
+
         }
 
         // ---------------- 采集 ----------------

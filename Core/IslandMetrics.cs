@@ -22,6 +22,20 @@ namespace alpha_island.Core
         public const double PillTop = 12;
         public static readonly CornerRadius PillCorner = new(PillHeight / 2);
 
+        /// <summary>
+        /// 歌词比胶囊宽时，胶囊可以"呼吸"到的最大宽度。
+        /// 上限来自窗口宽度（MainWindow.xaml 里 Width=640）——再宽就会被窗口裁掉。
+        /// 到这个上限还装不下的超长句不再滚动（跑马灯已按用户要求移除），
+        /// 而是把字号压到 MainWindow.PillLyricMinFontSize（8px）后静止显示。
+        /// </summary>
+        public const double MaxPillWidth = 560;
+
+        /// <summary>
+        /// 一级胶囊内容层（PillLayer）的基准宽度。它与 PillWidth 的差值就是岛体左右各 8px 的内衬，
+        /// 岛体变宽时内容层跟着一起变宽（见 MainWindow.UpdatePillLayerWidth）。
+        /// </summary>
+        public const double PillContentWidth = 328;
+
         /// <summary>一级展开里左侧圆形封面的边长。</summary>
         public const double PillCoverSize = 32;
         /// <summary>一级展开里右侧可视化区的宽高。</summary>
@@ -65,6 +79,12 @@ namespace alpha_island.Core
         public static readonly Duration ExpandDuration = new(TimeSpan.FromMilliseconds(420));
         /// <summary>一级 → 二级的过冲时长（比从细条展开稍短）。</summary>
         public static readonly Duration GrowDuration = new(TimeSpan.FromMilliseconds(340));
+
+        /// <summary>
+        /// 纯宽度变形（歌词变长/变短时胶囊伸缩）的标称时长。
+        /// 比形态切换短一点：一行歌词唱完就换下一行，太长会显得岛体一直在喘。
+        /// </summary>
+        public static readonly Duration PillWidthDuration = new(TimeSpan.FromMilliseconds(300));
 
         /// <summary>
         /// 收回全程只跑一条主弹簧（旧的 260+220+220 三段式已废弃）。

@@ -183,9 +183,12 @@ namespace alpha_island.Services
                     }
                 }
 
-                // GetCurrentSession 没在播放或为 null 时，遍历系统所有媒体会话，优先拾取正在播放的会话
+                // GetCurrentSession 没在播放或为 null 时，遍历系统所有媒体会话：
+                // 1. 优先拾取正在播放的会话
                 var sessions = _manager.GetSessions();
                 GlobalSystemMediaTransportControlsSession? candidate = null;
+                GlobalSystemMediaTransportControlsSession? currentSessionInList = null;
+
                 foreach (var s in sessions)
                 {
                     try
@@ -195,6 +198,12 @@ namespace alpha_island.Services
                         {
                             return s;
                         }
+
+                        if (_session != null && IsSameSession(s, _session))
+                        {
+                            currentSessionInList = s;
+                        }
+
                         if (candidate == null)
                         {
                             candidate = s;
@@ -202,6 +211,14 @@ namespace alpha_island.Services
                     }
                     catch { }
                 }
+
+                // 2. 没有任何会话在播放时：若当前绑定的会话仍存在（即刚暂停的曲目），坚守该会话！
+                // 避免错误漂移到后台其他无媒体或休眠的浏览器进程，导致暂停提示被吞并误报无媒体。
+                if (currentSessionInList != null)
+                {
+                    return currentSessionInList;
+                }
+
                 return cur ?? candidate;
             }
             catch (Exception ex)

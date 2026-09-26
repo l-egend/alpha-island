@@ -41,9 +41,79 @@ namespace alpha_island.Services
         /// <summary>当前是否处于静音状态。</summary>
         public bool IsMuted => _lastMuted;
 
+        /// <summary>当前默认音频设备名称。</summary>
+        public string CurrentDeviceName => _currentDevice?.FriendlyName ?? "系统扬声器";
+
         public VolumeService(Dispatcher dispatcher)
         {
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        }
+
+        /// <summary>调节系统音量增减（如 delta = +2 或 -2）。</summary>
+        public void AdjustVolume(int delta)
+        {
+            lock (_lock)
+            {
+                if (_volume == null) return;
+                try
+                {
+                    int target = Math.Clamp(CurrentPercent + delta, 0, 100);
+                    _volume.MasterVolumeLevelScalar = target / 100f;
+                    _lastPercent = target;
+                    if (_volume.Mute && target > 0)
+                    {
+                        _volume.Mute = false;
+                        _lastMuted = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("[VolumeService] 调节音量失败: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>直接设置系统主音量百分比 (0~100)。</summary>
+        public void SetVolume(int percent)
+        {
+            lock (_lock)
+            {
+                if (_volume == null) return;
+                try
+                {
+                    percent = Math.Clamp(percent, 0, 100);
+                    _volume.MasterVolumeLevelScalar = percent / 100f;
+                    _lastPercent = percent;
+                    if (_volume.Mute && percent > 0)
+                    {
+                        _volume.Mute = false;
+                        _lastMuted = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("[VolumeService] 设置音量失败: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>切换系统静音状态。</summary>
+        public void ToggleMute()
+        {
+            lock (_lock)
+            {
+                if (_volume == null) return;
+                try
+                {
+                    bool next = !_volume.Mute;
+                    _volume.Mute = next;
+                    _lastMuted = next;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("[VolumeService] 切换静音失败: " + ex.Message);
+                }
+            }
         }
 
         /// <summary>启动音量监听并获取初始状态。</summary>
@@ -73,7 +143,19 @@ namespace alpha_island.Services
                 UnbindCurrentEndpoint();
 
                 if (_enumerator == null) return;
-                _currentDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                try
+                {
+                    _currentDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                }
+                catch
+                {
+                    try
+                    {
+                        _currentDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+                    }
+                    catch { }
+                }
+
                 if (_currentDevice == null) return;
 
                 _volume = _currentDevice.AudioEndpointVolume;
@@ -157,7 +239,7 @@ namespace alpha_island.Services
         public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
         {
             if (_disposed) return;
-            if (flow == DataFlow.Render && role == Role.Multimedia)
+            if (flow == DataFlow.Render && (role == Role.Multimedia || role == Role.Console))
             {
                 lock (_lock)
                 {
