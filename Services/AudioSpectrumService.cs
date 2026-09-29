@@ -55,6 +55,16 @@ namespace alpha_island.Services
         private const int SilentRebindBaseMs = 3000;
         private const int SilentRebindMaxMs = 10000;
 
+        /// <summary>
+        /// 原始电平（未做显示倾斜、未乘灵敏度）高出噪声地板这么多分贝，才认为"系统此刻真的在出声"。
+        /// 早期阈值是归一化 level &gt; 0.02，换算到 66dB 的量程上只有约 1.3dB —— 等于任何底噪都算"在出声"。
+        /// 蓝牙/共享模式 loopback 在暂停时送来的并不是全零缓冲，而是带抖动/本底噪声的非零数据，
+        /// 于是静音时长永远涨不到阈值，音频侧仲裁（把播放器谎报的 Playing 降级为 Paused）从不生效，
+        /// 表现为"暂停后歌词继续滚、频谱只剩一条线、展开岛仍显示播放"。取 12dB（约 -68dBFS）：
+        /// 远高于底噪，又远低于任何真实音乐内容，间奏/清唱照样算"在出声"。
+        /// </summary>
+        private const double SignalMarginDb = 12.0;
+
         private static readonly Guid SubtypeIeeeFloat = new("00000003-0000-0010-8000-00aa00389b71");
 
         private readonly object _gate = new();
@@ -88,6 +98,11 @@ namespace alpha_island.Services
 
         private long _lastDataTicks;
         private long _lastCallbackTicks;          // 任意 DataAvailable（含 0 字节）都刷新
+
+        // 与 _lastDataTicks 的关键区别：_lastDataTicks 会被看门狗的重建（StartCoreLocked）
+        // 反复刷新，所以只能观察到约 1s；_lastSignalTicks 只在公开的 Start()/Stop() 与构造时重置，
+        // 看门狗重建绝不碰它，因此可以长期信任地表达"已经静音多久"（见 SilentSeconds）。
+        private long _lastSignalTicks;
         private int _rebindBackoffMs = SilentRebindBaseMs;
         private int _sessionRebinds;              // 诊断：自动重建采集会话的次数
         private volatile bool _running;
@@ -106,12 +121,48 @@ namespace alpha_island.Services
         /// <summary>低于该分贝视为静音（噪声门）。</summary>
         public float NoiseFloorDb { get; set; } = -80f;
 
-        /// <summary>达到该分贝即为满格。调低该值可使中低音量下频谱柱更明显地跳动。</summary>
-        public float CeilingDb { get; set; } = -24f;
+        /// <summary>
+        /// 达到该分贝即为满格（满格点）。
+        /// 注意它和 Sensitivity 是**相乘**关系：level = (db - floor) / range * sens，
+        /// 所以灵敏度越大，等效满格点越低（越早顶格）。实测 -24f + sens=1.3 时的等效满格点
+        /// 只有 -37 dBFS，音乐的中频段（123Hz~4.6kHz，正是能量主体）长期恒为 1.0 被钳死，
+        /// 视觉上就是"中间三根顶满、只有两侧在动"。这里提到 -14f 把动态范围从 56dB 拉到 66dB，
+        /// 中频段重新有余量，同时仍保留灵敏度滑块"整体抬升"的语义。
+        /// </summary>
+        public float CeilingDb { get; set; } = -14f;
 
         public bool IsRunning => _running;
         public string? LastError => _lastError;
         public string? DeviceName => _deviceName;
+
+        /// <summary>
+        /// 最近一帧里最高的原始频段分贝（未做显示倾斜、未乘灵敏度），诊断用：
+        /// 把它和 <see cref="SignalMarginDb"/> + <see cref="NoiseFloorDb"/> 对照，
+        /// 就能判断当前设备空闲时的底噪到底有多高、静音判据有没有作用空间。
+        /// </summary>
+        public double LastSignalDbPeak { get; private set; } = double.NegativeInfinity;
+
+        /// <summary>
+        /// 距最近一次"频谱原始电平高出噪声地板 <see cref="SignalMarginDb"/> 分贝（即系统真的在出声）"的秒数。
+        /// 暂停/停止后这个值持续增长（这正是"频谱是一条线"的同一份物理事实），
+        /// 看门狗重建采集会话不会把它清零，因此可以长期信任。
+        /// 由 UI 侧每 250ms 读一次回灌给 <c>SmtcService</c>，用于交叉校验播放器上报的播放状态。
+        /// </summary>
+        public double SilentSeconds => TicksToMs(Interlocked.Read(ref _lastSignalTicks)) / 1000.0;
+
+        /// <summary>
+        /// 距最近一次任意 DataAvailable 回调（含 0 字节）的毫秒数。
+        /// 设备空闲时 WASAPI 仍持续回调，所以它小 = 会话活着（只是没声音）；
+        /// 它大 = 采集会话可能已"变聋"（蓝牙/独占设备在暂停后会整个停掉回调），
+        /// 此时"回调静默"本身就是没在出声的证据，由 UI 侧折算成等价的静音时长。
+        /// </summary>
+        public double SinceCallbackMs => TicksToMs(Interlocked.Read(ref _lastCallbackTicks));
+
+        private static double TicksToMs(long ticks)
+        {
+            if (ticks <= 0) return double.MaxValue;
+            return (Stopwatch.GetTimestamp() - ticks) * 1000.0 / Stopwatch.Frequency;
+        }
 
         /// <summary>诊断用：因长时间收不到音频数据而自动重建采集会话的次数。</summary>
         public int SessionRebinds => Volatile.Read(ref _sessionRebinds);
@@ -124,6 +175,7 @@ namespace alpha_island.Services
 
             BuildBandMap(_sampleRate);
 
+            _lastSignalTicks = Stopwatch.GetTimestamp();
             _watchdog = new System.Threading.Timer(WatchdogTick, null, 800, 400);
         }
 
@@ -160,11 +212,15 @@ namespace alpha_island.Services
         public void Start()
         {
             if (_disposed) return;
+            // 只在外部显式启停时重置"静音计时"的观察窗口；
+            // 看门狗内部的会话重建（StartCoreLocked）绝不能重置它，否则静音时长永远涨不过阈值。
+            Interlocked.Exchange(ref _lastSignalTicks, Stopwatch.GetTimestamp());
             lock (_lifecycle) StartCoreLocked();
         }
 
         public void Stop()
         {
+            Interlocked.Exchange(ref _lastSignalTicks, Stopwatch.GetTimestamp());
             lock (_lifecycle) StopCoreLocked();
             lock (_gate)
             {
@@ -393,6 +449,7 @@ namespace alpha_island.Services
             double floor = NoiseFloorDb;
             double range = Math.Max(6.0, CeilingDb - floor);
             float sens = Sensitivity;
+            double signalDbPeak = double.NegativeInfinity;   // 本帧各频段的原始分贝峰值（未做显示倾斜、未乘灵敏度）
 
             for (int b = 0; b < BandCount; b++)
             {
@@ -411,7 +468,10 @@ namespace alpha_island.Services
                 }
                 mag *= MagScale;
 
-                double db = 20.0 * Math.Log10(mag + 1e-7) + _tiltDb[b];
+                double rawDb = 20.0 * Math.Log10(mag + 1e-7);
+                if (rawDb > signalDbPeak) signalDbPeak = rawDb;
+
+                double db = rawDb + _tiltDb[b];
                 if (double.IsNaN(db) || double.IsInfinity(db)) db = floor;
                 double level = (db - floor) / range;
                 level *= sens;
@@ -424,6 +484,13 @@ namespace alpha_island.Services
                 _smoothed[b] = prev + ((float)level - prev) * coeff;
                 if (float.IsNaN(_smoothed[b])) _smoothed[b] = 0f;
             }
+
+            // 只要有一根频段高出噪声地板 SignalMarginDb 分贝，就认为系统此刻真的在出声。
+            // 判定必须用"未经显示倾斜、未乘灵敏度"的原始分贝：倾斜在高频最多加 7.2dB，
+            // 灵敏度又是用户可调的乘数，两者都会让"这是音乐还是底噪"的判断失真。
+            LastSignalDbPeak = signalDbPeak;
+            if (signalDbPeak > floor + SignalMarginDb)
+                Interlocked.Exchange(ref _lastSignalTicks, Stopwatch.GetTimestamp());
         }
 
         private double InterpolatedMagnitude(double freq)

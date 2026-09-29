@@ -63,6 +63,13 @@ namespace alpha_island.Services
         private DateTime _positionStampUtc = DateTime.UtcNow;
         private double _playbackRate = 1.0;
 
+        /// <summary>播放器原样上报的状态（"真相"），与经音频仲裁后对外呈现的 <see cref="Current"/> 区分开。</summary>
+        private PlaybackState _reportedState = PlaybackState.Closed;
+
+        /// <summary>已因"持续采不到音频"把上报的 Playing 降级为 Paused（锁存，直到真的重新采到声音）。</summary>
+        private volatile bool _audioVetoLatched;
+        private volatile bool _audioActiveLatched;
+
         /// <summary>参数为 null 表示当前没有任何媒体会话。</summary>
         public event EventHandler<NowPlayingInfo?>? NowPlayingChanged;
         /// <summary>SMTC 初始化失败时触发，参数为错误描述。</summary>
@@ -70,6 +77,82 @@ namespace alpha_island.Services
 
         public NowPlayingInfo? Current => _current;
         public bool IsAvailable => _manager != null;
+
+        /// <summary>
+        /// 连续多久采不到任何音频电平，就把播放器上报的 Playing 视为不可信、对外降级为 Paused。
+        /// 1.5s 的取舍：既不会把间奏误判成暂停，又能让异常未上报暂停的播放器在极短时间内被修正。
+        /// </summary>
+        public TimeSpan AudioSilenceTimeout { get; set; } = TimeSpan.FromSeconds(1.5);
+
+        /// <summary>
+        /// 播放器会话连续多久有电平，才把它上报的 Paused 升级为 Playing。1.2s 的取舍：
+        /// 会话电平表在停声后还会衰减一阵（百毫秒级），要求持续有声才不会把衰减尾巴当成播放；
+        /// 而 1.2s 已经短到用户按下播放后几乎立刻就能看到岛里恢复播放态。
+        /// </summary>
+        public TimeSpan AudioActiveConfirmTime { get; set; } = TimeSpan.FromSeconds(1.2);
+
+        /// <summary>
+        /// 是否启用音频侧仲裁。频谱采集没起来时必须保持 false，
+        /// 否则"静音计时"永不刷新，会把真实播放全部误判成暂停。
+        /// </summary>
+        public bool AudioProbeEnabled { get; set; }
+
+        /// <summary>诊断用：当前是否正因"持续采不到音频"而压制播放器上报的 Playing。</summary>
+        public bool IsAudioVetoLatched => _audioVetoLatched;
+
+        /// <summary>诊断用：当前是否正因"播放器会话持续有电平"而把上报的 Paused 升格为 Playing。</summary>
+        public bool IsAudioActiveLatched => _audioActiveLatched;
+
+        /// <summary>诊断用：播放器最近一次上报的原始状态（未经音频仲裁折算）。</summary>
+        public PlaybackState ReportedState => _reportedState;
+
+        /// <summary>
+        /// 由 UI 侧按固定节奏（250ms）回报音频侧观测结果。这里有两类证据，可信度不同：
+        /// <list type="bullet">
+        /// <item><b>会话级</b>（<paramref name="playerEvidenceAvailable"/> = true）：播放器**自己那个**
+        /// 音频会话的电平。它既能证明"没出声"（暂停），也能证明"在出声"（用户按了播放但播放器没上报），
+        /// 而且不受别的应用出声、系统音量、系统静音影响 —— 所以只有它能做双向纠正。</item>
+        /// <item><b>端点级</b>（<paramref name="endpointEvidenceUsable"/>）：整块声卡的环回电平。
+        /// 只能证明"整个系统都没出声"（→ 降级），不能证明"是它在出声"（别的应用出声会误升级），
+        /// 所以只用于降级。</item>
+        /// </list>
+        /// 为什么锁存而不是每拍重算：一旦降级（或升格），<c>_current.State</c> 就变了，
+        /// 若判据再依赖它就会与 250ms 的检测周期形成来回抖动；锁存后唯一解除条件是相反的观测出现。
+        /// </summary>
+        public void ReportAudioEvidence(double playerSilentSeconds, double playerActiveSeconds,
+                                        bool playerEvidenceAvailable,
+                                        double endpointSilentSeconds, bool endpointEvidenceUsable)
+        {
+            if (_disposed || !AudioProbeEnabled) return;
+
+            bool silent = playerEvidenceAvailable
+                ? playerSilentSeconds >= AudioSilenceTimeout.TotalSeconds
+                : (endpointEvidenceUsable && endpointSilentSeconds >= AudioSilenceTimeout.TotalSeconds);
+            bool active = playerEvidenceAvailable
+                          && playerActiveSeconds >= AudioActiveConfirmTime.TotalSeconds;
+
+            // 同一份会话证据不可能同时得出两个结论；真出现就按"在出声"处理（宁可显示播放）。
+            if (active && silent) silent = false;
+
+            if (silent == _audioVetoLatched && active == _audioActiveLatched) return;
+
+            _audioVetoLatched = silent;
+            _audioActiveLatched = active;
+            Debug.WriteLine($"[SMTC] 音频仲裁: veto={silent}(silent={playerSilentSeconds:F1}s/{endpointSilentSeconds:F1}s) active={active}({playerActiveSeconds:F1}s) session={playerEvidenceAvailable}");
+            CheckFastPlaybackState();
+        }
+
+        /// <summary>
+        /// 把"播放器上报状态"折算成"对外呈现状态"的唯一出口。
+        /// 播放器权威上报状态优先：显式上报的 Paused / Stopped / Closed 绝不被音频锁存反向覆盖为 Playing；
+        /// 仅当播放器谎报 Playing 但持续采不到任何音频时才降级为 Paused。
+        /// </summary>
+        private PlaybackState ResolveState(PlaybackState reported)
+        {
+            if (reported != PlaybackState.Playing) return reported;
+            if (_audioVetoLatched) return PlaybackState.Paused;
+            return PlaybackState.Playing;
+        }
 
         public SmtcService(Dispatcher dispatcher)
         {
@@ -126,16 +209,6 @@ namespace alpha_island.Services
         public void CheckFastPlaybackState()
         {
             if (_disposed) return;
-            if (_manager != null)
-            {
-                var best = GetBestSession();
-                if (best != null && !IsSameSession(best, _session))
-                {
-                    QueueRefresh();
-                    return;
-                }
-            }
-
             var session = _session;
             if (session == null || _current == null)
             {
@@ -147,7 +220,14 @@ namespace alpha_island.Services
                 var playback = session.GetPlaybackInfo();
                 if (playback != null)
                 {
-                    var newState = MapState(playback.PlaybackStatus);
+                    var reported = MapState(playback.PlaybackStatus);
+                    _reportedState = reported;
+                    if (reported != PlaybackState.Playing)
+                    {
+                        _audioActiveLatched = false;
+                        _audioVetoLatched = false;
+                    }
+                    var newState = ResolveState(reported);
                     if (newState != _current.State)
                     {
                         var controls = playback.Controls;
@@ -158,6 +238,9 @@ namespace alpha_island.Services
                             CanPrevious = controls?.IsPreviousEnabled ?? _current.CanPrevious
                         };
                         _current = updated;
+                        // 状态跃迁的同时校准外推基准：暂停→播放若沿用旧的 _positionStampUtc，
+                        // 会把整段暂停时长当成"已播放过的时间"加回位置（位置瞬间前跳）。
+                        _positionStampUtc = DateTime.UtcNow;
                         Publish(updated);
                     }
                 }
@@ -165,6 +248,7 @@ namespace alpha_island.Services
             catch (Exception ex)
             {
                 Debug.WriteLine("[SMTC] CheckFastPlaybackState 异常: " + ex.Message);
+                QueueRefresh();
             }
         }
 
@@ -343,6 +427,14 @@ namespace alpha_island.Services
             }
 
             var state = MapState(playback?.PlaybackStatus);
+            _reportedState = state;
+            if (state != PlaybackState.Playing)
+            {
+                _audioActiveLatched = false;
+                _audioVetoLatched = false;
+            }
+            // 对外只呈现经音频仲裁后的状态：播放器谎报 Playing 而环回持续无音频时降级为 Paused
+            state = ResolveState(state);
             var controls = playback?.Controls;
             _playbackRate = playback?.PlaybackRate ?? 1.0;
             if (_playbackRate <= 0) _playbackRate = 1.0;
@@ -443,42 +535,10 @@ namespace alpha_island.Services
                 if (info == null) return TimeSpan.Zero;
                 if (!info.IsPlaying || info.Duration <= TimeSpan.Zero) return info.Position;
 
-                var session = _session;
-                if (session != null)
-                {
-                    try
-                    {
-                        var tl = session.GetTimelineProperties();
-                        if (tl != null)
-                        {
-                            var lastUpdated = tl.LastUpdatedTime;
-                            if (lastUpdated != default)
-                            {
-                                var now = DateTimeOffset.UtcNow;
-                                var sinceUpdate = now - lastUpdated;
-                                // 允许系统时钟与媒体时间戳之间 1 秒以内的微小超前抖动
-                                if (sinceUpdate < TimeSpan.Zero && sinceUpdate >= TimeSpan.FromSeconds(-1))
-                                {
-                                    sinceUpdate = TimeSpan.Zero;
-                                }
-
-                                if (sinceUpdate >= TimeSpan.Zero)
-                                {
-                                    var realPos = (tl.Position - tl.StartTime) + TimeSpan.FromSeconds(sinceUpdate.TotalSeconds * _playbackRate);
-                                    if (realPos < TimeSpan.Zero) realPos = TimeSpan.Zero;
-                                    if (info.Duration > TimeSpan.Zero && realPos > info.Duration) realPos = info.Duration;
-                                    return realPos;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                }
-
                 var elapsed = DateTime.UtcNow - _positionStampUtc;
                 if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
                 var pos = info.Position + TimeSpan.FromSeconds(elapsed.TotalSeconds * _playbackRate);
-                return pos > info.Duration ? info.Duration : pos;
+                return (info.Duration > TimeSpan.Zero && pos > info.Duration) ? info.Duration : pos;
             }
         }
 

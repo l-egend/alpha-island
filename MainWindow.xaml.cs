@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -51,6 +52,38 @@ namespace alpha_island
 
         private SmtcService? _smtc;
         private AudioSpectrumService? _audio;
+        // 切换输出设备后，环回采集要重建，这段时间采不到声音属于正常现象，
+        // 不能拿来当"已暂停"的证据（否则换设备瞬间歌词会自己停一下）。
+        private DateTime _audioDeviceSuppressUntil = DateTime.MinValue;
+
+        /// <summary>卡片翻页动画进行中。期间是"拖动+鼠标捕获+整层布局"的敏感窗口，见 ProgressTimer_Tick。</summary>
+        private bool _cardAnimating;
+
+        /// <summary>
+        /// "胶囊→卡片"这一次换态是否已经完成内容交接（一次性、不可逆）。
+        /// 交接前胶囊内容保持满不透明，交接后整层立刻交给卡片，避免两边同时半透明导致内容发灰。
+        /// 每次换态在 SetState 里复位。
+        /// </summary>
+        private bool _cardHandoff;
+
+        /// <summary>内容交接发生的时间戳（TickCount64），用于把交接后的模糊按时间化开。</summary>
+        private long _cardHandoffMs;
+
+        /// <summary>播放器自身音频会话的"无声"阈值（0~1 峰值）：低于它认为这个播放器没在输出声音。</summary>
+        private const float AudioSessionSilencePeak = 0.0015f;
+
+        /// <summary>播放器会话从"有声"变成"无声"的时刻（TickCount64）；0 表示当前无声不成立。</summary>
+        private long _appSilentSinceMs;
+
+        /// <summary>播放器会话从"无声"变成"有声"的时刻（TickCount64）；0 表示当前没有持续有声。</summary>
+        private long _appActiveSinceMs;
+
+        /// <summary>媒体/音频仲裁的诊断开关：只有显式设置环境变量 ALPHA_ISLAND_SMTCDBG=1 时，
+        /// 才每秒往日志写一行 SMTC_DBG（默认零噪声，复现"暂停后还在判为播放"时用来取现场）。</summary>
+        private readonly bool _smtcDebugEnabled =
+            Environment.GetEnvironmentVariable("ALPHA_ISLAND_SMTCDBG") == "1";
+        private long _dbgLastMs;
+
         private LyricsService? _lyrics;
         private BluetoothService? _bluetooth;
         private VolumeService? _volumeService;
@@ -251,9 +284,12 @@ namespace alpha_island
             _hoverTimer.Tick += HoverTimer_Tick;
             _hoverTimer.Start();
 
+            // 必须是 Background：Tick 里有一次同步的 WinRT 跨进程调用（GetPlaybackInfo），
+            // 用 Normal 会抢在鼠标输入（Input=5）与渲染（Render=7）之前执行，
+            // 翻页拖动时表现为"手一动就卡"，快速连翻直接卡死。
             _progressTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
-                Interval = TimeSpan.FromMilliseconds(250)
+                Interval = TimeSpan.FromMilliseconds(100)
             };
             _progressTimer.Tick += ProgressTimer_Tick;
 
@@ -416,6 +452,9 @@ namespace alpha_island
             {
                 _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(ShowSettings));
             }
+
+            // 卡片子树不再需要启动期"冷排版预热"：CardCarouselHost 现在固定尺寸且常驻 Visible，
+            // 第一次窗口排版时它就已经被测量/排列过，之后一直保持有效（见 MainWindow.xaml 的 CardCarouselHost）。
         }
 
         /// <summary>尽早拉起 WASAPI 频谱采集（全程后台线程，失败不影响启动）。已启动则直接返回。</summary>
@@ -505,6 +544,8 @@ namespace alpha_island
                     // 而"赋值"必须抢在任何人（ApplyOptions / 设置窗）看到 == null 之前完成，
                     // 否则会多出一个永不注销 RegisterEndpointNotificationCallback 的僵尸实例。
                     vol.VolumeChanged += OnVolumeChanged;
+                    vol.DeviceChanged += OnDeviceChanged;
+                    vol.ListsChanged += OnVolumeListsChanged;
                     _volumeService = vol;
                     StartInBackground(vol.Start, "Volume");
                     System.Diagnostics.Debug.WriteLine("[Startup] 模块 4/8 [系统音量] 已启动");
@@ -698,6 +739,10 @@ namespace alpha_island
             get
             {
                 double h = (_currentCardPage >= 1 || LyricsAreaVisible) ? IslandMetrics.CardHeightLyrics : IslandMetrics.CardHeight;
+                // 音量卡抽屉展开时整卡要长高，见 SetCardDrawerExtra：岛体可见带 ≈ 身高 − 22，
+                // 而卡片视口 = 194 + 抽屉高，两边必须同步长，否则多出来的部分会被
+                // IslandBody / CardViewport 的 ClipToBounds 裁掉（连命中测试都没有）。
+                if (_cardDrawerExtra > 0) h += _cardDrawerExtra + 4;
                 return new IslandGeometry(IslandMetrics.CardWidth, h, IslandMetrics.CardTop,
                     new CornerRadius(IslandMetrics.CardCornerRadius));
             }
@@ -726,6 +771,14 @@ namespace alpha_island
             IslandState prev = _state;
             _state = next;
 
+            // 换态的第一件事：掐掉"胶囊宽度形变"留下的那层模糊（AnimateIslandWidthBlur）。
+            // 它是 0→峰值→0 的 300ms 关键帧动画，一旦在换态前起飞，就会跨过换态继续跑完，
+            // 把正在出场的胶囊内容糊掉 —— 观感正是"从小岛返回时内容闪一下"。
+            CancelPillWidthBlur();
+
+            // 新一次换态：内容交接标记复位（见 ApplyReveal 里"小岛返回"的硬交接逻辑）。
+            _cardHandoff = false;
+
             // 离开细条就立刻掐掉收回动画中间态那颗球；若收缩回细条，则装配当前左侧状态的圆形过渡内容
             if (next == IslandState.Bar && prev != IslandState.Bar)
             {
@@ -736,6 +789,37 @@ namespace alpha_island
             bool growing = next > prev || (force && next == prev);
             var duration = growing ? IslandMetrics.ExpandDuration : IslandMetrics.GrowDuration;
 
+            // 卡片页必须在算几何之前定下来：CardGeometry 的高度依赖 _currentCardPage
+            // （无歌词 138 / 有歌词或第 1、2 页 214）。以前这段在 MorphIsland 之后执行，
+            // 于是"页码决定岛高"永远慢一拍 —— 展开到一半才补一次高度形变，
+            // 观感就是卡片内容先闪一下、再突然长高。
+            if (next == IslandState.Card)
+            {
+                // 进卡片前把音量卡抽屉状态清干净：抽屉展开会把整卡和岛体一起撑高（_cardDrawerExtra），
+                // 这份额外高度必须随"离开卡片/重新进卡片"归零，否则下次进来岛还是大的。
+                ResetCardDrawers();
+
+                int targetPage = 0;
+                if (_volumeNotifying && VolumeNotifyActive)
+                {
+                    targetPage = 2;
+                }
+                else if (_clipboardLocked || _clipboardNotifying)
+                {
+                    targetPage = 1;
+                }
+                else if (_smtc?.Current?.HasMedia == true && _smtc.Current.IsPlaying)
+                {
+                    targetPage = 0;
+                }
+                else if (_clipboard?.History.Count > 0)
+                {
+                    targetPage = 1;
+                }
+
+                SwitchCardPage(targetPage, animated: false);
+            }
+
             // 内容层不做独立时间轴的淡入淡出：显露度由主弹簧进度驱动（见 ApplyReveal），
             // 材质展开到哪儿内容就露到哪儿，源层在同一个进度上退场。
             _revealFrom = prev;
@@ -745,7 +829,47 @@ namespace alpha_island
 
             if (_animator != null)
             {
-                MorphIsland(GeometryFor(next), duration, new CubicEase { EasingMode = EasingMode.EaseInOut });
+                // 从小岛回到主岛：只靠两条弹簧的相位差做"横向先摊开、高度后追上"的融合，
+                // 不再给路径点。原因（ALPHA_ISLAND_TRACE 实测轨迹）：原来的 via 把宽度先推到
+                // 472px（比目标宽 42px）再缩回 430px，而 via 接点处 smoothstep 又把几何速度压到 0，
+                // 于是 62~76ms 这段宽度只变了 3px 然后反向 —— 眼睛看到的就是"展开到一半顿一下"。
+                // 去掉 via 后宽度单调涨到目标（弹簧自身的过冲只多出 6px），高度仍滞后 1.38 拍。
+                bool fromPill = next == IslandState.Card && prev != IslandState.Card;
+
+                // 卡片的测量/排列在形变第一帧之前结清：否则整棵子树的排版会落在弹簧的某一帧上，
+                // 那一帧的掉帧就是用户看到的"主岛内容闪一下"。
+                if (next == IslandState.Card && CardCarouselHost.Visibility == Visibility.Visible)
+                {
+                    CardCarouselHost.UpdateLayout();
+                }
+
+                MorphIsland(GeometryFor(next), duration, new CubicEase { EasingMode = EasingMode.EaseInOut },
+                    () =>
+                    {
+                        if (_state == IslandState.Card)
+                        {
+                            CardCarouselHost.Visibility = Visibility.Visible;
+                            CardCarouselHost.Opacity = 1.0;
+                            CardCarouselHost.IsHitTestVisible = true;
+                            PillLayer.Opacity = 0;
+                            PillLayer.Visibility = Visibility.Collapsed;
+                        }
+                        else
+                        {
+                            CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
+                            CardCarouselHost.Opacity = 0;
+                            CardCarouselHost.IsHitTestVisible = false;
+                        }
+
+                        if (_state == IslandState.Pill)
+                        {
+                            PillLayer.Visibility = Visibility.Visible;
+                            PillLayer.Opacity = 1.0;
+                        }
+
+                        ClearCardTransitionBlur();
+                    },
+                    followLag: fromPill ? 1.38 : 1.0);
             }
             else
             {
@@ -778,50 +902,29 @@ namespace alpha_island
             }
             else if (next == IslandState.Card)
             {
-                PillLayer.BeginAnimation(UIElement.OpacityProperty, null);
-                PillLayer.Opacity = 0;
-                PillLayer.Visibility = Visibility.Collapsed;
+                CardCarouselHost.Visibility = Visibility.Visible;
+                CardCarouselHost.IsHitTestVisible = true;
+                // 源层（胶囊）不在这里直接掐灭：它要按弹簧进度退场（见 ApplyReveal）。
+                // 立刻 Opacity=0 + Collapsed 会让展开的第一帧"两边都空"，那一下就是闪。
+                if (prev != IslandState.Pill)
+                {
+                    PillLayer.BeginAnimation(UIElement.OpacityProperty, null);
+                    PillLayer.Opacity = 0;
+                    PillLayer.Visibility = Visibility.Collapsed;
+                }
             }
             else if (next == IslandState.Bar)
             {
                 PillLayer.BeginAnimation(UIElement.OpacityProperty, null);
                 PillLayer.Opacity = 0;
                 PillLayer.Visibility = Visibility.Collapsed;
-                CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
-                CardCarouselHost.Opacity = 0;
-                CardCarouselHost.Visibility = Visibility.Collapsed;
+                // 卡片层同理：Card → Bar 时它还得在屏幕上被压到 0，不能提前折叠。
             }
 
-            if (next == IslandState.Card)
-            {
-                int targetPage = 0;
-                if (_volumeNotifying && VolumeNotifyActive)
-                {
-                    targetPage = 2;
-                }
-                else if (_clipboardLocked || _clipboardNotifying)
-                {
-                    targetPage = 1;
-                }
-                else if (_smtc?.Current?.HasMedia == true && _smtc.Current.IsPlaying)
-                {
-                    targetPage = 0;
-                }
-                else if (_clipboard?.History.Count > 0)
-                {
-                    targetPage = 1;
-                }
-                else
-                {
-                    targetPage = 0;
-                }
-                SwitchCardPage(targetPage, animated: false);
-            }
-            else
+            if (next != IslandState.Card && prev != IslandState.Card)
             {
                 CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
                 CardCarouselHost.Opacity = 0;
-                CardCarouselHost.Visibility = Visibility.Collapsed;
                 Keyboard.ClearFocus();
             }
 
@@ -1399,6 +1502,71 @@ namespace alpha_island
             blur.BeginAnimation(BlurEffect.RadiusProperty, anim);
         }
 
+        /// <summary>
+        /// 掐掉胶囊宽度形变留下的模糊层（换态 / 离开胶囊时必须调用）。
+        /// </summary>
+        private void CancelPillWidthBlur()
+        {
+            if (PillLayer?.Effect == null) return;
+            if (PillLayer.Effect is BlurEffect blur)
+            {
+                blur.BeginAnimation(BlurEffect.RadiusProperty, null);
+            }
+            PillLayer.Effect = null;
+        }
+
+        /// <summary>卡片进出场时整棵子树的最大模糊半径（像素）。</summary>
+        private const double CardTransitionBlurRadius = 13.0;
+
+        /// <summary>
+        /// 卡片参与形态过渡（胶囊 ⇄ 卡片）时，给整棵卡片子树盖一层"动态模糊"：
+        /// 模糊半径从峰值跟着形变进度收敛到 0。
+        /// <para>
+        /// 这是用户点名要的做法 —— 缩回小岛时主岛内容先糊着退场、展开时糊着浮现，
+        /// 把"内容重排/首帧"这段时间藏在模糊里，动画结束时正好锐利，不再出现硬切式的闪一下。
+        /// </para>
+        /// 用后即摘：闲置时 Effect 必须是 null，否则整层每帧都要多走一次离屏渲染。
+        /// </summary>
+        private void ApplyCardTransitionBlur(double content)
+        {
+            if (CardCarouselHost == null) return;
+
+            // 只有真正的换态（from ≠ to）才模糊。翻页 / 抽屉撑高这类"同态形变"也会重跑 _reveal，
+            // 但它们本来就不切内容，加模糊只会白掉帧 —— 那正是"第三张卡片卡顿"的来源。
+            bool inTransition = _revealFrom != _revealTo
+                && (_revealFrom == IslandState.Card || _revealTo == IslandState.Card);
+            double radius = inTransition ? (1.0 - Math.Clamp(content, 0.0, 1.0)) * CardTransitionBlurRadius : 0.0;
+
+            if (radius <= 0.35)
+            {
+                ClearCardTransitionBlur();
+                return;
+            }
+
+            if (CardCarouselHost.Effect is not BlurEffect blur)
+            {
+                blur = new BlurEffect
+                {
+                    Radius = 0,
+                    KernelType = KernelType.Gaussian,
+                    RenderingBias = RenderingBias.Performance
+                };
+                CardCarouselHost.Effect = blur;
+            }
+            blur.Radius = radius;
+        }
+
+        /// <summary>摘掉卡片层的模糊（闲置时必须为 null）。</summary>
+        private void ClearCardTransitionBlur()
+        {
+            if (CardCarouselHost?.Effect == null) return;
+            if (CardCarouselHost.Effect is BlurEffect blur)
+            {
+                blur.BeginAnimation(BlurEffect.RadiusProperty, null);
+            }
+            CardCarouselHost.Effect = null;
+        }
+
         /// <summary>进入/离开胶囊态时起停换行过场，细条状态下不白耗动画帧。</summary>
         private void SetPillLyricScrollRunning(bool running)
         {
@@ -1420,8 +1588,6 @@ namespace alpha_island
         private void SyncUpNextContent()
         {
             bool up = _upNextShowing && UpNextActive;
-            PillSpectrum.Visibility = up ? Visibility.Collapsed : Visibility.Visible;
-            PillUpNext.Visibility = up ? Visibility.Visible : Visibility.Collapsed;
 
             if (up)
             {
@@ -1444,11 +1610,49 @@ namespace alpha_island
                     PillUpNextText.Text = "接下来";
                 }
                 ApplyPillLyricText(_upNextTitle);
+
+                // 平滑淡入淡出及位移动画（与歌词滚动一致）
+                PillUpNext.Visibility = Visibility.Visible;
+                var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+                var duration = TimeSpan.FromMilliseconds(220);
+
+                var upFade = new DoubleAnimation(0.0, 1.0, duration) { EasingFunction = ease };
+                var upSlide = new DoubleAnimation(8.0, 0.0, duration) { EasingFunction = ease };
+                PillUpNext.BeginAnimation(UIElement.OpacityProperty, upFade);
+                PillUpNextTranslate?.BeginAnimation(TranslateTransform.YProperty, upSlide);
+
+                var specFade = new DoubleAnimation(PillSpectrum.Opacity, 0.0, duration) { EasingFunction = ease };
+                specFade.Completed += (_, __) =>
+                {
+                    if (_upNextShowing && UpNextActive)
+                    {
+                        PillSpectrum.Visibility = Visibility.Collapsed;
+                    }
+                };
+                PillSpectrum.BeginAnimation(UIElement.OpacityProperty, specFade);
             }
             else
             {
                 PillSpectrum.Visibility = Visibility.Visible;
-                PillUpNext.Visibility = Visibility.Collapsed;
+                var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+                var duration = TimeSpan.FromMilliseconds(220);
+
+                var specFade = new DoubleAnimation(0.0, 1.0, duration) { EasingFunction = ease };
+                PillSpectrum.BeginAnimation(UIElement.OpacityProperty, specFade);
+
+                var upFade = new DoubleAnimation(PillUpNext.Opacity, 0.0, duration) { EasingFunction = ease };
+                var upSlide = new DoubleAnimation(0.0, -8.0, duration) { EasingFunction = ease };
+                upFade.Completed += (_, __) =>
+                {
+                    if (!_upNextShowing || !UpNextActive)
+                    {
+                        PillUpNext.Visibility = Visibility.Collapsed;
+                        PillUpNext.Opacity = 0.0;
+                    }
+                };
+                PillUpNext.BeginAnimation(UIElement.OpacityProperty, upFade);
+                PillUpNextTranslate?.BeginAnimation(TranslateTransform.YProperty, upSlide);
+
                 if (!string.IsNullOrWhiteSpace(_pillLyricNormal))
                 {
                     ApplyPillLyricText(_pillLyricNormal);
@@ -1460,7 +1664,7 @@ namespace alpha_island
         /// <summary>
         /// 换曲（上一首 / 下一首）提示的显示时长。
         /// 用户反馈：等新歌都已经唱起来了，胶囊还在提示"接下来 上一首"，所以固定压到 1s。
-        /// 暂停 / 恢复播放提示仍走 <c>_options.UpNextSeconds</c>，两者互不影响。
+        /// 暂停 / 恢复播放提示均固定为 1.0s。
         /// </summary>
         private const double UpNextPromptSeconds = 1.0;
 
@@ -1516,7 +1720,7 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 暂停提示：音乐暂停时弹出一级胶囊，中间是曲名、右侧是"已暂停"，持续 UpNextSeconds 秒后自动还原频谱与歌词。
+        /// 暂停提示：音乐暂停时弹出一级胶囊，中间是曲名、右侧是"已暂停"，持续 1 秒后自动还原频谱与歌词。
         /// </summary>
         private void BeginPausePrompt(NowPlayingInfo info)
         {
@@ -1525,7 +1729,7 @@ namespace alpha_island
 
             _upNextTitle = info.DisplayTitle;
             _upNextKind = "pause";
-            double promptSeconds = Math.Max(1.0, _options.UpNextSeconds);
+            const double promptSeconds = 1.0;
             _upNextUntil = DateTime.UtcNow.AddSeconds(promptSeconds);
             _upNextShowing = true;
             ScheduleUpNextDismiss(promptSeconds);
@@ -1534,7 +1738,7 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 恢复播放提示：音乐继续播放时弹出一级胶囊，中间是曲名、右侧是"正在播放"，持续 UpNextSeconds 秒后自动还原频谱与歌词。
+        /// 恢复播放提示：音乐继续播放时弹出一级胶囊，中间是曲名、右侧是"正在播放"，持续 1 秒后自动还原频谱与歌词。
         /// </summary>
         private void BeginPlayPrompt(NowPlayingInfo info)
         {
@@ -1543,7 +1747,7 @@ namespace alpha_island
 
             _upNextTitle = info.DisplayTitle;
             _upNextKind = "play";
-            double promptSeconds = Math.Max(1.0, _options.UpNextSeconds);
+            const double promptSeconds = 1.0;
             _upNextUntil = DateTime.UtcNow.AddSeconds(promptSeconds);
             _upNextShowing = true;
             ScheduleUpNextDismiss(promptSeconds);
@@ -2050,6 +2254,31 @@ namespace alpha_island
             ShowVolumeNotify(info.Percent, info.IsMuted);
         }
 
+        private void OnDeviceChanged(object? sender, EventArgs e)
+        {
+            // 换设备后环回采集要重建，接下来几秒采不到声音是正常的，先关掉静音仲裁的判据。
+            _audioDeviceSuppressUntil = DateTime.UtcNow.AddSeconds(5.0);
+            Dispatcher.InvokeAsync(() =>
+            {
+                SyncVolumeCardContent();
+                if (_isAudioDeviceExpanded)
+                {
+                    RefreshAudioDeviceList();
+                }
+            });
+        }
+
+        /// <summary>
+        /// 后台刷新线程算好新的设备 / 会话列表后回调。只有当前真的展开着对应抽屉才重建 UI，
+        /// 卡片没打开、抽屉没收起时不白刷 ItemsSource。
+        /// </summary>
+        private void OnVolumeListsChanged(object? sender, EventArgs e)
+        {
+            if (_exiting || _state != IslandState.Card) return;
+            if (_isAudioDeviceExpanded) RefreshAudioDeviceList();
+            if (_isVolumeMixerExpanded) RefreshVolumeAppSessionsList();
+        }
+
         private void ShowVolumeNotify(int percent, bool isMuted)
         {
             if (_greetingShowing && GreetingActive) return;
@@ -2102,15 +2331,22 @@ namespace alpha_island
             SyncNotificationLayers();
         }
 
-        private void SyncVolumeCardContent()
+        /// <summary>
+        /// 刷新音量卡显示。拖拽滑块时用 <paramref name="displayPercent"/> 直接给出"手上算出来的值"，
+        /// 不再回读服务 —— 写入被 40ms 合并后，服务里的值会落后于手感。
+        /// </summary>
+        private void SyncVolumeCardContent(int? displayPercent = null)
         {
             if (CardVolumeSliderFill == null || CardVolumePercentText == null) return;
 
-            int percent = _volumeService?.CurrentPercent ?? 0;
+            EnsureVolumeService();
+
+            int percent = displayPercent ?? _volumeService?.CurrentPercent ?? 0;
             bool isMuted = _volumeService?.IsMuted ?? false;
             string devName = _volumeService?.CurrentDeviceName ?? "系统扬声器";
 
             CardVolumeDeviceText.Text = devName;
+            if (CurrentDeviceNameLabel != null) CurrentDeviceNameLabel.Text = devName;
             CardVolumePercentText.Text = isMuted ? "静音" : $"{percent}%";
 
             if (isMuted || percent == 0)
@@ -2153,12 +2389,25 @@ namespace alpha_island
             {
                 if (_currentCardPage == 2)
                 {
+                    // 若鼠标悬停在右侧指示器区域，向上滚允许快速切回剪切板卡片
+                    if (PageIndicatorBorder != null)
+                    {
+                        var pos = e.GetPosition(PageIndicatorBorder);
+                        if (pos.X >= -10 && pos.X <= PageIndicatorBorder.ActualWidth + 10 &&
+                            pos.Y >= 0 && pos.Y <= PageIndicatorBorder.ActualHeight)
+                        {
+                            if (e.Delta > 0)
+                            {
+                                SwitchCardPage(1);
+                                e.Handled = true;
+                                return;
+                            }
+                        }
+                    }
+
                     int delta = e.Delta > 0 ? 2 : -2;
                     _volumeService?.AdjustVolume(delta);
                     SyncVolumeCardContent();
-                    int cur = _volumeService?.CurrentPercent ?? 0;
-                    bool muted = _volumeService?.IsMuted ?? false;
-                    ShowVolumeNotify(cur, muted);
                     e.Handled = true;
                 }
                 return;
@@ -2180,9 +2429,6 @@ namespace alpha_island
             e.Handled = true;
             _volumeService?.ToggleMute();
             SyncVolumeCardContent();
-            int currentVol = _volumeService?.CurrentPercent ?? 0;
-            bool isMuted = _volumeService?.IsMuted ?? false;
-            ShowVolumeNotify(currentVol, isMuted);
         }
 
         private void CardVolumeDown_Click(object sender, RoutedEventArgs e)
@@ -2190,9 +2436,6 @@ namespace alpha_island
             e.Handled = true;
             _volumeService?.AdjustVolume(-5);
             SyncVolumeCardContent();
-            int currentVol = _volumeService?.CurrentPercent ?? 0;
-            bool isMuted = _volumeService?.IsMuted ?? false;
-            ShowVolumeNotify(currentVol, isMuted);
         }
 
         private void CardVolumeUp_Click(object sender, RoutedEventArgs e)
@@ -2200,27 +2443,25 @@ namespace alpha_island
             e.Handled = true;
             _volumeService?.AdjustVolume(+5);
             SyncVolumeCardContent();
-            int currentVol = _volumeService?.CurrentPercent ?? 0;
-            bool isMuted = _volumeService?.IsMuted ?? false;
-            ShowVolumeNotify(currentVol, isMuted);
-        }
-
-        private void PresetVolume_Click(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            if (sender is FrameworkElement elem && int.TryParse(elem.Tag?.ToString(), out int val))
-            {
-                _volumeService?.SetVolume(val);
-                SyncVolumeCardContent();
-                int currentVol = _volumeService?.CurrentPercent ?? 0;
-                bool isMuted = _volumeService?.IsMuted ?? false;
-                ShowVolumeNotify(currentVol, isMuted);
-            }
         }
 
         private bool _isDraggingVolumeSlider;
 
-        private void CardVolumeSliderTrack_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        /// <summary>上一次真正写到系统音量的时刻（Stopwatch 刻度），用于把拖拽期间的密集写入合并到 40ms。</summary>
+        private long _volumeWriteStamp;
+
+        /// <summary>被合并窗口丢掉的最后一帧音量值；松手或丢失捕获时补写一次。</summary>
+        private int _pendingVolumePercent = -1;
+
+        /// <summary>音量卡抽屉额外占用的高度（0 = 全部收起），见 SetCardDrawerExtra。</summary>
+        private double _cardDrawerExtra;
+
+        /// <summary>VolumeService 是按需创建的（Start 是后台异步），列表为空时重试的剩余次数。</summary>
+        private int _volumeListRetriesLeft;
+
+        private DispatcherTimer? _volumeListRetryTimer;
+
+        private void CardVolumeSliderTrack_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             _isDraggingVolumeSlider = true;
             CardVolumeSliderTrack.CaptureMouse();
@@ -2243,8 +2484,20 @@ namespace alpha_island
             {
                 _isDraggingVolumeSlider = false;
                 CardVolumeSliderTrack.ReleaseMouseCapture();
+                FlushPendingVolumeWrite();
                 e.Handled = true;
             }
+        }
+
+        /// <summary>
+        /// 拖拽途中丢失鼠标捕获（例如卡片翻页把这一层置为 Collapsed 时 WPF 会自动释放）：
+        /// 不收尾的话 _isDraggingVolumeSlider 会永远停在 true，之后鼠标在滑块上随便一动都在改音量。
+        /// </summary>
+        private void CardVolumeSliderTrack_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            if (!_isDraggingVolumeSlider) return;
+            _isDraggingVolumeSlider = false;
+            FlushPendingVolumeWrite();
         }
 
         private void UpdateVolumeFromSliderPosition(double x)
@@ -2253,11 +2506,278 @@ namespace alpha_island
             if (trackW <= 0) return;
             double ratio = Math.Clamp(x / trackW, 0.0, 1.0);
             int percent = (int)Math.Round(ratio * 100.0);
-            _volumeService?.SetVolume(percent);
-            SyncVolumeCardContent();
-            int currentVol = _volumeService?.CurrentPercent ?? 0;
-            bool isMuted = _volumeService?.IsMuted ?? false;
-            ShowVolumeNotify(currentVol, isMuted);
+
+            // 拖拽时每个鼠标移动事件都同步写一次 COM（MasterVolumeLevelScalar 要等音频驱动确认），
+            // UI 线程会被这些往返拖住 —— 表现就是"拖动时音量条明显滞后、跟不上手"。
+            // 40ms 内只更新画面，真正写设备按最后一帧的值补齐（松手时立即 flush）。
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            double sinceMs = _volumeWriteStamp == 0
+                ? double.MaxValue
+                : (now - _volumeWriteStamp) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            if (sinceMs >= 40.0)
+            {
+                _volumeWriteStamp = now;
+                _pendingVolumePercent = -1;
+                _volumeService?.SetVolume(percent);
+            }
+            else
+            {
+                _pendingVolumePercent = percent;
+            }
+
+            SyncVolumeCardContent(percent);
+        }
+
+        /// <summary>把拖拽期间被合并掉的那次写入补上。</summary>
+        private void FlushPendingVolumeWrite()
+        {
+            int pending = _pendingVolumePercent;
+            _pendingVolumePercent = -1;
+            if (pending < 0) return;
+            _volumeWriteStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            _volumeService?.SetVolume(pending);
+            SyncVolumeCardContent(pending);
+        }
+
+        // ================= 音量卡片抽屉折叠面板 (输出设备与音量合成器) =================
+
+        private bool _isAudioDeviceExpanded;
+        private bool _isVolumeMixerExpanded;
+
+        private void AudioDeviceHeader_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+            _isAudioDeviceExpanded = !_isAudioDeviceExpanded;
+            if (_isAudioDeviceExpanded && _isVolumeMixerExpanded)
+            {
+                AnimateDrawer(VolumeMixerPanel, VolumeMixerChevronRotate, false, 0);
+                _isVolumeMixerExpanded = false;
+            }
+
+            if (_isAudioDeviceExpanded)
+            {
+                RefreshAudioDeviceList();
+            }
+
+            AnimateDrawer(AudioDevicePanel, AudioDeviceChevronRotate, _isAudioDeviceExpanded, 68);
+        }
+
+        private void VolumeMixerHeader_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+            _isVolumeMixerExpanded = !_isVolumeMixerExpanded;
+            if (_isVolumeMixerExpanded && _isAudioDeviceExpanded)
+            {
+                AnimateDrawer(AudioDevicePanel, AudioDeviceChevronRotate, false, 0);
+                _isAudioDeviceExpanded = false;
+            }
+
+            if (_isVolumeMixerExpanded)
+            {
+                RefreshVolumeAppSessionsList();
+            }
+
+            AnimateDrawer(VolumeMixerPanel, VolumeMixerChevronRotate, _isVolumeMixerExpanded, 78);
+        }
+
+        private void AnimateDrawer(Grid panel, RotateTransform chevronRotate, bool expand, double targetHeight)
+        {
+            var duration = TimeSpan.FromMilliseconds(220);
+            var ease = new CubicEase { EasingMode = expand ? EasingMode.EaseOut : EasingMode.EaseIn };
+
+            if (expand)
+            {
+                panel.Visibility = Visibility.Visible;
+                var hAnim = new DoubleAnimation(0, targetHeight, duration) { EasingFunction = ease };
+                var opAnim = new DoubleAnimation(0, 1.0, duration) { EasingFunction = ease };
+                var rotAnim = new DoubleAnimation(0, 180, duration) { EasingFunction = ease };
+
+                panel.BeginAnimation(FrameworkElement.HeightProperty, hAnim);
+                panel.BeginAnimation(UIElement.OpacityProperty, opAnim);
+                chevronRotate.BeginAnimation(RotateTransform.AngleProperty, rotAnim);
+                SetCardDrawerExtra(targetHeight);
+            }
+            else
+            {
+                var hAnim = new DoubleAnimation(panel.ActualHeight, 0, duration) { EasingFunction = ease };
+                var opAnim = new DoubleAnimation(panel.Opacity, 0, duration) { EasingFunction = ease };
+                var rotAnim = new DoubleAnimation(chevronRotate.Angle, 0, duration) { EasingFunction = ease };
+
+                opAnim.Completed += (_, __) =>
+                {
+                    if (!_isAudioDeviceExpanded && panel == AudioDevicePanel)
+                    {
+                        panel.Visibility = Visibility.Collapsed;
+                        panel.Height = 0;
+                    }
+                    if (!_isVolumeMixerExpanded && panel == VolumeMixerPanel)
+                    {
+                        panel.Visibility = Visibility.Collapsed;
+                        panel.Height = 0;
+                    }
+                };
+
+                panel.BeginAnimation(FrameworkElement.HeightProperty, hAnim);
+                panel.BeginAnimation(UIElement.OpacityProperty, opAnim);
+                chevronRotate.BeginAnimation(RotateTransform.AngleProperty, rotAnim);
+                SetCardDrawerExtra(0);
+            }
+        }
+
+        /// <summary>
+        /// 音量卡的两个折叠面板（输出设备 / 音量合成器）展开时必须同时把卡片视口和岛体撑高。
+        /// 视口写死 194、岛体按页高（无歌词 138 / 有歌词或第 1、2 页 214），而抽屉一展开内容就要 ~280：
+        /// 不撑高的话多出来的一整块会被 CardViewport 与 IslandBody 的 ClipToBounds 裁掉，
+        /// 表现就是"展开后一片空白、点不动"（被裁掉的部分连命中测试都不存在）。
+        /// </summary>
+        private void SetCardDrawerExtra(double extra)
+        {
+            if (extra < 0) extra = 0;
+            if (Math.Abs(_cardDrawerExtra - extra) < 0.5) return;
+            _cardDrawerExtra = extra;
+
+            if (CardViewport != null) CardViewport.Height = 194 + extra;
+
+            // 光长视口不够：层自己还写死 194，行 1（输出设备 + 音量合成器两个折叠区）拿不到
+            // 额外高度就会溢出行 2，底部提示叠在"音量合成器"那一行上。抽屉只存在于音量卡，
+            // 所以只长这一层，另两层保持 194 不会互相错位。
+            if (VolumeCardLayer != null) VolumeCardLayer.Height = 194 + extra;
+
+            if (_state == IslandState.Card && _animator != null)
+            {
+                MorphIsland(CardGeometry, TimeSpan.FromMilliseconds(220),
+                    new CubicEase { EasingMode = EasingMode.EaseOut });
+            }
+        }
+
+        /// <summary>
+        /// 强制收回音量卡的两个折叠面板（不动画）并把额外高度归零。
+        /// 翻页、离开卡片、重新进卡片都要调：抽屉撑高的岛体不会自己缩回去，
+        /// 否则用户看到的就是"展开过一次抽屉，之后切到哪张卡岛都还是大的"。
+        /// </summary>
+        private void ResetCardDrawers()
+        {
+            _isAudioDeviceExpanded = false;
+            _isVolumeMixerExpanded = false;
+
+            ResetDrawerPanel(AudioDevicePanel, AudioDeviceChevronRotate);
+            ResetDrawerPanel(VolumeMixerPanel, VolumeMixerChevronRotate);
+
+            SetCardDrawerExtra(0);
+        }
+
+        private static void ResetDrawerPanel(Grid? panel, RotateTransform? chevron)
+        {
+            if (panel != null)
+            {
+                panel.BeginAnimation(FrameworkElement.HeightProperty, null);
+                panel.BeginAnimation(UIElement.OpacityProperty, null);
+                panel.Height = 0;
+                panel.Opacity = 0;
+                panel.Visibility = Visibility.Collapsed;
+            }
+
+            if (chevron != null)
+            {
+                chevron.BeginAnimation(RotateTransform.AngleProperty, null);
+                chevron.Angle = 0;
+            }
+        }
+
+        /// <summary>
+        /// 音量卡（输出设备列表 / 音量合成器 / 百分比）需要 VolumeService 才有数据。
+        /// 即使"音量通知"开关是关的，用户也应该能在这张卡里切设备、静音应用，所以按需创建。
+        /// 安全性：OnVolumeChanged 内部会按 _options.VolumeNotifyEnabled 早退，不会因此弹通知气泡。
+        /// </summary>
+        private VolumeService? EnsureVolumeService()
+        {
+            if (_volumeService != null)
+            {
+                if (_volumeListRetriesLeft > 0) ScheduleVolumeListRetry();
+                return _volumeService;
+            }
+            if (_exiting) return null;
+
+            try
+            {
+                var vol = new VolumeService(Dispatcher);
+                vol.VolumeChanged += OnVolumeChanged;
+                vol.DeviceChanged += OnDeviceChanged;
+                _volumeService = vol;
+                StartInBackground(vol.Start, "Volume");
+                // Start() 里的 COM 端点绑定在后台线程上跑，刚创建时枚举必然是空的 —— 稍后补刷几次。
+                _volumeListRetriesLeft = 4;
+                ScheduleVolumeListRetry();
+                System.Diagnostics.Debug.WriteLine("[Volume] 音量卡按需创建 VolumeService");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[Volume] 按需创建失败: " + ex.Message);
+            }
+            return _volumeService;
+        }
+
+        private void ScheduleVolumeListRetry()
+        {
+            if (_exiting || _volumeListRetriesLeft <= 0 || _volumeListRetryTimer != null) return;
+
+            _volumeListRetryTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(700)
+            };
+            _volumeListRetryTimer.Tick += (_, __) =>
+            {
+                _volumeListRetryTimer?.Stop();
+                _volumeListRetryTimer = null;
+                _volumeListRetriesLeft--;
+                RefreshAudioDeviceList();
+                RefreshVolumeAppSessionsList();
+                SyncVolumeCardContent();
+            };
+            _volumeListRetryTimer.Start();
+        }
+
+        private void RefreshAudioDeviceList()
+        {
+            if (AudioDeviceList == null) return;
+            var service = EnsureVolumeService();
+            List<AudioDeviceInfo> list = service?.GetActiveOutputDevices() ?? new List<AudioDeviceInfo>();
+            AudioDeviceList.ItemsSource = list;
+        }
+
+        private void RefreshVolumeAppSessionsList()
+        {
+            if (VolumeAppSessionsList == null) return;
+            var service = EnsureVolumeService();
+            List<AudioAppSessionViewModel> list = service?.GetAudioAppSessions() ?? new List<AudioAppSessionViewModel>();
+            VolumeAppSessionsList.ItemsSource = list;
+        }
+
+        private void AudioDeviceItem_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is FrameworkElement elem && elem.DataContext is AudioDeviceInfo dev)
+            {
+                _volumeService?.SetDefaultDevice(dev.Id);
+                RefreshAudioDeviceList();
+                SyncVolumeCardContent();
+            }
+        }
+
+        private void OpenSystemVolumeMixer_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            VolumeService.OpenWindowsVolumeMixer();
+        }
+
+        private void ToggleAppMute_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is FrameworkElement elem && elem.DataContext is AudioAppSessionViewModel vm)
+            {
+                _volumeService?.ToggleAppMute(vm.ProcessId);
+                RefreshVolumeAppSessionsList();
+            }
         }
 
         // ================= 电池状态通知 =================
@@ -2651,11 +3171,12 @@ namespace alpha_island
 
         private void SwitchCardPage(int targetPage, bool animated = true)
         {
+            int previousPage = _currentCardPage;
             _currentCardPage = targetPage;
 
-            CardLayer.Visibility = Visibility.Visible;
-            ClipboardCardLayer.Visibility = Visibility.Visible;
-            VolumeCardLayer.Visibility = Visibility.Visible;
+            // 翻页时抽屉必须收回：它撑高的岛体不会自己缩回去
+            // （用户报"展开过输出设备/音量合成器之后切到别的卡片，岛还是那么大，只有点收起才恢复"）。
+            if (targetPage != previousPage) ResetCardDrawers();
 
             if (targetPage == 1)
             {
@@ -2669,63 +3190,92 @@ namespace alpha_island
             TimeSpan duration = animated ? TimeSpan.FromMilliseconds(260) : TimeSpan.Zero;
             var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
 
-            if (_state == IslandState.Card && _animator != null)
+            // 卡片高度是按页算的（见 CardGeometry）：无歌词 138，有歌词或第 1/2 页 214。
+            // 这段重算曾被删掉，于是翻到音量卡时岛体还停在 138 —— 抽屉一展开下半截就被裁掉。
+            if (animated && _state == IslandState.Card && _animator != null)
             {
-                MorphIsland(CardGeometry, duration, ease);
+                // 只在岛高真的需要变时才起形变：第 1 / 2 页同为 214 高，翻页时再来一发弹簧
+                // 会和自己那套翻页动画抢同一批渲染帧 —— 那正是"切到第三张卡明显更卡"。
+                var target = CardGeometry;
+                double current = IslandBody.Height;
+                if (double.IsNaN(current) || current <= 0) current = IslandBody.ActualHeight;
+                if (Math.Abs(current - target.Height) > 0.5)
+                {
+                    MorphIsland(target, duration, new CubicEase { EasingMode = EasingMode.EaseOut });
+                }
             }
+
+            // 动画期间 ProgressTimer_Tick 会让开这一拍（见那里的注释）。
+            // 先置 false 再按本次是否真的动画置 true：即使上一次动画被本次 BeginAnimation 顶掉
+            // （被替换的动画不会触发 Completed），状态也不会卡在"永远在翻页"。
+            _cardAnimating = false;
 
             double p0Y, p0Op;
             double p1Y, p1Op;
             double p2Y, p2Op;
             double dot0H, dot1H, dot2H;
 
+            // 页间位移不能写死：音量卡展开抽屉后层高会长到 194+extra，写死 200 会让相邻页
+            // 在过渡中互相压住。用视口实际高度做步长，层再多高都刚好错开一页。
+            double cardStep = CardViewport != null && CardViewport.Height > 0 ? CardViewport.Height : 194;
+
             if (targetPage == 0)
             {
-                CardLayer.IsHitTestVisible = true;
-                ClipboardCardLayer.IsHitTestVisible = false;
-                VolumeCardLayer.IsHitTestVisible = false;
-
                 p0Y = 0; p0Op = 1.0;
-                p1Y = 50; p1Op = 0.0;
-                p2Y = 100; p2Op = 0.0;
+                p1Y = cardStep; p1Op = 0.0;
+                p2Y = cardStep * 2; p2Op = 0.0;
 
                 dot0H = 12; dot1H = 5; dot2H = 5;
             }
             else if (targetPage == 1)
             {
-                CardLayer.IsHitTestVisible = false;
-                ClipboardCardLayer.IsHitTestVisible = true;
-                VolumeCardLayer.IsHitTestVisible = false;
-
-                p0Y = -50; p0Op = 0.0;
+                p0Y = -cardStep; p0Op = 0.0;
                 p1Y = 0; p1Op = 1.0;
-                p2Y = 50; p2Op = 0.0;
+                p2Y = cardStep; p2Op = 0.0;
 
                 dot0H = 5; dot1H = 12; dot2H = 5;
             }
             else // targetPage == 2 (Volume)
             {
-                CardLayer.IsHitTestVisible = false;
-                ClipboardCardLayer.IsHitTestVisible = false;
-                VolumeCardLayer.IsHitTestVisible = true;
-
-                p0Y = -100; p0Op = 0.0;
-                p1Y = -50; p1Op = 0.0;
+                p0Y = -cardStep * 2; p0Op = 0.0;
+                p1Y = -cardStep; p1Op = 0.0;
                 p2Y = 0; p2Op = 1.0;
 
                 dot0H = 5; dot1H = 5; dot2H = 12;
             }
 
+            // 交互命中只给当前目标页
+            CardLayer.IsHitTestVisible = (targetPage == 0);
+            ClipboardCardLayer.IsHitTestVisible = (targetPage == 1);
+            VolumeCardLayer.IsHitTestVisible = (targetPage == 2);
+
+            // 动画前：让所有参与页面处于 Visible 状态
+            CardLayer.Visibility = Visibility.Visible;
+            ClipboardCardLayer.Visibility = Visibility.Visible;
+            VolumeCardLayer.Visibility = Visibility.Visible;
+
             if (animated)
             {
+                _cardAnimating = true;
+                var anim0 = new DoubleAnimation(p0Op, duration) { EasingFunction = ease };
+                var anim1 = new DoubleAnimation(p1Op, duration) { EasingFunction = ease };
+                var anim2 = new DoubleAnimation(p2Op, duration) { EasingFunction = ease };
+
+                // 动画结束时彻底将非当前页面折叠为 Collapsed，杜绝卡片重叠、事件穿透与渲染干扰
+                anim2.Completed += (s, e) =>
+                {
+                    _cardAnimating = false;
+                    ApplyCardLayerVisibilities(_currentCardPage);
+                };
+
                 CardPage0Translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(p0Y, duration) { EasingFunction = ease });
-                CardLayer.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(p0Op, duration) { EasingFunction = ease });
+                CardLayer.BeginAnimation(UIElement.OpacityProperty, anim0);
 
                 CardPage1Translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(p1Y, duration) { EasingFunction = ease });
-                ClipboardCardLayer.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(p1Op, duration) { EasingFunction = ease });
+                ClipboardCardLayer.BeginAnimation(UIElement.OpacityProperty, anim1);
 
                 CardPage2Translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(p2Y, duration) { EasingFunction = ease });
-                VolumeCardLayer.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(p2Op, duration) { EasingFunction = ease });
+                VolumeCardLayer.BeginAnimation(UIElement.OpacityProperty, anim2);
 
                 PageDot0.BeginAnimation(FrameworkElement.HeightProperty, new DoubleAnimation(dot0H, duration) { EasingFunction = ease });
                 PageDot1.BeginAnimation(FrameworkElement.HeightProperty, new DoubleAnimation(dot1H, duration) { EasingFunction = ease });
@@ -2751,6 +3301,8 @@ namespace alpha_island
                 PageDot0.Height = dot0H;
                 PageDot1.Height = dot1H;
                 PageDot2.Height = dot2H;
+
+                ApplyCardLayerVisibilities(targetPage);
             }
 
             var cyan = (System.Windows.Media.Brush)FindResource("AccentCyan");
@@ -2762,6 +3314,20 @@ namespace alpha_island
             PageDot2.Background = targetPage == 2 ? cyan : inactive;
 
             CardWave.Opacity = (targetPage == 0 && _state == IslandState.Card && _options.ShowWaveLayer) ? 1.0 : 0.0;
+        }
+
+        private void ApplyCardLayerVisibilities(int activePage)
+        {
+            // 三层一律常驻 Visible：非当前页靠 TranslateTransform 被推到视口外（±一个视口高度），
+            // 被 CardViewport.ClipToBounds 裁掉，既看不见也点不到。绝不 Collapsed ——
+            // 一旦 Collapsed，下次翻到该页要重新冷排版（实测 10~20ms 的翻页卡顿就来自这里）。
+            CardLayer.Visibility = Visibility.Visible;
+            ClipboardCardLayer.Visibility = Visibility.Visible;
+            VolumeCardLayer.Visibility = Visibility.Visible;
+
+            CardLayer.IsHitTestVisible = (activePage == 0);
+            ClipboardCardLayer.IsHitTestVisible = (activePage == 1);
+            VolumeCardLayer.IsHitTestVisible = (activePage == 2);
         }
 
         private void CardCarousel_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -3534,7 +4100,8 @@ namespace alpha_island
                 (int)Math.Round(IslandMetrics.CardTop + IslandMetrics.CardHeightLyrics + BackdropMargin));
 
             backdrop.PlaceBelow(new WindowInteropHelper(this).Handle);
-            CompositionTarget.Rendering += OnBackdropTick;
+            // 逐帧回调**不在这里挂**：见 SyncBackdrop()。细条态下 OnBackdropTick 第一句就 return，
+            // 挂着它只会让 WPF 一直以刷新率请求帧、永远进不了空闲。
         }
 
         /// <summary>
@@ -3584,6 +4151,12 @@ namespace alpha_island
             bool shouldShow = _options.LiquidGlassBackdrop && _state != IslandState.Bar && _options.GlassOpacity >= 0.45;
             backdrop.SetVisible(shouldShow);
             _lastIslandRect = Rect.Empty;   // 强制下一帧重算裁剪
+
+            // 逐帧回调只在玻璃窗真露着的时候挂：挂着 CompositionTarget.Rendering 会让 WPF 一直
+            // 以刷新率请求帧、永远进不了空闲（实测细条态空转 6.5% of one core，而 OnBackdropTick
+            // 在 Bar 态下第一句就 return，纯属白烧）。形态切换必经 SetState → 这里，挂/摘都幂等。
+            CompositionTarget.Rendering -= OnBackdropTick;
+            if (shouldShow) CompositionTarget.Rendering += OnBackdropTick;
         }
 
         /// <summary>创建尝试只做一次：驱动/系统拒绝时不必每次 ApplyOptions 都重试。</summary>
@@ -3659,11 +4232,7 @@ namespace alpha_island
         /// <summary>
         /// 收回细条。一条主弹簧跑完全程，途中强制经过"正圆"这个路径点：
         ///   卡片/胶囊 --(塌向球心)--> 46px 正圆 --(吸顶 + 摊平)--> 130x10 细条
-        /// 编排和之前用户定稿的三段式一样，但不再拆成三次 MorphTo ——
-        /// 每次 MorphTo 都会 Stop() 上一条弹簧，速度在接缝处硬归零，观感是"三段机械动画串起来"。
-        /// 现在只有一条弹簧，路径点在两端用 smoothstep 收速度，所以"顿在球上"是速度真的到 0，
-        /// 而不是两个动画拼接出来的人为停顿。
-        /// 内容层与封面球都不走自己的时间轴，全部挂在主弹簧进度上（见 ApplyReveal）。
+        /// 编排为优雅的两段式形变，正圆中转期展示专属状态图标/封面球 (SiriOrb)。
         /// </summary>
         private void CollapseToBar()
         {
@@ -3731,13 +4300,16 @@ namespace alpha_island
                 PillCoverHost.Opacity = 1;
             }
 
+            // 卡片是本次收回的源层时不能提前折叠：它要留在屏幕上被 ApplyReveal 压到 0，
+            // 否则收回的第一帧卡片内容直接消失（用户看到的"小岛返回时闪一下"）。
             CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
-            CardCarouselHost.Opacity = 0;
-            CardCarouselHost.Visibility = Visibility.Collapsed;
+            if (prev != IslandState.Card)
+            {
+                CardCarouselHost.Opacity = 0;
+            }
             CardCarouselHost.IsHitTestVisible = false;
             CardLayer.IsHitTestVisible = false;
             ClipboardCardLayer.IsHitTestVisible = false;
-            ClipboardCardLayer.Visibility = Visibility.Collapsed;
             ClipboardCardLayer.Opacity = 0;
             SetActive(PillSpectrum, false);
             SetActive(CardWave, false);
@@ -3763,9 +4335,15 @@ namespace alpha_island
                     PillLayer.BeginAnimation(UIElement.OpacityProperty, null);
                     PillLayer.Opacity = 0;
                     PillLayer.Visibility = Visibility.Collapsed;
+                    if (PillLayerScale != null)
+                    {
+                        PillLayerScale.ScaleX = 1.0;
+                        PillLayerScale.ScaleY = 1.0;
+                    }
                     CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
                     CardCarouselHost.Opacity = 0;
-                    CardCarouselHost.Visibility = Visibility.Collapsed;
+                    CardCarouselHost.IsHitTestVisible = false;
+                    ClearCardTransitionBlur();
                     CancelSiriOrb();
                     _currentAction = IslandActionType.Music;
                 },
@@ -3846,6 +4424,68 @@ namespace alpha_island
             double span = IslandMetrics.ContentRevealEnd - IslandMetrics.ContentRevealStart;
             double content = span <= 0 ? 1.0 : Math.Clamp((t - IslandMetrics.ContentRevealStart) / span, 0.0, 1.0);
 
+            // 胶囊→卡片（小岛返回主岛）这一向不能用交叉淡入淡出：两层同时半透明时，
+            // 各自的白字/亮块都会掉到 50%~60% 亮度，整块内容一起发灰 —— 那就是用户反复报的
+            // "从小岛返回时内容闪一下"（实测：亮像素 480 → 54 → 460，跨 3~4 帧）。
+            // 改成一次"硬交接"：闸门用**岛体实时高度**（而不是弹簧进度）——高度通道天生滞后于宽度，
+            // 于是观感是"材质先横向摊开 → 长到装得下卡片时，内容才在模糊里化开出现"。
+            // 交接前胶囊保持满不透明；交接后整层立刻交给卡片，由卡片那层 13px→0 的模糊把切换吃掉。
+            // 反方向（分离）保持原样，用户已确认没问题。
+            double fromFade = content;
+            double toFade = content;
+            double cardSharp = content;
+
+            if (_revealTo == IslandState.Bar)
+            {
+                // 收回细条阶段：内容层提前在 0 ~ 25% 进度（约 70~80ms）内快速淡出并微缩放融进胶囊材质
+                double collapseProgress = Math.Clamp(t / 0.25, 0.0, 1.0);
+                fromFade = collapseProgress;
+                toFade = 0.0;
+                cardSharp = 0.0;
+                if (PillLayerScale != null)
+                {
+                    double s = 1.0 - collapseProgress * 0.05;
+                    PillLayerScale.ScaleX = s;
+                    PillLayerScale.ScaleY = s;
+                }
+                CardCarouselHost.Opacity = 1.0 - collapseProgress;
+            }
+            else
+            {
+                if (PillLayerScale != null && (PillLayerScale.ScaleX != 1.0 || PillLayerScale.ScaleY != 1.0))
+                {
+                    PillLayerScale.ScaleX = 1.0;
+                    PillLayerScale.ScaleY = 1.0;
+                }
+            }
+
+            if (_revealFrom == IslandState.Pill && _revealTo == IslandState.Card)
+            {
+                double cardH = Math.Max(1.0, CardGeometry.Height);
+                double bodyH = IslandBody.ActualHeight > 0 ? IslandBody.ActualHeight : IslandBody.Height;
+
+                // 闸门取"岛体几乎长满卡片高度"（94%），不是几何中途：实测中途交接时卡片刚出现
+                // 就带着 13px 模糊，整块亮内容被糊成一片灰，再叠上胶囊内容同时消失 —— 一帧之内
+                // 亮度从 436 掉到 54（连拍帧 026 → 028 的字符图：清晰的封面+整行歌词变成一片淡雾）。
+                // 现在胶囊内容以满不透明一直撑到岛体长满，内容交接基本落在几何形变的末尾，
+                // 且交接时只带一点点模糊，观感是"内容在材质里化开"，没有发灰的空窗。
+                if (!_cardHandoff && (bodyH >= cardH * 0.94 || t >= 1.0))
+                {
+                    _cardHandoff = true;
+                    _cardHandoffMs = Environment.TickCount64;
+                }
+
+                fromFade = _cardHandoff ? 1.0 : 0.0;
+                toFade = _cardHandoff ? 1.0 : 0.0;
+
+                // 交接那一帧卡片就是满不透明（半透明会把底下的胶囊白字压成灰），
+                // 但只带 ~2px 模糊、再用 ~80ms 化到锐利：模糊再大一点、再久一点，卡片的小字就会被
+                // 糊成灰雾，整帧平均亮度掉 13%（实测 = 用户说的"闪一下"）。按时间收敛，不跟几何走。
+                cardSharp = _cardHandoff
+                    ? Math.Clamp(0.85 + (Environment.TickCount64 - _cardHandoffMs) / 80.0 * 0.15, 0.85, 1.0)
+                    : 0.0;
+            }
+
             bool showVol = (_volumeNotifying && VolumeNotifyActive) || (_revealTo == IslandState.Bar && _currentAction == IslandActionType.Volume);
             bool showBattery = (_batteryNotifying && BatteryNotifyActive) || (_revealTo == IslandState.Bar && _currentAction == IslandActionType.Battery);
             bool showClipboard = (_clipboardNotifying && ClipboardNotifyActive) || (_revealTo == IslandState.Bar && _currentAction == IslandActionType.Clipboard);
@@ -3854,7 +4494,7 @@ namespace alpha_island
 
             if (showVol)
             {
-                RevealLayer(VolumeNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                RevealLayer(VolumeNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, fromFade, toFade);
                 PillLayer.Opacity = 0;
                 BatteryNotifyLayer.Opacity = 0;
                 ClipboardNotifyLayer.Opacity = 0;
@@ -3863,7 +4503,7 @@ namespace alpha_island
             }
             else if (showBattery)
             {
-                RevealLayer(BatteryNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                RevealLayer(BatteryNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, fromFade, toFade);
                 PillLayer.Opacity = 0;
                 VolumeNotifyLayer.Opacity = 0;
                 ClipboardNotifyLayer.Opacity = 0;
@@ -3872,7 +4512,7 @@ namespace alpha_island
             }
             else if (showClipboard)
             {
-                RevealLayer(ClipboardNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                RevealLayer(ClipboardNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, fromFade, toFade);
                 PillLayer.Opacity = 0;
                 VolumeNotifyLayer.Opacity = 0;
                 BatteryNotifyLayer.Opacity = 0;
@@ -3881,7 +4521,7 @@ namespace alpha_island
             }
             else if (showGreeting)
             {
-                RevealLayer(GreetingLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                RevealLayer(GreetingLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, fromFade, toFade);
                 PillLayer.Opacity = 0;
                 BatteryNotifyLayer.Opacity = 0;
                 ClipboardNotifyLayer.Opacity = 0;
@@ -3890,7 +4530,7 @@ namespace alpha_island
             }
             else if (showBt)
             {
-                RevealLayer(BtNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                RevealLayer(BtNotifyLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, fromFade, toFade);
                 PillLayer.Opacity = 0;
                 BatteryNotifyLayer.Opacity = 0;
                 ClipboardNotifyLayer.Opacity = 0;
@@ -3899,7 +4539,7 @@ namespace alpha_island
             }
             else
             {
-                RevealLayer(PillLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, content);
+                RevealLayer(PillLayer, _revealFrom == IslandState.Pill, _revealTo == IslandState.Pill, fromFade, toFade);
                 BatteryNotifyLayer.Opacity = 0;
                 ClipboardNotifyLayer.Opacity = 0;
                 BtNotifyLayer.Opacity = 0;
@@ -3918,17 +4558,35 @@ namespace alpha_island
             BtNotifyLayer.Visibility = BtNotifyLayer.Opacity > 0.005 ? Visibility.Visible : Visibility.Collapsed;
 
             // 中间态托盘层（文件中转站）
-            RevealLayer(FileTransferLayer, _revealFrom == IslandState.Tray, _revealTo == IslandState.Tray, content);
+            RevealLayer(FileTransferLayer, _revealFrom == IslandState.Tray, _revealTo == IslandState.Tray, fromFade, toFade);
             bool trayVisible = (_revealFrom == IslandState.Tray || _revealTo == IslandState.Tray) && FileTransferLayer.Opacity > 0.001;
             FileTransferLayer.Visibility = trayVisible ? Visibility.Visible : Visibility.Collapsed;
 
-            RevealLayer(CardCarouselHost, _revealFrom == IslandState.Card, _revealTo == IslandState.Card, content);
-            bool cardVisible = (_revealFrom == IslandState.Card || _revealTo == IslandState.Card) && CardCarouselHost.Opacity > 0.001;
-            CardCarouselHost.Visibility = cardVisible ? Visibility.Visible : Visibility.Collapsed;
+            RevealLayer(CardCarouselHost, _revealFrom == IslandState.Card, _revealTo == IslandState.Card, fromFade, toFade);
+            if (_revealTo == IslandState.Card || _revealFrom == IslandState.Card)
+            {
+                CardCarouselHost.Visibility = Visibility.Visible;
+            }
+            // 卡片子树常驻 Visible（XAML 里就不再是 Collapsed），显露完全交给 Opacity：
+            // 一旦用 Collapsed 隐藏，WPF 会丢弃整棵子树的测量缓存，下次展开又要重新冷排版一次
+            // （实测 15~25ms，压在换态第一帧上就是用户说的"顿一下"）。点击穿透由岛体裁切 +
+            // CardCarouselHost 自身的 IsHitTestVisible 兜住（见 SetState / CollapseToBar）。
+
+            // 换态期间给卡片子树盖一层动态模糊（半径随进度收敛到 0），把内容重排 / 首帧藏在模糊里。
+            // 但"胶囊→卡片"的交接前卡片还完全不可见，这时挂模糊等于每帧白跑一次离屏渲染，
+            // 所以那一段直接摘掉 Effect，交接发生的那一帧再挂上满强度模糊。
+            if (_revealFrom == IslandState.Pill && _revealTo == IslandState.Card && !_cardHandoff)
+            {
+                ClearCardTransitionBlur();
+            }
+            else
+            {
+                ApplyCardTransitionBlur(cardSharp);
+            }
 
             if (_currentCardPage == 0)
             {
-                RevealLayer(CardWave, _revealFrom == IslandState.Card, _revealTo == IslandState.Card, content);
+                RevealLayer(CardWave, _revealFrom == IslandState.Card, _revealTo == IslandState.Card, fromFade, toFade);
             }
             else
             {
@@ -3939,8 +4597,7 @@ namespace alpha_island
                 Keyboard.ClearFocus();
             }
 
-            // 收回途中那颗"封面球"。显形窗口写死在主弹簧进度上，且起点晚于内容层退场结束点，
-            // 所以不会再出现"胶囊里的封面 + 球上的封面"两个专辑图标同时可见。
+            // 收回细条途中：在经过正圆阶段显现封面球/状态图标
             if (_revealTo == IslandState.Bar && _revealFrom != IslandState.Bar)
             {
                 double riseSpan = IslandMetrics.OrbRevealEnd - IslandMetrics.OrbRevealStart;
@@ -3953,9 +4610,9 @@ namespace alpha_island
             }
         }
 
-        private static void RevealLayer(UIElement element, bool isFrom, bool isTo, double content)
+        private static void RevealLayer(UIElement element, bool isFrom, bool isTo, double fromFade, double toFade)
         {
-            element.Opacity = isTo ? (isFrom ? 1.0 : content) : (isFrom ? 1.0 - content : 0.0);
+            element.Opacity = isTo ? (isFrom ? 1.0 : toFade) : (isFrom ? 1.0 - fromFade : 0.0);
         }
 
         // ================= 悬停 / 点击 =================
@@ -4064,6 +4721,19 @@ namespace alpha_island
                     _currentAction = IslandActionType.Clipboard;
                     CollapseToBar();
                     return;
+                }
+            }
+
+            // 2.5 胶囊宽度对账。通知层出现/消失、歌词是否允许撑宽，都会改变胶囊的目标宽度
+            //     （见 CurrentPillWidth / PillLyricWantsWide）。只要有任何一条通知路径漏了触发
+            //     宽度形变，岛体就会带着"长歌词"的宽度把通知层套在里面 —— 用户看到的就是
+            //     "弹窗出现后没变回原来的长度，而是在它上面又叠了一个岛"。
+            //     这里只做一次廉价对账：目标与当前几何不符才起形变（相符时 TryMorphPillWidth 直接返回）。
+            if (_state == IslandState.Pill && _animator != null && !_animator.IsRunning && !_widthOnlyMorph)
+            {
+                if (Math.Abs(_animator.CurrentGeometry().Width - CurrentPillWidth) > 0.5)
+                {
+                    TryMorphPillWidth();
                 }
             }
 
@@ -4325,6 +4995,12 @@ namespace alpha_island
             {
                 PillSpectrum.Clear();
                 CardWave.Clear();
+                StopKaraoke();
+                _lyricWipe.Rect = Rect.Empty;
+            }
+            else
+            {
+                UpdateKaraokeHook();
             }
 
             if (_lyricsDoc == null) SetPillLyric(info.DisplayTitle);
@@ -4574,7 +5250,8 @@ namespace alpha_island
             bool should = (_state == IslandState.Card || _state == IslandState.Pill)
                           && _options.LyricsEnabled
                           && _lyricsDoc != null
-                          && _lyricsDoc.HasLyrics;
+                          && _lyricsDoc.HasLyrics
+                          && (_smtc?.Current?.IsPlaying == true);
 
             if (should && !_karaokeHooked)
             {
@@ -4599,6 +5276,7 @@ namespace alpha_island
             var doc = _lyricsDoc;
             var media = _smtc;
             if (doc == null || !doc.HasLyrics || media == null) return;
+            if (media.Current?.IsPlaying != true) return;
 
             var lines = doc.Lines;
             if (lines.Count == 0) return;
@@ -4716,7 +5394,96 @@ namespace alpha_island
             var media = _smtc;
             if (media != null)
             {
-                media.CheckFastPlaybackState();
+                // 音频侧仲裁：环回连续采不到声音时，把播放器上报的 Playing 降级为 Paused。
+                // probeUsable 必须同时满足两条，缺一不可，否则正在放的歌会被误判成暂停：
+                //   ① 系统没静音、音量也没拉到 0（此时环回本来就是静音，放的是歌但听不到）；
+                //   ② 不在切换输出设备后的采集重建窗口里。
+                // 另外"回调长时间完全没有了"同样等于没在出声：蓝牙/独占设备在暂停后会整个停掉
+                // 采集回调，此时 SilentSeconds 不再增长（停在暂停那一刻）、SinceCallbackMs 一路涨
+                // 上去——这正是"暂停后仍被判为播放、歌词继续滚、频谱只剩一条线"的病根，
+                // 所以把回调静默也当作静音证据。两个量反相关（回调活着且安静时 SinceCallbackMs
+                // 只有几十毫秒），因此绝不能取两者最小值，只能二选一。
+                var audio = _audio;
+                media.AudioProbeEnabled = audio != null;
+                {
+                    // 证据①（首选）：**播放器自己那个音频会话**的电平。暂停时那个会话还在，
+                    // 但输出的是数字静音 → 峰值≈0；按了播放而播放器没上报时，峰值又会立刻起来。
+                    // 这条证据不受"别的应用在出声""系统音量拉到 0""系统静音""刚切过输出设备"影响，
+                    // 所以只有它能做双向纠正（既能把谎报的 Playing 降级，也能把谎报的 Paused 升格）。
+                    // 用户反复报的"暂停后歌词继续滚 / 频谱一条线 / 岛里还显示播放"，根子就是只靠端点环回。
+                    string? mediaApp = media.Current?.SourceApp;
+                    float appPeak = mediaApp != null && _volumeService != null
+                        ? _volumeService.GetPlayerSessionPeak(mediaApp)
+                        : -1f;
+                    long nowMs = Environment.TickCount64;
+                    bool playerEvidence = appPeak >= 0f;
+                    double playerSilentSeconds = 0.0;
+                    double playerActiveSeconds = 0.0;
+                    if (playerEvidence)
+                    {
+                        if (appPeak < AudioSessionSilencePeak)
+                        {
+                            if (_appSilentSinceMs == 0) _appSilentSinceMs = nowMs;
+                            _appActiveSinceMs = 0;
+                        }
+                        else
+                        {
+                            if (_appActiveSinceMs == 0) _appActiveSinceMs = nowMs;
+                            _appSilentSinceMs = 0;
+                        }
+                        playerSilentSeconds = _appSilentSinceMs == 0 ? 0.0 : (nowMs - _appSilentSinceMs) / 1000.0;
+                        playerActiveSeconds = _appActiveSinceMs == 0 ? 0.0 : (nowMs - _appActiveSinceMs) / 1000.0;
+                    }
+                    else
+                    {
+                        _appSilentSinceMs = 0;
+                        _appActiveSinceMs = 0;
+                    }
+
+                    // 证据②（兜底，只在拿不到会话电平时用）：整块声卡的环回电平，只能证明"全系统都没出声"。
+                    // 两点实测结论决定了这里的判据：
+                    //   · 环回采集**不受端点静音/音量影响**（系统 muted + vol=0 且正在放歌时依然采到 -17dB），
+                    //     所以不再用"系统是否静音"去禁用这份证据 —— 那会在 muted 时把 veto 整个关掉；
+                    //   · 回调长时间完全没有（蓝牙/独占设备暂停后停掉回调）等同于没在出声，
+                    //     而回调活着且安静时 SinceCallbackMs 只有几十毫秒，两者反相关，只能二选一。
+                    double endpointSilentSeconds = 0.0;
+                    bool endpointUsable = false;
+                    if (audio != null)
+                    {
+                        double sinceCallbackMs = audio.SinceCallbackMs;
+                        endpointUsable = DateTime.UtcNow >= _audioDeviceSuppressUntil;
+                        endpointSilentSeconds = sinceCallbackMs >= 3000.0
+                                                ? sinceCallbackMs / 1000.0
+                                                : audio.SilentSeconds;
+                    }
+
+                    media.ReportAudioEvidence(playerSilentSeconds, playerActiveSeconds, playerEvidence,
+                                              endpointSilentSeconds, endpointUsable);
+
+                    long nowDbg = Environment.TickCount64;
+                    if (_smtcDebugEnabled && nowDbg - _dbgLastMs >= 1000)
+                    {
+                        _dbgLastMs = nowDbg;
+                        try
+                        {
+                            var cur = media.Current;
+                            App.Log(new Exception(
+                                $"SMTC state={cur?.State} reported={media.ReportedState} playing={cur?.IsPlaying} hasMedia={cur?.HasMedia} veto={media.IsAudioVetoLatched} active={media.IsAudioActiveLatched} probe={media.AudioProbeEnabled} " +
+                                $"src={cur?.SourceApp} title={cur?.Title} " +
+                                $"apppeak={(appPeak >= 0f ? appPeak.ToString("F4") : "n/a")} appSilent={(_appSilentSinceMs == 0 ? 0.0 : (Environment.TickCount64 - _appSilentSinceMs) / 1000.0):F2} appActive={(_appActiveSinceMs == 0 ? 0.0 : (Environment.TickCount64 - _appActiveSinceMs) / 1000.0):F2} " +
+                                $"silent={audio?.SilentSeconds:F2} sinceCb={audio?.SinceCallbackMs:F0} peakdb={audio?.LastSignalDbPeak:F1} vol={_volumeService?.CurrentPercent} muted={_volumeService?.IsMuted} " +
+                                $"suppress={(DateTime.UtcNow < _audioDeviceSuppressUntil ? 1 : 0)} karaoke={_karaokeHooked} island={_state} pos={media.EstimatedPosition.TotalSeconds:F2} rawpos={cur?.Position.TotalSeconds:F2}"),
+                                "SMTC_DBG");
+                        }
+                        catch { }
+                    }
+                }
+
+                // 翻页动画期间跳过这一拍的同步 WinRT 调用，杜绝跨进程 IPC 钉住 UI 线程造成掉帧
+                if (!_cardAnimating)
+                {
+                    media.CheckFastPlaybackState();
+                }
             }
 
             var info = media?.Current;
@@ -4938,6 +5705,8 @@ namespace alpha_island
                 {
                     var vol = new VolumeService(Dispatcher);
                     vol.VolumeChanged += OnVolumeChanged;
+                    vol.DeviceChanged += OnDeviceChanged;
+                    vol.ListsChanged += OnVolumeListsChanged;
                     _volumeService = vol;
                     StartInBackground(vol.Start, "Volume");
                 }
@@ -4948,6 +5717,8 @@ namespace alpha_island
             }
             else if (!_options.VolumeNotifyEnabled && _volumeService != null)
             {
+                _volumeService.VolumeChanged -= OnVolumeChanged;
+                _volumeService.DeviceChanged -= OnDeviceChanged;
                 _volumeService.Dispose();
                 _volumeService = null;
             }
@@ -5018,8 +5789,13 @@ namespace alpha_island
                 _bluetooth?.Dispose();
                 _bluetooth = null;
 
-                _volumeService?.Dispose();
-                _volumeService = null;
+                if (_volumeService != null)
+                {
+                    _volumeService.VolumeChanged -= OnVolumeChanged;
+                    _volumeService.DeviceChanged -= OnDeviceChanged;
+                    _volumeService.Dispose();
+                    _volumeService = null;
+                }
 
                 _lyricsCts?.Cancel();
                 _lyricsCts?.Dispose();

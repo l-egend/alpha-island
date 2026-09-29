@@ -83,7 +83,9 @@ namespace alpha_island.Animation
             if (string.IsNullOrWhiteSpace(path)) return null;
             try
             {
-                return new System.IO.StreamWriter(path, false) { AutoFlush = true };
+                // AutoFlush=false：逐帧 Flush 会同步落盘，本身就会在动画里制造 10~20ms 的假掉帧。
+                // 停止（Stop）与窗口关闭时各 Flush 一次。
+                return new System.IO.StreamWriter(path, false) { AutoFlush = false };
             }
             catch
             {
@@ -225,6 +227,7 @@ namespace alpha_island.Animation
                         _from.Width, _from.Height, _to.Width, _to.Height));
                 }
 
+                Trace?.Flush();
                 CompositionTarget.Rendering -= OnRendering;
                 _running = false;
             }

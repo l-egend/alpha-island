@@ -287,8 +287,18 @@ namespace alpha_island.Controls
                     if (b > nSrc) b = nSrc;
 
                     float m = 0f;
+                    float sum = 0f;
                     for (int j = a; j < b; j++)
+                    {
                         if (_incoming[j] > m) m = _incoming[j];
+                        sum += _incoming[j];
+                    }
+
+                    // 组内不再只取峰值：13 个源频段里只要有一个冒头就把柱子顶到满格，
+                    // 宽带音乐下中间几根就会一直贴顶、看不出变化。峰值与均值各半，
+                    // 既保留"有能量就抬起来"的灵敏度，又让柱高随整体能量起伏。
+                    int n = b - a;
+                    m = n > 0 ? (m * 0.5f + (sum / n) * 0.5f) : m;
 
                     // 固定权重：中间高、两侧低。重拍时中间两根先被拉高，两边跟着起伏。
                     double t = nBar > 1 ? (2.0 * i / (nBar - 1)) - 1.0 : 0.0;   // -1 .. +1

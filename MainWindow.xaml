@@ -151,7 +151,7 @@
                 <Grid x:Name="PillLayer" Opacity="0" Width="328" Height="32"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
                       IsHitTestVisible="False"
-                      RenderTransformOrigin="0.05,0.5">
+                      RenderTransformOrigin="0.5,0.5">
                     <Grid.RenderTransform>
                         <TransformGroup>
                             <ScaleTransform x:Name="PillLayerScale" ScaleX="1" ScaleY="1"/>
@@ -240,7 +240,10 @@
                         <!-- 换曲 / 暂停提示：右侧状态指示 -->
                         <StackPanel x:Name="PillUpNext" Orientation="Horizontal"
                                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Visibility="Collapsed" IsHitTestVisible="False">
+                                    Visibility="Collapsed" IsHitTestVisible="False" Opacity="0">
+                            <StackPanel.RenderTransform>
+                                <TranslateTransform x:Name="PillUpNextTranslate" Y="0"/>
+                            </StackPanel.RenderTransform>
                             <TextBlock x:Name="PillUpNextIcon" Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                                        VerticalAlignment="Center"
                                        Foreground="{StaticResource AccentCyan}"/>
@@ -565,9 +568,12 @@
                 </Grid>
 
                 <!-- ================= 二级展开：卡片视口与分页指示器 (Win11 风格) ================= -->
-                <Grid x:Name="CardCarouselHost" Opacity="0" Margin="16,10,12,10"
-                      HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                      IsHitTestVisible="False" Visibility="Collapsed"
+                <!-- 固定尺寸 + 常驻 Visible：整棵卡片子树的测量/排列在岛体来回形变的全过程里都保持有效，
+                     否则每次「收进小岛 → 展开」都要重新冷排版一次（实测 15~25ms，正好压在换态第一帧上，
+                     用户感知为"点击后顿一下"）。隐藏靠 Opacity=0 + 岛体裁切 + IsHitTestVisible，不用 Collapsed。 -->
+                <Grid x:Name="CardCarouselHost" Opacity="0" Margin="16,10,12,10" Width="402"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False"
                       PreviewMouseWheel="CardCarousel_PreviewMouseWheel">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -575,7 +581,9 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- 卡片视口：裁切边界，平滑垂直滑动 -->
-                    <Grid Grid.Column="0" Height="194" ClipToBounds="True">
+                    <!-- 高度会被代码在抽屉展开时临时撑高（见 MainWindow.xaml.cs 的 SetCardDrawerExtra），
+                         否则 194 的固定视口会把"输出设备/音量合成器"面板下半截连同命中测试一起裁掉。 -->
+                    <Grid x:Name="CardViewport" Grid.Column="0" Height="194" ClipToBounds="True">
                         <!-- 第一层 (Page 0)：音乐播放器 -->
                         <Grid x:Name="CardLayer" VerticalAlignment="Center" Height="194">
                             <Grid.RenderTransform>
@@ -980,16 +988,17 @@
                                     <!-- 交互式音量进度条槽（支持点击/拖拽定位） -->
                                     <Grid x:Name="CardVolumeSliderTrack" Grid.Column="1" Height="28" Margin="10,0" Cursor="Hand"
                                           Background="Transparent"
-                                          MouseLeftButtonDown="CardVolumeSliderTrack_MouseLeftButtonDown"
+                                          PreviewMouseLeftButtonDown="CardVolumeSliderTrack_PreviewMouseLeftButtonDown"
                                           MouseMove="CardVolumeSliderTrack_MouseMove"
-                                          MouseLeftButtonUp="CardVolumeSliderTrack_MouseLeftButtonUp">
+                                          MouseLeftButtonUp="CardVolumeSliderTrack_MouseLeftButtonUp"
+                                          LostMouseCapture="CardVolumeSliderTrack_LostMouseCapture">
                                         <!-- 背景槽条 -->
-                                        <Border Height="8" CornerRadius="4" Background="#26FFFFFF" VerticalAlignment="Center"/>
+                                        <Border Height="8" CornerRadius="4" Background="#26FFFFFF" VerticalAlignment="Center" IsHitTestVisible="False"/>
                                         <!-- 动态高亮填充 -->
                                         <Border x:Name="CardVolumeSliderFill" Height="8" CornerRadius="4"
                                                 Background="{StaticResource AccentCyan}"
                                                 HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                Width="100"/>
+                                                Width="100" IsHitTestVisible="False"/>
                                     </Grid>
 
                                     <!-- 增加音量微调按钮 -->
@@ -1015,77 +1024,152 @@
                                     </Button>
                                 </Grid>
 
-                                <!-- 快捷预设按钮组（20%, 50%, 80%, 100%） -->
-                                <UniformGrid Grid.Row="1" Columns="4" Margin="0,2,0,0">
-                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="20" Click="PresetVolume_Click">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
-                                                    <TextBlock Text="20%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
+                                <!-- 快捷折叠控制区：切换输出设备与音量合成器 -->
+                                <StackPanel Grid.Row="1" Margin="0,2,0,0">
+                                    <!-- 折叠栏 1：声音输出设备快捷切换 -->
+                                    <Border x:Name="AudioDeviceHeader" Margin="0,2" CornerRadius="6"
+                                            Background="#14FFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1"
+                                            Cursor="Hand" MouseLeftButtonDown="AudioDeviceHeader_MouseLeftButtonDown">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Style.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                        <Setter Property="Background" Value="#22FFFFFF"/>
+                                                        <Setter Property="BorderBrush" Value="#4400F0FF"/>
                                                     </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="50" Click="PresetVolume_Click">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
-                                                    <TextBlock Text="50%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid Height="22" Margin="8,0">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets" FontSize="10.5"
+                                                           Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="输出设备: " FontSize="9.5" Foreground="{StaticResource TextTertiary}" Margin="6,0,2,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="CurrentDeviceNameLabel" Text="默认输出设备" FontSize="9.5" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimary}" MaxWidth="150" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock x:Name="AudioDeviceChevron" Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                                       Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       RenderTransformOrigin="0.5,0.5">
+                                                <TextBlock.RenderTransform>
+                                                    <RotateTransform x:Name="AudioDeviceChevronRotate" Angle="0"/>
+                                                </TextBlock.RenderTransform>
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- 输出设备展开面板 -->
+                                    <Grid x:Name="AudioDevicePanel" Height="0" Opacity="0" ClipToBounds="True" Visibility="Collapsed">
+                                        <Border CornerRadius="6" Background="#26000000" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="0,1,0,3" Padding="3">
+                                            <ScrollViewer MaxHeight="60" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                                <ItemsControl x:Name="AudioDeviceList">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Margin="0,1" Padding="6,3" CornerRadius="4" Background="Transparent"
+                                                                    Cursor="Hand" MouseLeftButtonDown="AudioDeviceItem_MouseLeftButtonDown">
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Style.Triggers>
+                                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                                <Setter Property="Background" Value="#22FFFFFF"/>
+                                                                            </Trigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding Name}" FontSize="9.5" Foreground="{StaticResource TextPrimary}"
+                                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                                    <TextBlock Grid.Column="1" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="9.5"
+                                                                               Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center"
+                                                                               Visibility="{Binding CheckVisibility}"/>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- 折叠栏 2：音量合成器快捷管理 -->
+                                    <Border x:Name="VolumeMixerHeader" Margin="0,2" CornerRadius="6"
+                                            Background="#14FFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1"
+                                            Cursor="Hand" MouseLeftButtonDown="VolumeMixerHeader_MouseLeftButtonDown">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Style.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
+                                                        <Setter Property="Background" Value="#22FFFFFF"/>
+                                                        <Setter Property="BorderBrush" Value="#4400F0FF"/>
                                                     </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="80" Click="PresetVolume_Click">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
-                                                    <TextBlock Text="80%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-                                    <Button Margin="4,0" Height="24" Cursor="Hand" FocusVisualStyle="{x:Null}" Focusable="False" Tag="100" Click="PresetVolume_Click">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="Bd" CornerRadius="6" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
-                                                    <TextBlock Text="100%" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#38FFFFFF"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#55FFFFFF"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-                                </UniformGrid>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid Height="22" Margin="8,0">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="&#xE995;" FontFamily="Segoe MDL2 Assets" FontSize="10.5"
+                                                           Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="音量合成器与应用控制" FontSize="9.5" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimary}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock x:Name="VolumeMixerChevron" Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                                       Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       RenderTransformOrigin="0.5,0.5">
+                                                <TextBlock.RenderTransform>
+                                                    <RotateTransform x:Name="VolumeMixerChevronRotate" Angle="0"/>
+                                                </TextBlock.RenderTransform>
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- 音量合成器展开面板 -->
+                                    <Grid x:Name="VolumeMixerPanel" Height="0" Opacity="0" ClipToBounds="True" Visibility="Collapsed">
+                                        <Border CornerRadius="6" Background="#26000000" BorderBrush="#1FFFFFFF" BorderThickness="1" Margin="0,1,0,3" Padding="4">
+                                            <StackPanel>
+                                                <Button Style="{StaticResource TransportButton}" Margin="0,1,0,3" Height="22"
+                                                        Cursor="Hand" Focusable="False" Click="OpenSystemVolumeMixer_Click">
+                                                    <Border CornerRadius="4" Background="#2000E5FF" BorderBrush="#3300E5FF" BorderThickness="1" Padding="6,2">
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <TextBlock Text="&#xE7AC;" FontFamily="Segoe MDL2 Assets" FontSize="9.5" Foreground="{StaticResource AccentCyan}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="打开系统音量合成器设置" FontSize="9.5" Foreground="{StaticResource AccentCyan}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Button>
+                                                <ScrollViewer MaxHeight="46" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                                    <ItemsControl x:Name="VolumeAppSessionsList">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid Margin="2,1">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding Name}" FontSize="9" Foreground="{StaticResource TextSecondary}"
+                                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                                    <Button Grid.Column="1" Height="18" Padding="6,1" Cursor="Hand" Margin="4,0,0,0"
+                                                                            Focusable="False" Click="ToggleAppMute_Click">
+                                                                        <Button.Template>
+                                                                            <ControlTemplate TargetType="Button">
+                                                                                <Border CornerRadius="3" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1" Padding="4,1">
+                                                                                    <TextBlock Text="{Binding MuteText}" FontSize="8"
+                                                                                               Foreground="{Binding MuteColorBrush}"/>
+                                                                                </Border>
+                                                                            </ControlTemplate>
+                                                                        </Button.Template>
+                                                                    </Button>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
                             </Grid>
 
                             <!-- 行 2：底部提示 -->
@@ -1096,7 +1180,7 @@
                     </Grid>
 
                     <!-- 右侧：类似 Win11 开始菜单的竖向指示器 -->
-                    <Border Grid.Column="1" VerticalAlignment="Center" Margin="2,0,4,0">
+                    <Border x:Name="PageIndicatorBorder" Grid.Column="1" VerticalAlignment="Center" Margin="2,0,4,0">
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                             <!-- 点 0 (第一层：音乐播放器) 外层包裹大面积透明点击区 -->
                             <Border Width="24" Height="22" Background="Transparent" Cursor="Hand" ToolTip="音乐播放器"
