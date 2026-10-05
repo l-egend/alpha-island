@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AssemblyName>AlphaIsland.Plugins.VivoOffice</AssemblyName>
+    <Version>0.1.1</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\PluginSdk\AlphaIsland.PluginSdk.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+    <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
+    <None Update="plugin.json;README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="DeployVivoPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
+    <ItemGroup>
+      <PluginFiles Include="$(TargetDir)AlphaIsland.Plugins.VivoOffice.dll;$(TargetDir)AlphaIsland.Plugins.VivoOffice.pdb;$(TargetDir)AlphaIsland.Plugins.VivoOffice.deps.json;$(TargetDir)plugin.json;$(TargetDir)README.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\vivo.office" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

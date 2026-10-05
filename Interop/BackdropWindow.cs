@@ -237,8 +237,9 @@ namespace alpha_island.Interop
         /// <summary>
         /// 读 <c>HKCU\...\Themes\Personalize\EnableTransparency</c>。
         /// 读不到时按「开」处理（宁可让 DWM 自己决定，也不要凭空降级）。
+        /// 公开给 <see cref="Core.CapabilityProbe"/> 复用，不要在别处再写一份。
         /// </summary>
-        private static bool SystemTransparencyEnabled()
+        public static bool SystemTransparencyEnabled()
         {
             try
             {

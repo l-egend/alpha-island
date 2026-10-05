@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -86,14 +85,20 @@ namespace alpha_island.Core
         public bool ClipboardNotifyEnabled { get; set; } = true;
         /// <summary>已复制驻留弹窗下，鼠标右键是否替换为自动粘贴。</summary>
         public bool ClipboardRightClickPaste { get; set; } = true;
-        /// <summary>粘贴后提示停留秒数，1~5。</summary>
+        /// <summary>粘贴完成提示的停留秒数，1~5；复制提示保持到粘贴或主动取消。</summary>
         public int ClipboardAutoCollapseSeconds { get; set; } = 2;
 
         // ---------- 文件中转站 ----------
         /// <summary>是否启用拖拽文件中转站功能。</summary>
         public bool FileTransferEnabled { get; set; } = true;
 
-        public IslandOptions Clone() => (IslandOptions)MemberwiseClone();
+        /// <summary>
+        /// 注册表声明但还没有强类型属性的设置项（新功能用：AI 接入、网速阈值、agent 桥接……）。
+        /// 读写一律走 <see cref="SettingsRegistry"/>（带类型校验与范围夹取），
+        /// 不新增属性也就不会牵动 <see cref="CopyFrom"/> 与序列化。缺失的键会在
+        /// <see cref="Normalized"/> 里补成默认值，所以 options.json 始终自带全部可调项。
+        /// </summary>
+        public Dictionary<string, JsonElement> Extras { get; set; } = new();
 
         /// <summary>把其它实例的值全部拷贝进来（用于"恢复默认"后再回填）。</summary>
         public void CopyFrom(IslandOptions other)
@@ -128,11 +133,17 @@ namespace alpha_island.Core
             ClipboardRightClickPaste = other.ClipboardRightClickPaste;
             ClipboardAutoCollapseSeconds = other.ClipboardAutoCollapseSeconds;
             FileTransferEnabled = other.FileTransferEnabled;
+
+            // Extras 是注册表驱动态设置项的容器，必须跟着拷贝，
+            // 否则设置窗口那一份副本回填时会丢掉这些键（AI/网速等整批消失）。
+            Extras = other.Extras == null
+                ? new Dictionary<string, JsonElement>()
+                : new Dictionary<string, JsonElement>(other.Extras);
         }
 
         // ================= 持久化 =================
 
-        private static readonly JsonSerializerOptions JsonOptions = new()
+        internal static readonly JsonSerializerOptions JsonOptions = new()
         {
             WriteIndented = true,
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -141,48 +152,112 @@ namespace alpha_island.Core
 
         public static IslandOptions Load()
         {
-            try
+            AppPaths.EnsureConfiguration();
+            string legacy = Path.Combine(AppPaths.Root, "options.json");
+            return Load(File.Exists(AppPaths.OptionsFile) || !File.Exists(legacy) ? AppPaths.OptionsFile : legacy);
+        }
+
+        private bool _loadFailed;
+
+        internal static IslandOptions Load(string path)
+        {
+            foreach (string candidate in new[] { path, path + ".bak" })
             {
-                if (File.Exists(AppPaths.OptionsFile))
+                try
                 {
-                    string json = File.ReadAllText(AppPaths.OptionsFile);
-                    var loaded = JsonSerializer.Deserialize<IslandOptions>(json, JsonOptions);
-                    if (loaded != null) return loaded.Normalized();
+                    if (!File.Exists(candidate)) continue;
+                    var loaded = AtomicJsonFile.Read<IslandOptions>(candidate, JsonOptions)?.Normalized();
+                    if (loaded == null) continue;
+                    if (candidate != path)
+                    {
+                        IslandLog.Warn("Options", "已从设置备份恢复");
+                        try { AtomicJsonFile.Write(path, JsonSerializer.Serialize(loaded, JsonOptions), keepBackup: false); }
+                        catch (Exception ex) { IslandLog.Warn("Options", "备份已读取，原文件恢复失败: " + ex.Message); }
+                    }
+                    return loaded;
+                }
+                catch (Exception ex)
+                {
+                    IslandLog.Warn("Options", "读取失败: " + ex.Message);
                 }
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("[Options] 读取失败，使用默认值: " + ex.Message);
-            }
-            return new IslandOptions();
+            // 无有效备份时，退出不能把临时默认值覆盖到用户的损坏文件上。
+            return new IslandOptions { _loadFailed = File.Exists(path) || File.Exists(path + ".bak") };
         }
 
-        public void Save()
+        public void Save(bool allowRecovery = false)
+            => Save(AppPaths.OptionsFile, allowRecovery);
+
+        internal void Save(string path, bool allowRecovery = false)
         {
             try
             {
-                AppPaths.EnsureRoot();
-                File.WriteAllText(AppPaths.OptionsFile, JsonSerializer.Serialize(this, JsonOptions), System.Text.Encoding.UTF8);
+                if (_loadFailed && !allowRecovery)
+                {
+                    IslandLog.Warn("Options", "原设置读取失败，保留文件；修改设置或恢复默认后再保存");
+                    return;
+                }
+                SettingsRegistry.SetExtra(this, "AiApiKey", string.Empty);
+                AtomicJsonFile.Write(path, JsonSerializer.Serialize(this, JsonOptions));
+                _loadFailed = false;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("[Options] 保存失败: " + ex.Message);
+                IslandLog.Warn("Options", "保存失败: " + ex.Message);
             }
         }
 
-        /// <summary>把超范围的值夹回合法区间（配置文件可以被手改坏）。</summary>
+        /// <summary>
+        /// 把超范围的值夹回合法区间（options.json 可以被手改坏，也可以是老版本留下的值）。
+        /// 每个数值字段都要夹 —— 设置页的滑杆范围必须和这里的区间一致，
+        /// 区间同时写在字段的 XML 注释上，改动时三处一起改。
+        /// </summary>
         public IslandOptions Normalized()
         {
-            GlassOpacity = Math.Clamp(GlassOpacity, 0.05, 0.98);
-            Sensitivity = Math.Clamp(Sensitivity, 0.3, 3.0);
+            GlassOpacity = ClampDouble(GlassOpacity, 0.08, 0.05, 0.98);
+            Sensitivity = ClampDouble(Sensitivity, 1.0, 0.3, 3.0);
+            GreetingSeconds = ClampDouble(GreetingSeconds, 4.0, 1.5, 10.0);
+            LyricsOffsetMs = Math.Clamp(LyricsOffsetMs, -2000, 2000);
             UpNextSeconds = Math.Clamp(UpNextSeconds, 2, 30);
+            VolumeNotifySeconds = Math.Clamp(VolumeNotifySeconds, 1, 5);
             BluetoothNotifySeconds = Math.Clamp(BluetoothNotifySeconds, 2, 30);
-            GreetingSeconds = Math.Clamp(GreetingSeconds, 1.5, 10.0);
-            if (string.IsNullOrWhiteSpace(GreetingText) || GreetingText.Contains("娆") || GreetingText.Contains("鍥") || GreetingText.Contains(""))
-            {
-                GreetingText = "欢迎回来";
-            }
+            BatteryNotifySeconds = Math.Clamp(BatteryNotifySeconds, 2, 10);
+            ClipboardAutoCollapseSeconds = Math.Clamp(ClipboardAutoCollapseSeconds, 1, 5);
+
+            if (LooksCorrupted(GreetingText)) GreetingText = "欢迎回来";
+
+            // 注册表里的设置项（含 Extras 里新功能的项）统一夹取 + 补齐缺的键。
+            // 上面那些逐项夹取保持原样：它们是历史行为，改动风险大于收益。
+            Extras ??= new Dictionary<string, JsonElement>();
+            SettingsRegistry.Normalize(this);
+            SettingsRegistry.SetExtra(this, "AiApiKey", string.Empty);
+
             return this;
+        }
+
+        /// <summary>NaN / ±∞ 一律退回默认值，其余夹进区间。</summary>
+        private static double ClampDouble(double value, double fallback, double min, double max)
+            => double.IsNaN(value) ? fallback : Math.Clamp(value, min, max);
+
+        /// <summary>
+        /// 判断字符串是不是"编码事故"的产物。
+        /// 历史 bug：options.json 被 GBK 编辑器改写后，GreetingText 变成 "娆㈣繋鍥炴潵" 这种
+        /// UTF-8-被当成-GBK 读出来的乱码，界面上显示成一堆怪字。
+        /// 这里不枚举具体乱码字（枚举不全且必然会漏），只挡三类特征：
+        ///   替换字符 U+FFFD、私用区 U+E000~U+F8FF（乱码高发区）、除 \t 以外的控制字符。
+        /// </summary>
+        private static bool LooksCorrupted(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return true;
+
+            foreach (char ch in text)
+            {
+                if (ch == '\uFFFD') return true;
+                if (ch >= '\uE000' && ch <= '\uF8FF') return true;
+                if (ch < '\u0020' && ch != '\t') return true;
+            }
+
+            return false;
         }
     }
 }

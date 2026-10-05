@@ -85,27 +85,7 @@ namespace alpha_island.Services
         {
             try
             {
-                var inputs = new NativeMethods.INPUT[4];
-
-                // 1. Ctrl Down
-                inputs[0].type = NativeMethods.INPUT_KEYBOARD;
-                inputs[0].u.ki.wVk = NativeMethods.VK_CONTROL;
-                inputs[0].u.ki.dwFlags = 0;
-
-                // 2. V Down
-                inputs[1].type = NativeMethods.INPUT_KEYBOARD;
-                inputs[1].u.ki.wVk = NativeMethods.VK_V;
-                inputs[1].u.ki.dwFlags = 0;
-
-                // 3. V Up
-                inputs[2].type = NativeMethods.INPUT_KEYBOARD;
-                inputs[2].u.ki.wVk = NativeMethods.VK_V;
-                inputs[2].u.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
-
-                // 4. Ctrl Up
-                inputs[3].type = NativeMethods.INPUT_KEYBOARD;
-                inputs[3].u.ki.wVk = NativeMethods.VK_CONTROL;
-                inputs[3].u.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
+                var inputs = CreatePasteInputs();
 
                 int size = Marshal.SizeOf<NativeMethods.INPUT>();
                 uint sent = NativeMethods.SendInput((uint)inputs.Length, inputs, size);
@@ -115,6 +95,30 @@ namespace alpha_island.Services
             {
                 Debug.WriteLine("[HotkeyService] 模拟粘贴异常: " + ex.Message);
             }
+        }
+
+        internal static NativeMethods.INPUT[] CreatePasteInputs()
+        {
+            var inputs = new NativeMethods.INPUT[4];
+
+            // 1. Ctrl Down
+            inputs[0].type = NativeMethods.INPUT_KEYBOARD;
+            inputs[0].u.ki.wVk = NativeMethods.VK_CONTROL;
+
+            // 2. V Down
+            inputs[1].type = NativeMethods.INPUT_KEYBOARD;
+            inputs[1].u.ki.wVk = NativeMethods.VK_V;
+
+            // 3. V Up
+            inputs[2].type = NativeMethods.INPUT_KEYBOARD;
+            inputs[2].u.ki.wVk = NativeMethods.VK_V;
+            inputs[2].u.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
+
+            // 4. Ctrl Up
+            inputs[3].type = NativeMethods.INPUT_KEYBOARD;
+            inputs[3].u.ki.wVk = NativeMethods.VK_CONTROL;
+            inputs[3].u.ki.dwFlags = NativeMethods.KEYEVENTF_KEYUP;
+            return inputs;
         }
 
         /// <summary>

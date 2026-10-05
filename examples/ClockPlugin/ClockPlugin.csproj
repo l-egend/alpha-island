@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AssemblyName>AlphaIsland.Examples.ClockPlugin</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\PluginSdk\AlphaIsland.PluginSdk.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- 普通 VS 构建即部署示例；不生成安装包。 -->
+  <Target Name="DeployExamplePlugin" AfterTargets="Build">
+    <ItemGroup><PluginFiles Include="$(TargetDir)*.dll;$(TargetDir)*.pdb;$(TargetDir)*.deps.json;$(TargetDir)plugin.json" Exclude="$(TargetDir)AlphaIsland.PluginSdk.dll;$(TargetDir)AlphaIsland.PluginSdk.pdb" /></ItemGroup>
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\example.clock" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

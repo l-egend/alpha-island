@@ -59,11 +59,12 @@ namespace alpha_island.Services
             _http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
         }
 
-        public bool TryGetCached(string title, string artist, out LyricsDocument? doc)
-            => _cache.TryGetValue(CacheKey(title, artist), out doc);
+        public bool TryGetCached(string title, string artist, TimeSpan duration, out LyricsDocument? doc)
+            => _cache.TryGetValue(CacheKey(title, artist, duration), out doc);
 
-        private static string CacheKey(string title, string artist)
-            => LrcParser.Normalize(title) + "|" + LrcParser.Normalize(artist);
+        internal static string CacheKey(string title, string artist, TimeSpan duration)
+            => title.Trim().ToUpperInvariant() + "|" + artist.Trim().ToUpperInvariant() + "|" +
+                Math.Round(duration.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         /// <summary>
         /// 取歌词。任何失败（无网络 / 匹配不上 / 纯音乐）都返回 null，不抛异常。
@@ -73,7 +74,7 @@ namespace alpha_island.Services
             if (!Enabled) return null;
             if (string.IsNullOrWhiteSpace(title)) return null;
 
-            string key = CacheKey(title, artist);
+            string key = CacheKey(title, artist, duration);
             if (_cache.TryGetValue(key, out var cached)) return cached;
 
             LyricsDocument? doc = null;
@@ -127,6 +128,9 @@ namespace alpha_island.Services
             if (doc != null && doc.HasLyrics)
             {
                 _cache[key] = doc;
+                if (_cache.Count > 128)
+                    foreach (string stale in _cache.Keys.Where(k => k != key).Take(_cache.Count - 128))
+                        _cache.TryRemove(stale, out _);
             }
             return doc;
         }

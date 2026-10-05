@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap uap3 rescap">
+  <Identity Name="AlphaIsland.Desktop" Publisher="CN=Alpha Island Development" Version="0.1.12.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Alpha Island</DisplayName>
+    <PublisherDisplayName>Alpha Island Development</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources><Resource Language="zh-CN" /><Resource Language="en-US" /></Resources>
+  <Applications>
+    <Application Id="App" Executable="alpha-island.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Alpha Island" Description="Desktop status island and notification center"
+          BackgroundColor="transparent" Square150x150Logo="Assets\Square150Logo.png" Square44x44Logo="Assets\Square44Logo.png" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <uap3:Capability Name="userNotificationListener" />
+  </Capabilities>
+</Package>

@@ -77,8 +77,11 @@ namespace alpha_island.Services
         private readonly ConcurrentDictionary<string, BluetoothDevice> _classicDevices = new();
         private readonly ConcurrentDictionary<string, BluetoothLEDevice> _bleDevices = new();
         private readonly ConcurrentDictionary<string, string> _knownDeviceNames = new();
-        private readonly ConcurrentDictionary<string, long> _lastNotifiedTicks = new();
         private readonly ConcurrentDictionary<string, bool> _preExistingConnected = new();
+        private readonly ConcurrentDictionary<string, long> _connectionEpochs = new();
+        private readonly ConcurrentDictionary<string, string> _connectionKeys = new();
+        private long _connectionEpoch;
+        private readonly System.Threading.CancellationTokenSource _lifetime = new();
 
         /// <summary>设备连接时触发，参数为设备信息快照。</summary>
         public event EventHandler<BluetoothDeviceInfo>? DeviceConnected;
@@ -167,6 +170,8 @@ namespace alpha_island.Services
         {
             if (_disposed) return;
             _disposed = true;
+            _lifetime.Cancel();
+            _connectionEpochs.Clear();
 
             try
             {
@@ -232,8 +237,10 @@ namespace alpha_island.Services
             {
                 var device = await BluetoothDevice.FromIdAsync(info.Id);
                 if (device == null) return;
+                if (_disposed) { device.Dispose(); return; }
 
                 _classicDevices[info.Id] = device;
+                if (_disposed) { if (_classicDevices.TryRemove(info.Id, out var late)) late.Dispose(); return; }
                 string cleanName = CleanDeviceName(device.Name);
                 _knownDeviceNames[info.Id] = cleanName;
                 var category = ResolveClassicCategory(device);
@@ -281,8 +288,10 @@ namespace alpha_island.Services
             {
                 var device = await BluetoothLEDevice.FromIdAsync(info.Id);
                 if (device == null) return;
+                if (_disposed) { device.Dispose(); return; }
 
                 _bleDevices[info.Id] = device;
+                if (_disposed) { if (_bleDevices.TryRemove(info.Id, out var late)) late.Dispose(); return; }
                 string cleanName = CleanDeviceName(device.Name);
                 _knownDeviceNames[info.Id] = cleanName;
                 var category = ResolveBleCategory(device);
@@ -485,60 +494,45 @@ namespace alpha_island.Services
         {
             if (_disposed || IsInStartupGracePeriod) return;
 
-            long now = Stopwatch.GetTimestamp();
-            long last = _lastNotifiedTicks.GetValueOrDefault(name, 0);
-            double elapsedSec = (now - last) / (double)Stopwatch.Frequency;
-
-            // 4 秒内同一设备去重防抖，避免 WinRT 与 CoreAudio 重复弹窗
-            if (elapsedSec < 4.0) return;
-            _lastNotifiedTicks[name] = now;
-
             if (string.IsNullOrEmpty(mac)) mac = ExtractMacAddress(deviceId);
+            string key = !string.IsNullOrEmpty(mac) ? "mac:" + mac.ToUpperInvariant()
+                : !string.IsNullOrEmpty(containerId) ? "container:" + containerId : deviceId;
+            _connectionKeys[deviceId] = key;
+            long epoch = System.Threading.Interlocked.Increment(ref _connectionEpoch);
+            if (!_connectionEpochs.TryAdd(key, epoch)) return;
+            bool IsCurrent() => !_disposed && _connectionEpochs.TryGetValue(key, out long active) && active == epoch;
 
             Debug.WriteLine($"[Bluetooth] 触发连接通知: {name} ({deviceId}, mac={mac}, container={containerId})");
-            int? battery = await TryReadBatteryAsync(deviceId, name, mac, containerId);
-            var info = new BluetoothDeviceInfo(deviceId, name, category, battery, IsConnected: true);
-
-            _ = _dispatcher.BeginInvoke(() => DeviceConnected?.Invoke(this, info));
-
-            // 若初次尝试未读到电量，开启后台重试轮询（解决耳机连接初秒 HFP/GATT 未建立导致显示--的问题）
-            if (!battery.HasValue)
+            var info = new BluetoothDeviceInfo(deviceId, name, category, null, IsConnected: true);
+            _ = _dispatcher.BeginInvoke(() => { if (IsCurrent()) DeviceConnected?.Invoke(this, info); });
+            try
             {
-                _ = PollBatteryRetryAsync(deviceId, name, category, mac, containerId);
+                int attempt = 0;
+                while (IsCurrent())
+                {
+                    int? battery = await TryReadBatteryAsync(deviceId, name, mac, containerId);
+                    if (!IsCurrent()) return;
+                    var updated = info with { BatteryPercent = battery is >= 0 and <= 100 ? battery : null };
+                    _ = _dispatcher.BeginInvoke(() => { if (IsCurrent()) BatteryUpdated?.Invoke(this, updated); });
+                    await Task.Delay(battery.HasValue || ++attempt > 5 ? 60000 : 1000 * attempt, _lifetime.Token);
+                }
             }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Debug.WriteLine("[Bluetooth] 电量刷新失败: " + ex.Message); }
         }
 
         private void HandleDisconnected(string deviceId, string name, BluetoothDeviceCategory category)
         {
             if (_disposed || IsInStartupGracePeriod) return;
+            string key = _connectionKeys.GetValueOrDefault(deviceId, "mac:" + ExtractMacAddress(deviceId).ToUpperInvariant());
+            _connectionEpochs.TryRemove(key, out _);
 
             Debug.WriteLine($"[Bluetooth] 触发断开通知: {name} ({deviceId})");
             var info = new BluetoothDeviceInfo(deviceId, name, category, BatteryPercent: null, IsConnected: false);
-            _ = _dispatcher.BeginInvoke(() => DeviceDisconnected?.Invoke(this, info));
+            _ = _dispatcher.BeginInvoke(() => { if (!_disposed && !_connectionEpochs.ContainsKey(key)) DeviceDisconnected?.Invoke(this, info); });
         }
 
         // ===================== 电量读取与多轮重试 =====================
-
-        private async Task PollBatteryRetryAsync(string deviceId, string name, BluetoothDeviceCategory category,
-            string? mac, string? containerId)
-        {
-            // 蓝牙耳机在 A2DP 音频链路建立后，HFP / GATT 握手通常有 0.5s~3s 的延迟
-            int[] delays = { 500, 1000, 1800, 3000, 5000 };
-            foreach (int delay in delays)
-            {
-                await Task.Delay(delay);
-                if (_disposed) return;
-
-                int? b = await TryReadBatteryAsync(deviceId, name, mac, containerId);
-                if (b.HasValue)
-                {
-                    Debug.WriteLine($"[Bluetooth] 后台轮询成功读取电量: {name} => {b.Value}%");
-                    var updated = new BluetoothDeviceInfo(deviceId, name, category, b.Value, IsConnected: true);
-                    _ = _dispatcher.BeginInvoke(() => BatteryUpdated?.Invoke(this, updated));
-                    return;
-                }
-            }
-        }
 
         private async Task<int?> TryReadBatteryAsync(string deviceId, string name, string? mac = null, string? containerId = null)
         {
@@ -548,7 +542,7 @@ namespace alpha_island.Services
 
                 // 1. Windows PnP 原生电量属性尝试（支持 ContainerId、MAC 和名称匹配，速度极快 ~40-100ms）
                 int? pnpBattery = await ReadBatteryFromPnpAsync(targetMac, name, containerId);
-                if (pnpBattery.HasValue) return pnpBattery;
+                if (pnpBattery is >= 0 and <= 100) return pnpBattery;
 
                 // 2. 若本身是 BLE ID
                 if (deviceId.StartsWith("BluetoothLE#", StringComparison.OrdinalIgnoreCase))
@@ -571,15 +565,14 @@ namespace alpha_island.Services
                     }
                 }
 
-                // 4. 按名称模糊匹配 BLE 实体
-                foreach (var pair in _bleDevices)
+                // 名称不能证明设备身份；仅在候选唯一时使用名称回退。
+                var candidates = _bleDevices.Where(pair => !string.IsNullOrWhiteSpace(pair.Value.Name) &&
+                    (pair.Value.Name.Contains(name, StringComparison.OrdinalIgnoreCase) ||
+                     name.Contains(pair.Value.Name, StringComparison.OrdinalIgnoreCase))).Take(2).ToArray();
+                if (candidates.Length == 1)
                 {
-                    if (pair.Value.Name.Contains(name, StringComparison.OrdinalIgnoreCase) ||
-                        name.Contains(pair.Value.Name, StringComparison.OrdinalIgnoreCase))
-                    {
-                        int? b = await ReadBatteryFromBleIdAsync(pair.Key);
-                        if (b.HasValue) return b;
-                    }
+                    int? b = await ReadBatteryFromBleIdAsync(candidates[0].Key);
+                    if (b.HasValue) return b;
                 }
             }
             catch { }
@@ -590,27 +583,31 @@ namespace alpha_island.Services
         {
             try
             {
-                var ble = await BluetoothLEDevice.FromIdAsync(bleId);
+                using var ble = await BluetoothLEDevice.FromIdAsync(bleId);
                 if (ble == null) return null;
 
                 var servicesResult = await ble.GetGattServicesForUuidAsync(BatteryServiceUuid);
-                if (servicesResult.Status != GattCommunicationStatus.Success || servicesResult.Services.Count == 0)
-                    return null;
-
+                // GetGattServices 返回的每个句柄都要释放，即使特征读取失败。
+                try
+                {
+                if (servicesResult.Status != GattCommunicationStatus.Success || servicesResult.Services.Count == 0) return null;
                 var service = servicesResult.Services[0];
                 var charResult = await service.GetCharacteristicsForUuidAsync(BatteryLevelCharacteristicUuid);
                 if (charResult.Status != GattCommunicationStatus.Success || charResult.Characteristics.Count == 0)
                     return null;
 
                 var characteristic = charResult.Characteristics[0];
-                var readResult = await characteristic.ReadValueAsync();
+                var readResult = await characteristic.ReadValueAsync(BluetoothCacheMode.Uncached);
                 if (readResult.Status != GattCommunicationStatus.Success) return null;
 
                 using var reader = Windows.Storage.Streams.DataReader.FromBuffer(readResult.Value);
                 if (reader.UnconsumedBufferLength >= 1)
                 {
-                    return (int)reader.ReadByte();
+                    int value = reader.ReadByte();
+                    return value <= 100 ? value : null;
                 }
+                }
+                finally { foreach (var service in servicesResult.Services) service.Dispose(); }
             }
             catch { }
             return null;

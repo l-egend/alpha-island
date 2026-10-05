@@ -1,0 +1,6 @@
+- insert:
+    - id: alpha-island-agent
+      name: '%ALPHA_ISLAND_HARNESS_PLUGIN%'
+      config:
+        endpoint: 'http://127.0.0.1:8765/'
+        timeoutSec: 5

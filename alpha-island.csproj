@@ -11,10 +11,32 @@
 		<UseWindowsForms>true</UseWindowsForms>
 		<!-- 项目/程序集名带连字符，C# 命名空间不允许 '-'，必须显式指定根命名空间 -->
 		<RootNamespace>alpha_island</RootNamespace>
+		<!-- C 组①：exe 的 Win32 图标（多尺寸 16/24/32/48/64/256，由 tools\make-icon.ps1 生成） -->
+		<ApplicationIcon>Assets\alpha-island.ico</ApplicationIcon>
+		<!-- 程序集元数据：任务管理器/文件属性里显示的品牌信息 -->
+		<AssemblyTitle>Alpha Island</AssemblyTitle>
+		<Product>Alpha Island</Product>
+		<Company>Alpha Island</Company>
+		<Description>灵动岛风格的桌面状态面板与 AI 助手</Description>
+		<Version>0.1.12</Version>
+		<FileVersion>0.1.12.0</FileVersion>
+		<Copyright>© Alpha Island</Copyright>
 	</PropertyGroup>
 
 	<ItemGroup>
 	  <PackageReference Include="NAudio" Version="2.2.1" />
+	  <PackageReference Include="ZXing.Net" Version="0.16.11" />
+	  <Compile Remove="tools\RegressionTests\**\*.cs" />
+	  <Compile Remove="tools\PluginFixture\**\*.cs" />
+	  <Compile Remove="PluginSdk\**\*.cs;examples\**\*.cs" />
+	  <Page Remove="PluginSdk\**\*.xaml;examples\**\*.xaml" />
+	  <ProjectReference Include="PluginSdk\AlphaIsland.PluginSdk.csproj" />
+	  <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
+	</ItemGroup>
+
+	<!-- WPF 资源：窗口 Icon 与托盘图标都从这里按 pack URI 取（用户可在 exe 旁替换同名文件重编译，或直接放 user 覆盖图标） -->
+	<ItemGroup>
+	  <Resource Include="Assets\alpha-island.ico" />
 	</ItemGroup>
 
 </Project>

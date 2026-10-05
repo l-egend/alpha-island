@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AssemblyName>AlphaIsland.PluginFixture</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\..\PluginSdk\AlphaIsland.PluginSdk.csproj" Private="false" ExcludeAssets="runtime" /></ItemGroup>
+</Project>

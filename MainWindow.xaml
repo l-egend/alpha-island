@@ -2,8 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:alpha_island.Controls"
+        xmlns:pluginUi="clr-namespace:AlphaIsland.PluginSdk;assembly=AlphaIsland.PluginSdk"
         Title="Alpha Island"
-        Width="800" Height="340"
+        Icon="Assets/alpha-island.ico"
+        Width="1200" Height="340"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="{x:Null}"
@@ -16,26 +18,23 @@
         TextOptions.TextFormattingMode="Ideal"
         UseLayoutRounding="True"
         AllowDrop="True"
-        DragEnter="Window_DragEnter"
-        DragOver="Window_DragOver"
-        DragLeave="Window_DragLeave"
-        Drop="Window_Drop"
+        PreviewDragEnter="Window_DragEnter"
+        PreviewDragOver="Window_DragOver"
+        PreviewDragLeave="Window_DragLeave"
+        PreviewDrop="Window_Drop"
         Loaded="Window_Loaded"
         Closed="Window_Closed">
 
-    <!-- 根容器：包含全宽顶部拖放感应区与居中岛体 -->
+    <!-- 根容器：包含岛附近的顶部拖放感应区与居中岛体 -->
     <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-        <!-- 屏幕顶部 OLE 拖拽感应带（高度 60px）：平时背景为空且不捕获命中，确保绝不阻挡任何正常桌面点击 -->
+        <!-- 只在岛外拖动靠近时临时启用；实际文件载荷经 OLE 验证后才展开。 -->
         <Border x:Name="TopDropZone"
                 Height="60"
+                Width="560"
                 VerticalAlignment="Top"
-                HorizontalAlignment="Stretch"
+                HorizontalAlignment="Center"
                 Background="{x:Null}"
                 AllowDrop="True"
-                DragEnter="Window_DragEnter"
-                DragOver="Window_DragOver"
-                DragLeave="Window_DragLeave"
-                Drop="Window_Drop"
                 IsHitTestVisible="False"
                 Panel.ZIndex="0"/>
 
@@ -146,6 +145,39 @@
                     </Rectangle.RenderTransform>
                 </Rectangle>
 
+                <!-- ③c 细条常驻指示（A 组①网速 / A 组②内存）：细条态右/中侧常驻数字。
+                     细条只有 10px 高，字号压到 8px 才放得下（数字与箭头都没有下伸部，不会被裁）；
+                     显隐由 MainWindow.SyncBarIndicators() 控制（只有 Bar 态 + 主弹簧收满 + 至少一侧有内容时才画），
+                     整层不参与命中测试，细条整条仍是拖拽/点击热区。 -->
+                <Grid x:Name="BarSpeedLayer" Opacity="0"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="BarSpeedDownText" FontSize="8" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}" Text=""/>
+                        <TextBlock x:Name="BarSpeedUpText" FontSize="8" FontWeight="SemiBold" Margin="6,0,0,0"
+                                   Foreground="{StaticResource TextSecondary}" Text=""/>
+                        <!-- 内存占用百分比（A 组②）：没有流量时它就是细条上唯一的内容 -->
+                        <TextBlock x:Name="BarMemText" FontSize="8" FontWeight="SemiBold" Margin="8,0,0,0"
+                                   Foreground="{StaticResource TextTertiary}" Text=""/>
+                        <!-- 飞行模式指示（A 组④）：只在飞行模式真的开着时亮（Warning 色），平时不可见 -->
+                        <TextBlock x:Name="BarAirText" FontSize="9" FontFamily="Segoe MDL2 Assets" Margin="8,0,0,0"
+                                   Foreground="#FFFFB900" Text="&#xE709;" Visibility="Collapsed"/>
+                        <!-- 麦克风 / 摄像头占用小圆点（A 组⑤）：各自独立亮灭。
+                             颜色与屏幕右上角那盏灯一致（橙=麦克风 / 绿=摄像头，对齐 iOS 17）。 -->
+                        <StackPanel x:Name="BarPrivacyDots" Margin="8,0,0,0" Orientation="Horizontal"
+                                    VerticalAlignment="Center" Visibility="Collapsed">
+                            <Ellipse x:Name="BarMicDot" Fill="#FFFF9F0A" Height="4" Visibility="Collapsed" Width="4"/>
+                            <Ellipse x:Name="BarCamDot" Fill="#FF30D158" Height="4" Margin="4,0,0,0"
+                                     Visibility="Collapsed" Width="4"/>
+                        </StackPanel>
+                        <!-- agent 运行状态色点（B 组③）：颜色随状态走（思考紫/输出青/等授权黄/出错红），
+                             空闲时整点收起 —— 细条上不能常驻一个"什么也没干"的点。 -->
+                        <Ellipse x:Name="BarAgentDot" Fill="#FF8A5CFF" Height="6" Margin="8,0,0,0"
+                                 Visibility="Collapsed" Width="6"/>
+                    </StackPanel>
+                </Grid>
+
                 <!-- ================= 一级展开：长椭圆 =================
                      左侧圆角封面 + 中间当前歌词 + 右侧可视化 -->
                 <Grid x:Name="PillLayer" Opacity="0" Width="328" Height="32"
@@ -165,7 +197,7 @@
                     </Grid.ColumnDefinitions>
 
                     <Border x:Name="PillCoverHost" Grid.Column="0"
-                            Width="32" Height="32" CornerRadius="16"
+                            Width="32" Height="32" CornerRadius="8"
                             BorderBrush="#33FFFFFF" BorderThickness="1"
                             Background="#1AFFFFFF" ClipToBounds="True">
                         <Grid>
@@ -173,7 +205,7 @@
                                        FontSize="14" Foreground="#8CFFFFFF"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Visibility="Collapsed"/>
-                            <Border CornerRadius="16">
+                            <Border CornerRadius="8">
                                 <Border.Background>
                                     <ImageBrush x:Name="PillCoverBrush" Stretch="UniformToFill"/>
                                 </Border.Background>
@@ -330,14 +362,13 @@
                                 VerticalAlignment="Center" Margin="0,0,4,0">
                         <TextBlock x:Name="BtStatusText" Text="已连接" FontSize="11" Margin="0,0,6,0"
                                    VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}"/>
-                        <TextBlock x:Name="BtBatteryIcon" Text="&#xE83F;" FontFamily="Segoe MDL2 Assets" FontSize="14"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondary}"/>
+                        <pluginUi:DeviceBatteryIndicator x:Name="BtBatteryIcon" Width="28" Height="16"
+                                                        VerticalAlignment="Center"/>
                         <TextBlock x:Name="BtBatteryText"
                                    FontSize="12" FontWeight="SemiBold" Margin="4,0,0,0"
                                    VerticalAlignment="Center"
                                    Foreground="{StaticResource TextPrimary}"
-                                   Text="--"/>
+                                   Text="—"/>
                     </StackPanel>
                 </Grid>
 
@@ -363,14 +394,17 @@
                     </Border>
 
                     <!-- 中间：音量大小进度条 -->
-                    <Grid x:Name="VolumeTrackContainer" Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Height="20">
-                        <!-- 背景槽 -->
-                        <Border Height="6" CornerRadius="3" Background="#26FFFFFF" VerticalAlignment="Center"/>
-                        <!-- 填充条 -->
-                        <Border x:Name="VolumeProgressFill" Height="6" CornerRadius="3"
-                                Background="{StaticResource AccentCyan}"
-                                HorizontalAlignment="Left" VerticalAlignment="Center"
-                                Width="0"/>
+                    <Grid x:Name="VolumeTrackContainer" Grid.Column="1" Margin="14,0" VerticalAlignment="Center" Height="24"
+                          Background="Transparent" Cursor="Hand"
+                          PreviewMouseLeftButtonDown="CardVolumeSliderTrack_PreviewMouseLeftButtonDown"
+                          PreviewMouseMove="CardVolumeSliderTrack_MouseMove"
+                          PreviewMouseLeftButtonUp="CardVolumeSliderTrack_MouseLeftButtonUp"
+                          LostMouseCapture="CardVolumeSliderTrack_LostMouseCapture"
+                          MouseEnter="VolumeTrack_MouseEnter" MouseLeave="VolumeTrack_MouseLeave">
+                        <Grid x:Name="VolumeCapsule" Height="5" Background="#38FFFFFF" VerticalAlignment="Center"
+                              IsHitTestVisible="False" SizeChanged="VolumeCapsule_SizeChanged">
+                            <Border x:Name="VolumeProgressFill" Background="#9FFFFFFF" HorizontalAlignment="Left" Width="0"/>
+                        </Grid>
                     </Grid>
 
                     <!-- 右侧：数字形式展现 -->
@@ -379,6 +413,156 @@
                                FontSize="13" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimary}"
                                Text="50%"/>
+                </Grid>
+
+                <!-- ================= 网速提示层（A 组①：下行持续超过阈值时弹一次） ================= -->
+                <Grid x:Name="NetSpeedNotifyLayer" Opacity="0" Width="158" Height="36"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <controls:NetworkSpeedPill x:Name="NetSpeedRates"/>
+                </Grid>
+
+                <!-- ================= 下载进度提示层（浏览器 / Steam 下载期间常显） =================
+                     数据来自 MainWindow.Downloads.cs：下载中每拍（2s）续期一次，所以它是**常显**的；
+                     下载完成时同一层换成「下载完成」再挂 6 秒。进度百分比放在右侧大字上，一眼能看到。 -->
+                <Grid x:Name="DownloadNotifyLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="16"
+                            Background="#2234D399" BorderBrush="#3334D399" BorderThickness="1">
+                        <TextBlock x:Name="DownloadNotifyGlyph" Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#34D399"/>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="DownloadNotifyTitle" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}" Text="正在下载"/>
+                        <TextBlock x:Name="DownloadNotifyDetail" FontSize="10.5" Margin="0,1,0,0"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource TextSecondary}" Text=""/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="DownloadNotifyValue" Grid.Column="2" Margin="0,0,4,0"
+                               VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"
+                               Foreground="#34D399" Text=""/>
+                </Grid>
+
+                <!-- ================= 系统状态通用提示层（A 组②③④⑤ 共用） =================
+                     内存整理/内存偏高/功率/飞行模式/隐私灯都用这一层：图标字形、标题、说明、右侧数值
+                     全部由代码在弹出前写入（SysNotifyGlyph/Title/Detail/Value），
+                     所以加新提示不需要再加 XAML 层，只要 _layers.ShowSeconds("system", n)。 -->
+                <Grid x:Name="SystemNotifyLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="16"
+                            Background="#2222D3EE" BorderBrush="#3322D3EE" BorderThickness="1">
+                        <TextBlock x:Name="SysNotifyGlyph" Text="&#xE950;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#22D3EE"/>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="SysNotifyTitle" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}" Text=""/>
+                        <TextBlock x:Name="SysNotifyDetail" FontSize="10.5" Margin="0,1,0,0"
+                                   Foreground="{StaticResource TextSecondary}" Text=""/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="SysNotifyValue" Grid.Column="2" Margin="0,0,4,0"
+                               VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}" Text=""/>
+                </Grid>
+
+                <!-- ================= agent 运行状态层（B 组③：思考 / 输出 / 等待授权 / 出错） =================
+                     状态由 Core\AgentStatus.cs 统一持有（AI 卡片页与将来的桥接都写它）。
+                     这一层是被 AgentStatus.Changed 与 1 秒 ticker 共同驱动的：只要状态不是 Idle 就占住胶囊，
+                     音乐图层自动让位（IslandLayerHost 的 ForceActive 语义），归零时由 SyncNotificationLayers 收回。 -->
+                <Grid x:Name="AgentNotifyLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="16"
+                            Background="#228A5CFF" BorderBrush="#338A5CFF" BorderThickness="1">
+                        <TextBlock x:Name="AgentNotifyGlyph" Text="&#xE99A;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#8A5CFF"/>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="AgentNotifyTitle" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}" Text="思考中"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="AgentNotifyDetail" FontSize="10.5" Margin="0,1,0,0"
+                                   Foreground="{StaticResource TextSecondary}" Text=""
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="AgentNotifyValue" Grid.Column="2" Margin="0,0,4,0"
+                               VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondary}" Text=""/>
+                </Grid>
+
+                <!-- ================= agent 工具权限审批层（B 组④） =================
+                     外部 agent 通过本机回环 HTTP（Services\AgentBridgeService.cs）发起审批，
+                     这里只负责"显示 + 收 Y/N + 把裁决回传"。标准 Button 负责按下、捕获与松手点击，
+                     整层由 IslandLayerHost 在可见时才打开 IsHitTestVisible（见 SyncNotificationLayers）。 -->
+                <Grid x:Name="ApprovalLayer" Opacity="0" Width="328" Height="32"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Width="32" Height="32" CornerRadius="16"
+                            Background="#228A5CFF" BorderBrush="#338A5CFF" BorderThickness="1">
+                        <TextBlock x:Name="ApprovalGlyph" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#8A5CFF"/>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="ApprovalTitle" FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}" Text="agent 请求工具权限"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="ApprovalDetail" FontSize="10" Margin="0,1,0,0"
+                                   Foreground="{StaticResource TextSecondary}" Text=""
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="ApprovalAllowButton" Style="{StaticResource ThemedButton}"
+                                Background="#3334C759" BorderBrush="#6634C759"
+                                BorderThickness="1" Margin="0,0,6,0" Padding="9,3" MinHeight="24"
+                                ToolTip="仅允许本次操作" Click="ApprovalAllow_Click">
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#FFDFFFE6" Text="允许 Y"/>
+                        </Button>
+                        <Button x:Name="ApprovalDenyButton" Style="{StaticResource ThemedButton}"
+                                Background="#33FF5A5F" BorderBrush="#66FF5A5F"
+                                BorderThickness="1" Padding="9,3" MinHeight="24"
+                                Click="ApprovalDeny_Click">
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#FFFFE3E3" Text="拒绝 N"/>
+                        </Button>
+                    </StackPanel>
                 </Grid>
 
                 <!-- ================= 电池状态通知层（与 PillLayer 同级同尺寸，互斥显示） ================= -->
@@ -474,9 +658,9 @@
                                 <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="16"
                                            VerticalAlignment="Center" Foreground="{StaticResource AccentCyan}"/>
                                 <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock Text="复制文件" FontSize="12.5" FontWeight="SemiBold"
+                                    <TextBlock Text="复制暂存" FontSize="12.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}"/>
-                                    <TextBlock Text="松开以暂存" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
+                                    <TextBlock Text="拖出时复制" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -493,9 +677,9 @@
                                 <TextBlock Text="&#xE8C6;" FontFamily="Segoe MDL2 Assets" FontSize="16"
                                            VerticalAlignment="Center" Foreground="#FF8855"/>
                                 <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock Text="剪切文件" FontSize="12.5" FontWeight="SemiBold"
+                                    <TextBlock Text="剪切暂存" FontSize="12.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}"/>
-                                    <TextBlock Text="松开以剪切" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
+                                    <TextBlock Text="拖出时移动" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -575,16 +759,11 @@
                       HorizontalAlignment="Center" VerticalAlignment="Center"
                       IsHitTestVisible="False"
                       PreviewMouseWheel="CardCarousel_PreviewMouseWheel">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
                     <!-- 卡片视口：裁切边界，平滑垂直滑动 -->
                     <!-- 高度会被代码在抽屉展开时临时撑高（见 MainWindow.xaml.cs 的 SetCardDrawerExtra），
                          否则 194 的固定视口会把"输出设备/音量合成器"面板下半截连同命中测试一起裁掉。 -->
                     <Grid x:Name="CardViewport" Grid.Column="0" Height="194" ClipToBounds="True">
-                        <!-- 第一层 (Page 0)：音乐播放器 -->
+                        <!-- 第一层 (Page 0)：媒体播放器 -->
                         <Grid x:Name="CardLayer" VerticalAlignment="Center" Height="194">
                             <Grid.RenderTransform>
                                 <TranslateTransform x:Name="CardPage0Translate" Y="0"/>
@@ -592,8 +771,8 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="64"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="34"/>
-                                <RowDefinition Height="14"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="24"/>
                             </Grid.RowDefinitions>
 
                             <!-- 行 0：封面 + 曲目信息 + 传输控制 -->
@@ -604,12 +783,23 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Border Grid.Column="0" Width="64" Height="64" CornerRadius="14"
-                                        BorderBrush="#26FFFFFF" BorderThickness="1">
-                                    <Border.Background>
-                                        <ImageBrush x:Name="CardCoverBrush" Stretch="UniformToFill"/>
-                                    </Border.Background>
-                                </Border>
+                                <!-- 封面槽：默认是 2D 圆角封面；开启「3D 封面」后换成 Viewport3D 里的
+                                     3D 立体卡（场景在 MainWindow.Cover3D.cs 里用代码搭，方便调相机/光照）。
+                                     两个子元素互斥显示，切换由 ApplyCover3DMode() 负责。 -->
+                                <Grid x:Name="CardCoverHost" Grid.Column="0" Width="64" Height="64">
+                                    <Grid.Clip>
+                                        <RectangleGeometry Rect="0,0,64,64" RadiusX="14" RadiusY="14"/>
+                                    </Grid.Clip>
+                                    <Border x:Name="CardCover2D" CornerRadius="14"
+                                            BorderBrush="#26FFFFFF" BorderThickness="1">
+                                        <Border.Background>
+                                            <ImageBrush x:Name="CardCoverBrush" Stretch="UniformToFill"/>
+                                        </Border.Background>
+                                        <TextBlock x:Name="CardMediaPlaceholder" Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="26"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource TextTertiary}"/>
+                                    </Border>
+                                    <Viewport3D x:Name="CardCover3D" Visibility="Collapsed" ClipToBounds="True"/>
+                                </Grid>
 
                                 <StackPanel Grid.Column="1" Margin="12,2,8,0" VerticalAlignment="Center">
                                     <TextBlock x:Name="TitleText" FontSize="14.5" FontWeight="SemiBold"
@@ -618,9 +808,14 @@
                                     <TextBlock x:Name="ArtistText" FontSize="11.5" Margin="0,3,0,0"
                                                Foreground="{StaticResource TextSecondary}"
                                                TextTrimming="CharacterEllipsis" Text=""/>
-                                    <TextBlock x:Name="AlbumText" FontSize="10.5" Margin="0,2,0,0"
+                                    <DockPanel Margin="0,2,0,0">
+                                        <Button x:Name="MediaSourcesButton" DockPanel.Dock="Right" Width="20" Height="16" FontSize="10"
+                                                Content="&#xE70D;" Style="{StaticResource TransportButton}" ToolTip="选择媒体来源"
+                                                Click="MediaSourcesButton_Click" AutomationProperties.Name="选择媒体来源"/>
+                                    <TextBlock x:Name="AlbumText" FontSize="10.5"
                                                Foreground="{StaticResource TextTertiary}"
                                                TextTrimming="CharacterEllipsis" Text=""/>
+                                    </DockPanel>
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
@@ -639,41 +834,51 @@
                             </Grid>
 
                             <!-- 行 1：歌词区 -->
-                            <Grid x:Name="LyricsArea" Grid.Row="1" Visibility="Collapsed" Margin="0,6,0,2">
+                            <Grid x:Name="LyricsArea" Grid.Row="1" Visibility="Collapsed" Margin="0,10,0,8">
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="15"/>
-                                    <RowDefinition Height="24"/>
-                                    <RowDefinition Height="14"/>
-                                    <RowDefinition Height="15"/>
+                                    <RowDefinition Height="26"/>
+                                    <RowDefinition Height="34"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="26"/>
                                 </Grid.RowDefinitions>
 
                                 <TextBlock x:Name="LyricPrev" Grid.Row="0"
-                                           FontSize="11" Foreground="#3DFFFFFF"
+                                           FontSize="13" Foreground="#85FFFFFF" VerticalAlignment="Center"
                                            MaxWidth="370" HorizontalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+                                           TextTrimming="CharacterEllipsis" TextAlignment="Center">
+                                    <TextBlock.RenderTransform><TranslateTransform/></TextBlock.RenderTransform>
+                                    <TextBlock.Effect><BlurEffect Radius="2.2" RenderingBias="Performance"/></TextBlock.Effect>
+                                </TextBlock>
 
-                                <Grid Grid.Row="1" MaxWidth="370" HorizontalAlignment="Center">
+                                <Grid x:Name="LyricCurrentHost" Grid.Row="1" MaxWidth="370" HorizontalAlignment="Center"
+                                      VerticalAlignment="Center">
+                                    <Grid.RenderTransform><TranslateTransform/></Grid.RenderTransform>
                                     <TextBlock x:Name="LyricCurrentDim"
-                                               FontSize="15" FontWeight="SemiBold"
-                                               Foreground="#59FFFFFF"
+                                               FontSize="18" FontWeight="Bold"
+                                               Foreground="#BCFFFFFF"
                                                TextTrimming="CharacterEllipsis" TextAlignment="Center"
                                                HorizontalAlignment="Center"/>
                                     <TextBlock x:Name="LyricCurrentBright"
-                                               FontSize="15" FontWeight="SemiBold"
-                                               Foreground="#EBFFFFFF"
+                                               FontSize="18" FontWeight="Bold"
+                                               Foreground="#FAFFFFFF"
                                                TextTrimming="CharacterEllipsis" TextAlignment="Center"
                                                HorizontalAlignment="Center"/>
                                 </Grid>
 
                                 <TextBlock x:Name="LyricTranslation" Grid.Row="2"
-                                           FontSize="11" Foreground="#B300F0FF"
+                                           FontSize="11" Foreground="#B3FFFFFF" Height="17" Visibility="Collapsed"
                                            MaxWidth="370" HorizontalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+                                           TextTrimming="CharacterEllipsis" TextAlignment="Center">
+                                    <TextBlock.RenderTransform><TranslateTransform/></TextBlock.RenderTransform>
+                                </TextBlock>
 
                                 <TextBlock x:Name="LyricNext" Grid.Row="3"
-                                           FontSize="11" Foreground="#3DFFFFFF"
+                                           FontSize="13" Foreground="#85FFFFFF" VerticalAlignment="Center"
                                            MaxWidth="370" HorizontalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" TextAlignment="Center"/>
+                                           TextTrimming="CharacterEllipsis" TextAlignment="Center">
+                                    <TextBlock.RenderTransform><TranslateTransform/></TextBlock.RenderTransform>
+                                    <TextBlock.Effect><BlurEffect Radius="2.2" RenderingBias="Performance"/></TextBlock.Effect>
+                                </TextBlock>
                             </Grid>
 
                             <!-- 行 2：波浪视区 -->
@@ -690,21 +895,15 @@
                                            VerticalAlignment="Center"
                                            Foreground="#8CFFFFFF" Text="0:00"/>
 
-                                <Border x:Name="ProgressTrack" Grid.Column="1" Height="12" Margin="8,0"
+                                <Border x:Name="ProgressTrack" Grid.Column="1" Height="24" Margin="8,0"
                                         Background="Transparent" Cursor="Hand"
+                                        MouseEnter="ProgressTrack_MouseEnter" MouseLeave="ProgressTrack_MouseLeave"
                                         MouseLeftButtonDown="ProgressTrack_MouseLeftButtonDown">
-                                    <Grid VerticalAlignment="Center">
-                                        <Border Height="4" CornerRadius="2" Background="#26FFFFFF"/>
-                                        <Border x:Name="ProgressFill" Height="4" CornerRadius="2"
-                                                HorizontalAlignment="Left" Width="0">
-                                            <Border.Background>
-                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                                    <GradientStop Color="#00F0FF" Offset="0"/>
-                                                    <GradientStop Color="#7000FF" Offset="0.55"/>
-                                                    <GradientStop Color="#FF007A" Offset="1"/>
-                                                </LinearGradientBrush>
-                                            </Border.Background>
-                                        </Border>
+                                    <Grid x:Name="ProgressCapsule" Height="5" VerticalAlignment="Center"
+                                          Background="#38FFFFFF" IsHitTestVisible="False"
+                                          SizeChanged="ProgressCapsule_SizeChanged">
+                                        <Border x:Name="ProgressFill" Background="#9FFFFFFF"
+                                                HorizontalAlignment="Left" Width="0"/>
                                     </Grid>
                                 </Border>
 
@@ -873,13 +1072,11 @@
                                                Foreground="#3DFFFFFF" HorizontalAlignment="Center"/>
                                     <TextBlock Text="暂无剪切板历史" FontSize="12" Foreground="{StaticResource TextSecondary}"
                                                Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="复制文本后将自动在此暂存" FontSize="9.5" Foreground="{StaticResource TextTertiary}"
-                                               Margin="0,2,0,0" HorizontalAlignment="Center"/>
                                 </StackPanel>
                             </Grid>
 
                             <!-- 行 2：底部提示 -->
-                            <TextBlock Grid.Row="2" Text="点击项目即可直接粘贴 · 滚轮或右侧切换层级"
+                            <TextBlock Grid.Row="2" Text="点击粘贴"
                                        FontSize="9" Foreground="{StaticResource TextTertiary}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
@@ -989,16 +1186,14 @@
                                     <Grid x:Name="CardVolumeSliderTrack" Grid.Column="1" Height="28" Margin="10,0" Cursor="Hand"
                                           Background="Transparent"
                                           PreviewMouseLeftButtonDown="CardVolumeSliderTrack_PreviewMouseLeftButtonDown"
-                                          MouseMove="CardVolumeSliderTrack_MouseMove"
-                                          MouseLeftButtonUp="CardVolumeSliderTrack_MouseLeftButtonUp"
-                                          LostMouseCapture="CardVolumeSliderTrack_LostMouseCapture">
-                                        <!-- 背景槽条 -->
-                                        <Border Height="8" CornerRadius="4" Background="#26FFFFFF" VerticalAlignment="Center" IsHitTestVisible="False"/>
-                                        <!-- 动态高亮填充 -->
-                                        <Border x:Name="CardVolumeSliderFill" Height="8" CornerRadius="4"
-                                                Background="{StaticResource AccentCyan}"
-                                                HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                Width="100" IsHitTestVisible="False"/>
+                                          PreviewMouseMove="CardVolumeSliderTrack_MouseMove"
+                                          PreviewMouseLeftButtonUp="CardVolumeSliderTrack_MouseLeftButtonUp"
+                                          LostMouseCapture="CardVolumeSliderTrack_LostMouseCapture"
+                                          MouseEnter="VolumeTrack_MouseEnter" MouseLeave="VolumeTrack_MouseLeave">
+                                        <Grid x:Name="CardVolumeCapsule" Height="5" Background="#38FFFFFF" VerticalAlignment="Center"
+                                              IsHitTestVisible="False" SizeChanged="VolumeCapsule_SizeChanged">
+                                            <Border x:Name="CardVolumeSliderFill" Background="#9FFFFFFF" HorizontalAlignment="Left" Width="0"/>
+                                        </Grid>
                                     </Grid>
 
                                     <!-- 增加音量微调按钮 -->
@@ -1173,40 +1368,433 @@
                             </Grid>
 
                             <!-- 行 2：底部提示 -->
-                            <TextBlock Grid.Row="2" Text="点击或拖拽滑块 · 滚轮微调音量 · 滚轮或右侧切换层级"
-                                       FontSize="9" Foreground="{StaticResource TextTertiary}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,4,0,2"/>
+                        </Grid>
+
+                        <!-- 第四层 (Page 3)：AI 对话卡片（B 组②）
+                             高度 194 与另三层一致，展开阅读区由 SetCardDrawerExtra 撑高整卡与视口
+                             （见 MainWindow.Ai.cs 的 AiGrow/AiShrink）。
+                             气泡由代码建（Dispatcher 逐段追加），XAML 只留容器。 -->
+                        <Grid x:Name="AiCardLayer" VerticalAlignment="Center" Height="194" Opacity="0" IsHitTestVisible="False">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="CardPage3Translate" Y="582"/>
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- 行 0：头部（状态徽标、模型/状态文字、复制/重试/停止/清空） -->
+                            <Grid Grid.Row="0" Margin="6,6,6,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="15"
+                                        Background="#2200E5FF" BorderBrush="#3300E5FF" BorderThickness="1">
+                                    <TextBlock x:Name="AiStatusGlyph" Text="&#xE99A;" FontFamily="Segoe MDL2 Assets"
+                                               FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="{StaticResource AccentCyan}"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" Margin="9,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="AI 对话" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimary}"/>
+                                    <TextBlock x:Name="AiStatusText" Text="就绪" FontSize="9.5" Margin="0,2,0,0"
+                                               Foreground="{StaticResource TextTertiary}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="AiCopyButton" Style="{StaticResource TransportButton}"
+                                            Width="26" Height="26" FontSize="11" Content="&#xE8C8;"
+                                            ToolTip="复制最后一条回复" Click="AiCopyButton_Click"/>
+                                    <Button x:Name="AiRetryButton" Style="{StaticResource TransportButton}"
+                                            Width="26" Height="26" FontSize="11" Margin="4,0,0,0" Content="&#xE72C;"
+                                            ToolTip="重试上一条提问" Click="AiRetryButton_Click"/>
+                                    <Button x:Name="AiStopButton" Style="{StaticResource TransportButton}"
+                                            Width="26" Height="26" FontSize="11" Margin="4,0,0,0" Content="&#xE71A;"
+                                            ToolTip="停止生成" Visibility="Collapsed" Click="AiStopButton_Click"/>
+                                    <Button x:Name="AiClearButton" Style="{StaticResource TransportButton}"
+                                            Width="26" Height="26" FontSize="11" Margin="4,0,0,0" Content="&#xE74D;"
+                                            ToolTip="清空对话" Click="AiClearButton_Click"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 行 1：气泡区（可滚动；空态提示浮在上面） -->
+                            <Grid Grid.Row="1" Margin="6,0,6,0">
+                                <ScrollViewer x:Name="AiScrollViewer" VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                    <StackPanel x:Name="AiBubbleStack" Margin="0,2,4,2"/>
+                                </ScrollViewer>
+                                <TextBlock x:Name="AiEmptyText" Text="暂无对话"
+                                           FontSize="10.5" Foreground="{StaticResource TextTertiary}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           TextAlignment="Center" TextWrapping="Wrap" Margin="20,0"
+                                           IsHitTestVisible="False"/>
+                            </Grid>
+
+                            <!-- 行 2：输入框 + 发送 -->
+                            <Border x:Name="AiInputBorder" Grid.Row="2" Margin="6,4,6,6" CornerRadius="8"
+                                    Background="#14FFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Grid Grid.Column="0">
+                                        <TextBox x:Name="AiInputBox" Background="Transparent" BorderThickness="0"
+                                                 CaretBrush="{StaticResource TextPrimary}"
+                                                 Foreground="{StaticResource TextPrimary}"
+                                                 FontSize="11.5" Padding="9,0" MaxLength="4000"
+                                                 VerticalContentAlignment="Center" AcceptsReturn="False"
+                                                 TextWrapping="NoWrap"
+                                                 PreviewMouseLeftButtonDown="AiInputBox_PreviewMouseLeftButtonDown"
+                                                 GotKeyboardFocus="AiInputBox_GotKeyboardFocus"
+                                                 LostKeyboardFocus="AiInputBox_LostKeyboardFocus"
+                                                 PreviewKeyDown="AiInputBox_PreviewKeyDown"
+                                                 TextChanged="AiInputBox_TextChanged"/>
+                                        <TextBlock x:Name="AiInputHint" Text="输入消息…（Enter 发送）"
+                                                   FontSize="11.5" Foreground="{StaticResource TextTertiary}"
+                                                   Margin="10,0,0,0" VerticalAlignment="Center"
+                                                   IsHitTestVisible="False"/>
+                                    </Grid>
+
+                                    <Button x:Name="AiSendButton" Grid.Column="1" Style="{StaticResource TransportButton}"
+                                            Width="28" Height="28" FontSize="12" Margin="4" Content="&#xE724;"
+                                            ToolTip="发送 (Enter)" Click="AiSendButton_Click"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- 第五层 (Page 4)：实时网速卡片（C 组②·需求①）
+                             网速是"一直想看"的量：这里给实时上下行 + 最近 60 秒曲线；
+                             细条上的常驻数字与「下载期间常显」的胶囊都由同一份采样驱动。 -->
+                        <Grid x:Name="NetSpeedCardLayer" VerticalAlignment="Center" Height="194" Opacity="0" IsHitTestVisible="False">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="CardPage4Translate" Y="582"/>
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- 行 0：头部（图标 / 状态 / 峰值 / 网卡名） -->
+                            <Grid Grid.Row="0" Margin="6,6,6,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="15"
+                                        Background="#2222D3EE" BorderBrush="#3322D3EE" BorderThickness="1">
+                                    <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="#22D3EE"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" Margin="9,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="实时网速" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimary}"/>
+                                    <TextBlock x:Name="NetSpeedCardStatusText" Text="采样中…" FontSize="9.5" Margin="0,2,0,0"
+                                               Foreground="{StaticResource TextTertiary}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <TextBlock x:Name="NetSpeedCardPeakText" Text="峰值 —" FontSize="9.5"
+                                               Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Right"/>
+                                    <TextBlock x:Name="NetSpeedCardAdapterText" Text="—" FontSize="9"
+                                               Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Right"
+                                               Margin="0,2,0,0" MaxWidth="130" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 行 1：实时上下行大号数值 -->
+                            <Grid Grid.Row="1" Margin="6,6,6,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="下行" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
+                                    <TextBlock x:Name="NetSpeedCardDownText" Text="—" FontSize="19" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimary}" Margin="0,1,0,0"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Margin="12,0,0,2">
+                                    <TextBlock Text="上行" FontSize="9.5"
+                                               Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Right"/>
+                                    <TextBlock x:Name="NetSpeedCardUpText" Text="—" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Right"
+                                               Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 行 2：最近 60 秒曲线（每秒一个点，超过 60 个点整体左移） -->
+                            <Grid Grid.Row="2" Margin="6,4,6,4">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <controls:Sparkline Grid.Row="0" x:Name="NetSpeedSparkline" VerticalAlignment="Stretch"
+                                                    Stroke="{StaticResource AccentCyan}" Fill="#2200E5FF"
+                                                    StrokeThickness="1.6" Capacity="60"/>
+                                <TextBlock Grid.Row="1" x:Name="NetSpeedCardHintText" Text="近 60 秒"
+                                           FontSize="9" Foreground="{StaticResource TextTertiary}" Margin="0,2,0,0"/>
+                            </Grid>
+                        </Grid>
+
+                        <!-- 第六层 (Page 5)：系统状态卡片（C 组②·需求①）
+                             内存 / 功耗 / 飞行模式 / 隐私 合并成一页（用户拍板），四个格子各显示实时值；
+                             对应服务没开时格子写"未开启"并指出去哪儿打开 —— 这一页本身始终能翻到、能看。 -->
+                        <Grid x:Name="SystemCardLayer" VerticalAlignment="Center" Height="194" Opacity="0" IsHitTestVisible="False">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="CardPage5Translate" Y="582"/>
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="6,6,6,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="15"
+                                        Background="#22FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1">
+                                    <TextBlock Text="&#xE950;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="{StaticResource AccentCyan}"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="系统状态" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimary}"/>
+                                    <TextBlock x:Name="SystemCardSummaryText" Text="内存 · 功耗 · 飞行模式 · 隐私"
+                                               FontSize="9.5" Margin="0,2,0,0"
+                                               Foreground="{StaticResource TextTertiary}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Grid.Row="1" Margin="6,0,6,6">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 内存 -->
+                                <Border Grid.Row="0" Grid.Column="0" Margin="0,0,3,3" CornerRadius="10"
+                                        Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1">
+                                    <Grid Margin="8,5,8,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="&#xE950;" FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="12" Foreground="{StaticResource AccentCyan}"
+                                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="内存占用" FontSize="9" Foreground="{StaticResource TextTertiary}"/>
+                                            <TextBlock x:Name="SysCardMemValue" Text="—" FontSize="12.5" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}" Margin="0,1,0,0"/>
+                                            <TextBlock x:Name="SysCardMemDetail" Text="" FontSize="8.5"
+                                                       Foreground="{StaticResource TextTertiary}"
+                                                       TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 功耗 -->
+                                <Border Grid.Row="0" Grid.Column="1" Margin="3,0,0,3" CornerRadius="10"
+                                        Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1">
+                                    <Grid Margin="8,5,8,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="&#xE945;" FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="12" Foreground="{StaticResource AccentCyan}"
+                                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="放电功率" FontSize="9" Foreground="{StaticResource TextTertiary}"/>
+                                            <TextBlock x:Name="SysCardPowerValue" Text="—" FontSize="12.5" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}" Margin="0,1,0,0"/>
+                                            <TextBlock x:Name="SysCardPowerDetail" Text="" FontSize="8.5"
+                                                       Foreground="{StaticResource TextTertiary}"
+                                                       TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 飞行模式 -->
+                                <Border Grid.Row="1" Grid.Column="0" Margin="0,3,3,0" CornerRadius="10"
+                                        Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1">
+                                    <Grid Margin="8,5,8,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="&#xE709;" FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="12" Foreground="{StaticResource AccentCyan}"
+                                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="飞行模式" FontSize="9" Foreground="{StaticResource TextTertiary}"/>
+                                            <TextBlock x:Name="SysCardAirValue" Text="—" FontSize="12.5" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}" Margin="0,1,0,0"/>
+                                            <TextBlock x:Name="SysCardAirDetail" Text="" FontSize="8.5"
+                                                       Foreground="{StaticResource TextTertiary}"
+                                                       TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 隐私（麦克风 / 摄像头占用） -->
+                                <Border Grid.Row="1" Grid.Column="1" Margin="3,3,0,0" CornerRadius="10"
+                                        Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1">
+                                    <Grid Margin="8,5,8,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="&#xE720;" FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="12" Foreground="{StaticResource AccentCyan}"
+                                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="麦克风 / 摄像头" FontSize="9" Foreground="{StaticResource TextTertiary}"/>
+                                            <TextBlock x:Name="SysCardPrivacyValue" Text="—" FontSize="12.5" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}" Margin="0,1,0,0"/>
+                                            <TextBlock x:Name="SysCardPrivacyDetail" Text="" FontSize="8.5"
+                                                       Foreground="{StaticResource TextTertiary}"
+                                                       TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Grid>
                         </Grid>
                     </Grid>
 
-                    <!-- 右侧：类似 Win11 开始菜单的竖向指示器 -->
-                    <Border x:Name="PageIndicatorBorder" Grid.Column="1" VerticalAlignment="Center" Margin="2,0,4,0">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <!-- 点 0 (第一层：音乐播放器) 外层包裹大面积透明点击区 -->
-                            <Border Width="24" Height="22" Background="Transparent" Cursor="Hand" ToolTip="音乐播放器"
-                                    MouseLeftButtonDown="PageDot0_MouseLeftButtonDown">
-                                <Border x:Name="PageDot0" Width="5" Height="12" CornerRadius="2.5"
-                                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                                        Background="#EFFFFFFF" IsHitTestVisible="False"/>
+                    <!-- ============ 第 7 页：下载进度（浏览器 / Steam） ============
+                         数据来自 MainWindow.Downloads.cs（只读浏览器 History 的 downloads 表 + Steam 的
+                         appmanifest 清单）。固定三行，行内进度条宽度由代码按轨道实际宽度 × 比例设置。 -->
+                    <Grid x:Name="DownloadCardLayer" VerticalAlignment="Center" Height="194" Opacity="0" IsHitTestVisible="False">
+                        <Grid.RenderTransform>
+                            <TranslateTransform x:Name="CardPage6Translate" Y="582"/>
+                        </Grid.RenderTransform>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="6,6,6,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Width="30" Height="30" CornerRadius="15"
+                                    Background="#2234D399" BorderBrush="#3334D399" BorderThickness="1">
+                                <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="#34D399"/>
                             </Border>
-                            <!-- 点 1 (第二层：剪切板及历史) 外层包裹大面积透明点击区 -->
-                            <Border Width="24" Height="22" Background="Transparent" Cursor="Hand" ToolTip="剪切板及历史"
-                                    Margin="0,4,0,0"
-                                    MouseLeftButtonDown="PageDot1_MouseLeftButtonDown">
-                                <Border x:Name="PageDot1" Width="5" Height="5" CornerRadius="2.5"
-                                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                                        Background="#4DFFFFFF" IsHitTestVisible="False"/>
-                            </Border>
-                            <!-- 点 2 (第三层：系统音量调节) 外层包裹大面积透明点击区 -->
-                            <Border Width="24" Height="22" Background="Transparent" Cursor="Hand" ToolTip="系统音量调节"
-                                    Margin="0,4,0,0"
-                                    MouseLeftButtonDown="PageDot2_MouseLeftButtonDown">
-                                <Border x:Name="PageDot2" Width="5" Height="5" CornerRadius="2.5"
-                                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                                        Background="#4DFFFFFF" IsHitTestVisible="False"/>
-                            </Border>
-                        </StackPanel>
-                    </Border>
+
+                            <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="下载状态" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <TextBlock x:Name="DownloadCardSummaryText" Text=""
+                                           FontSize="9.5" Margin="0,2,0,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextTertiary}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="6,0,6,6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid x:Name="DlRow1" Grid.Row="0" Margin="0,0,0,3" VerticalAlignment="Center">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="DlName1" Grid.Row="0" FontSize="10.5" Text=""
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <Border x:Name="DlTrack1" Grid.Row="1" Height="4" CornerRadius="2"
+                                        Margin="0,3,0,2" Background="#1FFFFFFF">
+                                    <Border x:Name="DlFill1" Height="4" CornerRadius="2" Width="0"
+                                            HorizontalAlignment="Left" Background="#34D399"/>
+                                </Border>
+                                <TextBlock x:Name="DlMeta1" Grid.Row="2" FontSize="8.5" Text=""
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextTertiary}"/>
+                            </Grid>
+
+                            <Grid x:Name="DlRow2" Grid.Row="1" Margin="0,0,0,3" VerticalAlignment="Center">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="DlName2" Grid.Row="0" FontSize="10.5" Text=""
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <Border x:Name="DlTrack2" Grid.Row="1" Height="4" CornerRadius="2"
+                                        Margin="0,3,0,2" Background="#1FFFFFFF">
+                                    <Border x:Name="DlFill2" Height="4" CornerRadius="2" Width="0"
+                                            HorizontalAlignment="Left" Background="#34D399"/>
+                                </Border>
+                                <TextBlock x:Name="DlMeta2" Grid.Row="2" FontSize="8.5" Text=""
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextTertiary}"/>
+                            </Grid>
+
+                            <Grid x:Name="DlRow3" Grid.Row="2" Margin="0,0,0,3" VerticalAlignment="Center">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="DlName3" Grid.Row="0" FontSize="10.5" Text=""
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <Border x:Name="DlTrack3" Grid.Row="1" Height="4" CornerRadius="2"
+                                        Margin="0,3,0,2" Background="#1FFFFFFF">
+                                    <Border x:Name="DlFill3" Height="4" CornerRadius="2" Width="0"
+                                            HorizontalAlignment="Left" Background="#34D399"/>
+                                </Border>
+                                <TextBlock x:Name="DlMeta3" Grid.Row="2" FontSize="8.5" Text=""
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource TextTertiary}"/>
+                            </Grid>
+
+                            <TextBlock x:Name="DownloadEmptyText" Grid.Row="0" Grid.RowSpan="3"
+                                       Text="暂无下载任务"
+                                       FontSize="10" TextWrapping="Wrap" TextAlignment="Center"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="12,0,12,0"
+                                       Foreground="{StaticResource TextTertiary}"/>
+                        </Grid>
+                    </Grid>
+
                 </Grid>
 
                 <!-- 收回动画中间态那颗球：默认显示**专辑封面**（圆形裁剪），取不到封面时退回 Siri 炫彩渐变。
@@ -1250,6 +1838,18 @@
             </Grid>
         </Border>
         </Grid>
+            <!-- 外置切换线：独立于岛体裁切，共享岛体尺寸与挤压/位移，只在线条附近命中。 -->
+            <Canvas Width="{Binding Width, ElementName=IslandBody}"
+                    Height="{Binding Height, ElementName=IslandBody}"
+                    HorizontalAlignment="Center" VerticalAlignment="Top"
+                    RenderTransform="{Binding RenderTransform, ElementName=IslandBody}"
+                    RenderTransformOrigin="0.5,0.5" Panel.ZIndex="3">
+                <controls:IslandContourHandle x:Name="ComponentHandle"
+                    Canvas.Left="{Binding Width, ElementName=IslandBody}"
+                    Width="34" Height="{Binding Height, ElementName=IslandBody}"
+                    ContourCornerRadius="{Binding CornerRadius, ElementName=IslandBody}"
+                    Visibility="Collapsed"/>
+            </Canvas>
 
         <!-- 右侧置顶小胶囊提示（多岛分离胶囊动效） -->
         <Border x:Name="PinBubble"
@@ -1288,6 +1888,57 @@
             </StackPanel>
         </Border>
 
+        <!-- 卡片旁的缩略岛：展示其他活跃组件；点击切换并保持卡片展开。
+             几何由 Core/SatelliteRail.cs 的左侧车道管理，跟随岛宽变化并避免重叠。 -->
+        <Border x:Name="SideBubble"
+                Width="112" Height="28"
+                CornerRadius="14"
+                Background="{Binding Background, ElementName=IslandBody}"
+                BorderBrush="{StaticResource GlassEdgeBrush}"
+                BorderThickness="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,21,0,0"
+                Panel.ZIndex="2"
+                ClipToBounds="True"
+                Cursor="Hand"
+                MouseLeftButtonUp="SideBubble_MouseLeftButtonUp"
+                IsHitTestVisible="True"
+                Visibility="Collapsed"
+                Opacity="0"
+                RenderTransformOrigin="0.5,0.5">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270"
+                                  Color="#000000" Opacity="0.5"/>
+            </Border.Effect>
+            <Border.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="SideBubbleScale" ScaleX="1" ScaleY="1"/>
+                    <TranslateTransform x:Name="SideBubbleTranslate" X="-160" Y="0"/>
+                </TransformGroup>
+            </Border.RenderTransform>
+            <Grid>
+            <ContentControl x:Name="SideBubbleCustomContent" Visibility="Collapsed"/>
+            <StackPanel x:Name="SideBubbleGeneric" Orientation="Horizontal" Margin="8,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Image x:Name="SideBubbleArtwork" Width="24" Height="24" Visibility="Collapsed"/>
+                <TextBlock x:Name="SideBubbleIcon" Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets"
+                           FontSize="12" Foreground="{StaticResource AccentCyan}"
+                           VerticalAlignment="Center"/>
+                <StackPanel Margin="6,0,0,0">
+                <TextBlock x:Name="SideBubbleText" Text="" FontSize="11" FontWeight="SemiBold"
+                           MaxWidth="104" TextTrimming="CharacterEllipsis"
+                           Foreground="{StaticResource TextPrimary}"
+                           VerticalAlignment="Center"/>
+                <TextBlock x:Name="SideBubbleDetail" FontSize="9" MaxWidth="104" TextTrimming="CharacterEllipsis"
+                           Foreground="{StaticResource TextSecondary}" Margin="0,2,0,0"/>
+                </StackPanel>
+            </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 动态卫星小岛挂载容器（多岛并行显示：音量/下载/蓝牙等缩小为小岛） -->
+        <Grid x:Name="SatellitesHost" Panel.ZIndex="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,18,0,0"/>
+
         <!-- 左侧音乐收缩圆球（多岛分离动效：置顶/播放中其他模块弹出时，音乐向左缩小成圆） -->
         <Border x:Name="MusicOrbBubble"
                 Width="36" Height="36"
@@ -1304,8 +1955,10 @@
                 IsHitTestVisible="True"
                 Visibility="Collapsed"
                 Opacity="0"
-                ToolTip="点击恢复音乐播放器"
+                ToolTip="点击恢复媒体播放器（右键置顶/取消置顶）"
                 MouseLeftButtonDown="MusicOrbBubble_MouseLeftButtonDown"
+                PreviewMouseLeftButtonDown="MusicOrbBubble_MouseLeftButtonDown"
+                PreviewMouseRightButtonUp="MusicOrbBubble_PreviewMouseRightButtonUp"
                 RenderTransformOrigin="0.5,0.5">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270"
@@ -1318,7 +1971,7 @@
                 </TransformGroup>
             </Border.RenderTransform>
             <Grid>
-                <!-- 专辑封面底图（若无封面显示多彩微光渐变） -->
+                <!-- 专辑封面底图（若无封面显示多彩微光渐变与音乐音符） -->
                 <Ellipse x:Name="MusicOrbGradient">
                     <Ellipse.Fill>
                         <RadialGradientBrush>
@@ -1328,12 +1981,19 @@
                         </RadialGradientBrush>
                     </Ellipse.Fill>
                 </Ellipse>
+                <TextBlock x:Name="MusicOrbPlaceholder" Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets"
+                           FontSize="14" Foreground="#FFFFFFFF"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 <Ellipse x:Name="MusicOrbCover" Margin="2" Opacity="0">
                     <Ellipse.Fill>
                         <ImageBrush x:Name="MusicOrbCoverBrush" Stretch="UniformToFill"/>
                     </Ellipse.Fill>
                 </Ellipse>
                 <Ellipse Margin="2" Stroke="#4DFFFFFF" StrokeThickness="1"/>
+                <TextBlock x:Name="MusicOrbPinIcon" Text="&#xE718;" FontFamily="Segoe MDL2 Assets"
+                           FontSize="8" Foreground="{StaticResource AccentCyan}"
+                           HorizontalAlignment="Right" VerticalAlignment="Top"
+                           Margin="0,3,3,0" Visibility="Collapsed"/>
             </Grid>
         </Border>
     </Grid>

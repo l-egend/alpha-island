@@ -13,7 +13,7 @@
             </ResourceDictionary.MergedDictionaries>
 
             <!-- 全局消除按钮的虚线焦点边框 -->
-            <Style TargetType="Button">
+            <Style TargetType="Button" BasedOn="{StaticResource ThemedButton}">
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             </Style>
 

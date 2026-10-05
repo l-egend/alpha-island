@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:motion="clr-namespace:alpha_island.Animation">
 
     <!-- ============================================================
          Windows 11 深色主题（设置界面专用）
@@ -161,6 +162,7 @@
          ============================================================ -->
 
     <Style x:Key="W11Switch" TargetType="CheckBox">
+        <Setter Property="motion:SettingsControlMotion.Enabled" Value="True"/>
         <Setter Property="Width" Value="40"/>
         <Setter Property="Height" Value="20"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -178,11 +180,8 @@
                             <Setter TargetName="Knob" Property="Fill" Value="#FFFFFFFF"/>
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Track" Property="Background" Value="{StaticResource W11AccentBrush}"/>
                             <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource W11AccentBrush}"/>
                             <Setter TargetName="Knob" Property="Fill" Value="#1A1A1A"/>
-                            <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
-                            <Setter TargetName="Knob" Property="Margin" Value="0,0,4,0"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4"/>
@@ -277,7 +276,7 @@
          按钮
          ============================================================ -->
 
-    <Style x:Key="W11Button" TargetType="Button">
+    <Style x:Key="W11Button" TargetType="Button" BasedOn="{StaticResource ThemedButton}">
         <Setter Property="Height" Value="32"/>
         <Setter Property="Padding" Value="14,0"/>
         <Setter Property="FontSize" Value="12.5"/>
@@ -299,6 +298,10 @@
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Bg" Property="Background" Value="{StaticResource W11ControlPressed}"/>
                         </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource W11AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -347,9 +350,16 @@
     </Style>
 
     <!-- 搜索框（导航面板顶部） -->
-    <Style x:Key="W11SearchBox" TargetType="TextBox">
+    <Style x:Key="W11TextBox" TargetType="TextBox" BasedOn="{StaticResource ThemedTextBox}">
+        <Setter Property="Background" Value="{StaticResource W11ControlFill}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource W11ControlBorder}"/>
+        <Setter Property="Foreground" Value="{StaticResource W11TextPrimary}"/>
+        <Setter Property="SelectionBrush" Value="{StaticResource W11AccentBrush}"/>
+    </Style>
+    <Style x:Key="W11SearchBox" TargetType="TextBox" BasedOn="{StaticResource W11TextBox}">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
         <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="Foreground" Value="{StaticResource W11TextPrimary}"/>
         <Setter Property="CaretBrush" Value="{StaticResource W11TextPrimary}"/>

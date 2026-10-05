@@ -52,16 +52,18 @@ namespace alpha_island.Core
         public const double CardWidth = 430;
         /// <summary>无歌词时的卡片高度。</summary>
         public const double CardHeight = 138;
-        /// <summary>有歌词时的卡片高度（多出歌词区 68 + 上下间距 8）。</summary>
+        /// <summary>通用详情页高度。</summary>
         public const double CardHeightLyrics = 214;
+        /// <summary>音乐歌词卡片的独立高度，容纳行距与可选翻译，不影响其他详情页。</summary>
+        public const double MusicCardHeightLyrics = 246;
         public const double CardTop = 18;
         public const double CardCornerRadius = 28;
 
         /// <summary>歌词区各行的固定高度：上一行 / 当前行 / 翻译 / 下一行。</summary>
-        public const double LyricPrevHeight = 15;
-        public const double LyricCurrentHeight = 24;
-        public const double LyricTranslationHeight = 14;
-        public const double LyricNextHeight = 15;
+        public const double LyricPrevHeight = 26;
+        public const double LyricCurrentHeight = 34;
+        public const double LyricTranslationHeight = 17;
+        public const double LyricNextHeight = 26;
         public const double LyricsBlockHeight =
             LyricPrevHeight + LyricCurrentHeight + LyricTranslationHeight + LyricNextHeight;
 

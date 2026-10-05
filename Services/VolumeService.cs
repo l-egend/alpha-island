@@ -18,6 +18,20 @@ namespace alpha_island.Services
         public System.Windows.Visibility CheckVisibility => IsDefault ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
     }
 
+    /// <summary>带采样时间的不可变快照；后台阻塞时不能把旧电平当成连续有声或无声。</summary>
+    internal sealed record AudioPeakSnapshot(IReadOnlyDictionary<string, float> Peaks, long SampledAtMs)
+    {
+        public float Read(string processName, long nowMs)
+        {
+            if (nowMs < SampledAtMs || nowMs - SampledAtMs > 500 || string.IsNullOrWhiteSpace(processName)) return -1f;
+            string key = processName.Trim();
+            int slash = key.LastIndexOfAny(new[] { '\\', '/' });
+            if (slash >= 0) key = key[(slash + 1)..];
+            if (!key.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) key += ".exe";
+            return Peaks.TryGetValue(key, out float peak) && float.IsFinite(peak) && peak is >= 0 and <= 1 ? peak : -1f;
+        }
+    }
+
     /// <summary>音频应用会话信息。</summary>
     public sealed class AudioAppSessionViewModel
     {
@@ -47,6 +61,7 @@ namespace alpha_island.Services
 
         private MMDeviceEnumerator? _enumerator;
         private MMDevice? _currentDevice;
+        private AudioSessionManager? _audioSessionManager;
         private volatile AudioEndpointVolume? _volume;
         private volatile bool _disposed;
         private bool _hasInitialValue;
@@ -95,8 +110,9 @@ namespace alpha_island.Services
         /// 用途：判断"这个播放器自己有没有在出声" —— 这是把媒体状态与真实出声关联起来最可靠的
         /// 一条证据，因为它不受其它应用出声、系统音量、系统静音的影响（端点的环回电平三者都会被带偏）。
         /// </summary>
-        private volatile Dictionary<string, float> _sessionPeakByName =
-            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        private volatile AudioPeakSnapshot _sessionPeaks = new(new Dictionary<string, float>(), 0);
+        // 仅后台刷新线程访问；进程查询仍每 2.5 秒一次，缓存的电平表每 100ms 采样。
+        private List<(string Name, AudioMeterInformation Meter)> _sessionMeters = new();
 
         private AutoResetEvent? _refreshSignal;
         private Thread? _refreshThread;
@@ -212,6 +228,8 @@ namespace alpha_island.Services
         /// <summary>后台刷新循环：落地挂起写入 → 跟随系统默认端点 → 枚举 → 更新缓存 → 有变化就通知 UI。</summary>
         private void RefreshLoop()
         {
+            long nextEnumerationMs = 0;
+            bool refreshLists = true;
             while (!_disposed)
             {
                 // 1) 先把挂起的写入落到端点上。写音量 / 切静音是"抢占式"的：
@@ -238,7 +256,7 @@ namespace alpha_island.Services
                     ApplyAppMuteCore(pendingMutePid);
                 }
 
-                if (!urgent)
+                if (!urgent && (refreshLists || switched || Environment.TickCount64 >= nextEnumerationMs))
                 {
                     // 2) 主动跟随系统默认端点：不依赖 OnDefaultDeviceChanged（驱动/系统偶发不派发），
                     //    每拍读一次默认端点 ID，变了就重绑 —— 这就是"系统里换输出设备后岛内不跟着变"的解药。
@@ -246,7 +264,11 @@ namespace alpha_island.Services
 
                     devices = EnumerateDevicesCore();
                     sessions = EnumerateSessionsCore();
+                    nextEnumerationMs = Environment.TickCount64 + 2500;
+                    refreshLists = false;
                 }
+
+                SampleSessionPeaks();
 
                 if (switched)
                 {
@@ -276,7 +298,7 @@ namespace alpha_island.Services
                     }
                 }
 
-                try { _refreshSignal?.WaitOne(urgent ? 30 : 2500); }
+                try { if (_refreshSignal?.WaitOne(urgent ? 30 : 100) == true) refreshLists = true; }
                 catch (ObjectDisposedException) { break; }
             }
 
@@ -431,6 +453,8 @@ namespace alpha_island.Services
                 _hasInitialValue = true;
 
                 _volume.OnVolumeNotification += HandleVolumeNotification;
+                _audioSessionManager = _currentDevice.AudioSessionManager;
+                if (_audioSessionManager != null) _audioSessionManager.OnSessionCreated += OnAudioSessionCreated;
                 Debug.WriteLine($"[VolumeService] 已绑定音频终结点: {_currentDeviceName}, 音量: {_lastPercent}%, 静音: {_lastMuted}");
             }
             catch (Exception ex)
@@ -441,6 +465,13 @@ namespace alpha_island.Services
 
         private void UnbindCurrentEndpoint()
         {
+            _sessionMeters.Clear();
+            _sessionPeaks = new(new Dictionary<string, float>(), Environment.TickCount64);
+            if (_audioSessionManager != null)
+            {
+                _audioSessionManager.OnSessionCreated -= OnAudioSessionCreated;
+                _audioSessionManager = null;
+            }
             if (_volume != null)
             {
                 try { _volume.OnVolumeNotification -= HandleVolumeNotification; } catch { }
@@ -483,6 +514,8 @@ namespace alpha_island.Services
                 }
             });
         }
+
+        private void OnAudioSessionCreated(object sender, IAudioSessionControl newSession) => RequestRefresh();
 
         /// <summary>快捷切换 Windows 默认音频输出设备（实际调用在后台刷新线程上执行）。</summary>
         public bool SetDefaultDevice(string deviceId)
@@ -578,13 +611,16 @@ namespace alpha_island.Services
         private List<AudioAppSessionViewModel> EnumerateSessionsCore()
         {
             var list = new List<AudioAppSessionViewModel>();
-            var peaks = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+            var meters = new List<(string Name, AudioMeterInformation Meter)>();
+            _sessionMeters = meters;
             if (_currentDevice == null) return list;
             try
             {
                     var sm = _currentDevice.AudioSessionManager;
                     if (sm != null)
                     {
+                        // NAudio 的 Sessions 是缓存集合；只重复读取它不会发现新开的播放会话。
+                        sm.RefreshSessions();
                         var sessions = sm.Sessions;
                         for (int i = 0; i < sessions.Count; i++)
                         {
@@ -606,16 +642,11 @@ namespace alpha_island.Services
                             }
                             catch { }
 
-                            // 会话峰值：同一进程可能有多个会话，取最大的那个
+                            // 保留电平表供快速采样，避免每拍重新查询进程和枚举全部设备。
                             try
                             {
-                                float peak = s.AudioMeterInformation?.MasterPeakValue ?? -1f;
-                                if (peak < 0f) peak = -1f;
-                                if (peak >= 0f && procKey.Length > 0)
-                                {
-                                    if (!peaks.TryGetValue(procKey, out float old) || peak > old)
-                                        peaks[procKey] = peak;
-                                }
+                                if (s.AudioMeterInformation is { } meter && procKey.Length > 0)
+                                    meters.Add((procKey, meter));
                             }
                             catch { }
 
@@ -631,7 +662,6 @@ namespace alpha_island.Services
                             }
                         }
                     }
-                    _sessionPeakByName = peaks;
                 }
                 catch (Exception ex)
                 {
@@ -640,33 +670,29 @@ namespace alpha_island.Services
             return list;
         }
 
+        private void SampleSessionPeaks()
+        {
+            var peaks = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, meter) in _sessionMeters)
+            {
+                try
+                {
+                    float peak = meter.MasterPeakValue;
+                    if (!float.IsFinite(peak) || peak is < 0 or > 1) continue;
+                    if (!peaks.TryGetValue(name, out float old) || peak > old) peaks[name] = peak;
+                }
+                catch { } // 设备断开或会话结束时丢弃证据，不延续旧样本。
+            }
+            _sessionPeaks = new(peaks, Environment.TickCount64);
+        }
+
         /// <summary>
         /// 取指定进程（如 <c>cloudmusic.exe</c>）当前音频会话的峰值；拿不到返回 -1，等于 0 表示
         /// "这个进程自己正在输出静音"。UI 线程只读后台线程拍好的快照，本身不做任何 COM 操作。
         /// </summary>
         public float GetPlayerSessionPeak(string processName)
         {
-            if (string.IsNullOrWhiteSpace(processName)) return -1f;
-
-            var map = _sessionPeakByName;
-            if (map.Count == 0) return -1f;
-
-            string key = processName.Trim();
-            if (map.TryGetValue(key, out float peak)) return peak;
-
-            // SMTC 给的可能是 "cloudmusic" / "cloudmusic.exe" / 带路径的形式，做一次宽松匹配。
-            string stem = key.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                ? key.Substring(0, key.Length - 4) : key;
-            int slash = stem.LastIndexOfAny(new[] { '\\', '/' });
-            if (slash >= 0 && slash + 1 < stem.Length) stem = stem.Substring(slash + 1);
-
-            foreach (var kv in map)
-            {
-                string k = kv.Key;
-                if (k.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) k = k.Substring(0, k.Length - 4);
-                if (string.Equals(k, stem, StringComparison.OrdinalIgnoreCase)) return kv.Value;
-            }
-            return -1f;
+            return _sessionPeaks.Read(processName, Environment.TickCount64);
         }
 
         /// <summary>快捷切换指定进程的音频静音状态（实际调用在后台刷新线程上执行）。</summary>

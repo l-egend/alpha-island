@@ -137,8 +137,17 @@ namespace alpha_island.Controls
             AddLogicalChild(_viewport);
 
             // ── 生命周期 ──
-            Loaded += (_, _) => { if (IsRotating) StartRendering(); };
-            Unloaded += (_, _) => StopRendering();
+            Loaded += (_, _) =>
+            {
+                alpha_island.Animation.MotionPolicy.Changed += SyncMotion;
+                SyncMotion();
+            };
+            Unloaded += (_, _) =>
+            {
+                alpha_island.Animation.MotionPolicy.Changed -= SyncMotion;
+                StopRendering();
+            };
+            IsVisibleChanged += (_, _) => SyncMotion();
         }
 
         // ────────────── Visual 树 ──────────────
@@ -209,10 +218,18 @@ namespace alpha_island.Controls
 
         private void StartRendering()
         {
-            if (_rendering) return;
+            if (_rendering || !IsLoaded || !IsVisible || alpha_island.Animation.MotionPolicy.InstantMorph ||
+                alpha_island.Animation.MotionPolicy.PowerSave) return;
             _rendering = true;
             _lastTick = -1;
             CompositionTarget.Rendering += OnRendering;
+        }
+
+        private void SyncMotion()
+        {
+            if (IsRotating && IsVisible && IsLoaded && !alpha_island.Animation.MotionPolicy.InstantMorph &&
+                !alpha_island.Animation.MotionPolicy.PowerSave) StartRendering();
+            else StopRendering();
         }
 
         private void StopRendering()

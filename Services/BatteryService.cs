@@ -35,7 +35,13 @@ namespace alpha_island.Services
         bool IsCharging,
         BatteryChargeType ChargeType,
         BatteryPowerEvent EventType,
-        int? ChargeRateMilliwatts
+        int? ChargeRateMilliwatts,
+        int? DischargeRateMilliwatts = null,   // 放电功率（电池供电时，毫瓦；A 组③ 派生）
+        int? RemainingLifeSeconds = null,
+        bool HasBattery = true,
+        bool? IsOnAcPower = null,
+        bool IsPowerEstimated = false,
+        DateTime SampledUtc = default
     );
 
     /// <summary>
@@ -67,6 +73,10 @@ namespace alpha_island.Services
 
         private readonly Dispatcher _dispatcher;
         private readonly object _lock = new();
+        private readonly object _reportGate = new();
+        private Task<BatteryReport>? _reportTask;
+        private BatteryStatusInfo? _current;
+        public BatteryStatusInfo? Current => System.Threading.Volatile.Read(ref _current);
 
         private DispatcherTimer? _pollTimer;
         private bool _disposed;
@@ -75,6 +85,7 @@ namespace alpha_island.Services
 
         // 上一次记录的状态
         private bool _lastIsCharging;
+        private bool _hasBaseline;
         private int _lastPercent = -1;
         private bool _warned20;
         private bool _warned10;
@@ -207,11 +218,14 @@ namespace alpha_island.Services
         private void ProcessStatusUpdate(BatteryStatusInfo current)
         {
             if (_disposed) return;
+            System.Threading.Volatile.Write(ref _current, current);
+            bool onAc = current.IsOnAcPower ?? current.IsCharging;
 
             // 首次采样本底
-            if (_lastPercent < 0)
+            if (!_hasBaseline || !current.HasBattery || current.Percent < 0 || current.IsOnAcPower == null)
             {
-                _lastIsCharging = current.IsCharging;
+                _hasBaseline = current.HasBattery && current.Percent >= 0 && current.IsOnAcPower != null;
+                _lastIsCharging = onAc;
                 _lastPercent = current.Percent;
                 return;
             }
@@ -219,17 +233,17 @@ namespace alpha_island.Services
             var eventType = BatteryPowerEvent.None;
 
             // 1. 充电状态改变判定（插上电源 vs 拔出电源）
-            if (current.IsCharging != _lastIsCharging)
+            if (onAc != _lastIsCharging)
             {
                 // 防抖：必须间隔 > 200ms 才提交并触发，防止触点抖动导致丢事件
                 if ((DateTime.UtcNow - _lastPlugEventTime).TotalMilliseconds > 200)
                 {
                     _lastPlugEventTime = DateTime.UtcNow;
-                    _lastIsCharging = current.IsCharging;
-                    eventType = current.IsCharging ? BatteryPowerEvent.PluggedIn : BatteryPowerEvent.Unplugged;
+                    _lastIsCharging = onAc;
+                    eventType = onAc ? BatteryPowerEvent.PluggedIn : BatteryPowerEvent.Unplugged;
 
                     // 重新插入时重置充满通知标记
-                    if (current.IsCharging)
+                    if (onAc)
                     {
                         _notifiedFull = false;
                     }
@@ -243,7 +257,7 @@ namespace alpha_island.Services
             }
 
             // 2. 充满判定
-            if (current.IsCharging && current.Percent >= 100)
+            if (onAc && current.Percent >= 100)
             {
                 if (!_notifiedFull)
                 {
@@ -253,7 +267,7 @@ namespace alpha_island.Services
             }
 
             // 3. 低电量判定（仅在未充电/放电阶段警告）
-            if (!current.IsCharging)
+            if (!onAc)
             {
                 if (current.Percent <= 10 && !_warned10)
                 {
@@ -279,126 +293,81 @@ namespace alpha_island.Services
         /// <summary>查询当前电池即时快照。</summary>
         public BatteryStatusInfo QueryCurrentStatus(BatteryPowerEvent eventType = BatteryPowerEvent.None)
         {
-            int percent = 100;
+            int percent = -1;
+            bool hasBattery = false;
             bool isCharging = false;
-            int? chargeRateMw = null;
-            BatteryChargeType chargeType = BatteryChargeType.Unknown;
-
-            byte acLine = 255;
-            byte flag = 0;
-
+            bool? onAc = null;
+            int? rate = null;
+            int? remainingMwh = null;
+            int remainingSeconds = -1;
             try
             {
-                // 1. 原生 Win32 GetSystemPowerStatus：零延迟硬件物理在线基准
-                if (GetSystemPowerStatus(out var sps))
+                if (GetSystemPowerStatus(out var status))
                 {
-                    acLine = sps.ACLineStatus;
-                    flag = sps.BatteryFlag;
-                    isCharging = acLine == 1;
-                    if (sps.BatteryLifePercent <= 100)
-                    {
-                        percent = sps.BatteryLifePercent;
-                    }
+                    onAc = status.ACLineStatus <= 1 ? status.ACLineStatus == 1 : null;
+                    hasBattery = status.BatteryFlag != 255 && (status.BatteryFlag & 128) == 0;
+                    isCharging = hasBattery && (status.BatteryFlag & 8) != 0;
+                    if (hasBattery && status.BatteryLifePercent <= 100) percent = status.BatteryLifePercent;
+                    remainingSeconds = status.BatteryLifeTime;
                 }
-                else
+                // 上一次硬件查询若挂起，复用它；最多保留一个未完成查询。
+                Task<BatteryReport> task;
+                lock (_reportGate)
                 {
-                    var ps = SystemInformation.PowerStatus;
-                    isCharging = ps.PowerLineStatus == PowerLineStatus.Online;
-                    float lifePercent = ps.BatteryLifePercent;
-                    if (lifePercent >= 0 && lifePercent <= 1.0f)
-                    {
-                        percent = (int)Math.Round(lifePercent * 100f);
-                    }
+                    if (_reportTask == null || _reportTask.IsCompleted)
+                        _reportTask = Task.Run(() => Battery.AggregateBattery.GetReport());
+                    task = _reportTask;
                 }
-
-                // 2. WinRT Battery Report（带 200ms 超时保护，杜绝 ACPI 硬件状态切换时挂起）
-                try
+                if (task.Wait(200))
                 {
-                    BatteryReport? report = null;
-                    var task = Task.Run(() => Battery.AggregateBattery.GetReport());
-                    if (task.Wait(200))
-                    {
-                        report = task.Result;
-                    }
-
-                    if (report != null)
-                    {
-                        chargeRateMw = report.ChargeRateInMilliwatts;
-
-                        // 容量换算百分比（更精确）
-                        if (report.RemainingCapacityInMilliwattHours.HasValue &&
-                            report.FullChargeCapacityInMilliwattHours.HasValue &&
-                            report.FullChargeCapacityInMilliwattHours.Value > 0)
-                        {
-                            percent = (int)Math.Round((double)report.RemainingCapacityInMilliwattHours.Value /
-                                                      report.FullChargeCapacityInMilliwattHours.Value * 100.0);
-                            percent = Math.Clamp(percent, 0, 100);
-                        }
-
-                        // 充电类型推断
-                        if (isCharging)
-                        {
-                            // 途径一：行为特征推断「80% 电池保养模式」
-                            // 当交流电物理在线，且电量处于 75%~85% 区间，若充电功率为 0 或极小(<=250mW)，
-                            // 或 WinRT 状态为 Idle，或电池 Flag 未置位充电位(8)，即识别为电池保养中。
-                            bool isIdleOrLowPower = (chargeRateMw == null || Math.Abs(chargeRateMw.Value) <= 250);
-                            bool isWinRtIdle = report.Status == Windows.System.Power.BatteryStatus.Idle || report.Status == Windows.System.Power.BatteryStatus.NotPresent;
-                            bool isFlagConservation = (flag != 0 && (flag & 8) == 0);
-
-                            if ((percent >= 75 && percent <= 85) && (isIdleOrLowPower || isWinRtIdle || isFlagConservation))
-                            {
-                                chargeType = BatteryChargeType.ConservationMode;
-                            }
-                            else if (chargeRateMw.HasValue && chargeRateMw.Value > 0)
-                            {
-                                // 典型 USB-C PD 充电通常在 18W ~ 65W 区间，适配器往往功率更大
-                                if (chargeRateMw.Value >= 18000 && chargeRateMw.Value <= 65000)
-                                {
-                                    chargeType = BatteryChargeType.PD;
-                                }
-                                else if (chargeRateMw.Value > 65000)
-                                {
-                                    chargeType = BatteryChargeType.StandardAC;
-                                }
-                                else
-                                {
-                                    chargeType = BatteryChargeType.StandardAC;
-                                }
-                            }
-                            else
-                            {
-                                chargeType = BatteryChargeType.StandardAC;
-                            }
-                        }
-                    }
-                    else if (isCharging)
-                    {
-                        // WinRT 未返回时降级基于硬件 Flag 与百分比推断
-                        if (percent >= 75 && percent <= 85 && flag != 0 && (flag & 8) == 0)
-                        {
-                            chargeType = BatteryChargeType.ConservationMode;
-                        }
-                        else
-                        {
-                            chargeType = BatteryChargeType.StandardAC;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine("[BatteryService] WinRT GetReport 异常: " + ex.Message);
-                    if (isCharging)
-                    {
-                        chargeType = (percent >= 75 && percent <= 85) ? BatteryChargeType.ConservationMode : BatteryChargeType.StandardAC;
-                    }
+                    var report = task.Result;
+                    hasBattery = report.Status != Windows.System.Power.BatteryStatus.NotPresent;
+                    isCharging = hasBattery && report.Status == Windows.System.Power.BatteryStatus.Charging;
+                    rate = report.ChargeRateInMilliwatts;
+                    remainingMwh = report.RemainingCapacityInMilliwattHours;
+                    if (hasBattery && remainingMwh.HasValue && report.FullChargeCapacityInMilliwattHours is > 0)
+                        percent = Math.Clamp((int)Math.Round(100.0 * remainingMwh.Value /
+                            report.FullChargeCapacityInMilliwattHours.Value), 0, 100);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) { Debug.WriteLine("[BatteryService] 采样降级: " + ex.Message); }
+
+            int? discharge = null;
+            int? lifeSeconds = null;
+            bool estimated = false;
+            if (hasBattery && onAc == false)
             {
-                Debug.WriteLine("[BatteryService] QueryCurrentStatus 异常: " + ex.Message);
+                if (rate is < 0 && rate != int.MinValue) discharge = -rate.Value;
+                else if (remainingMwh is > 0 && remainingSeconds > 0)
+                {
+                    double watts = remainingMwh.Value * 3600.0 / remainingSeconds;
+                    if (watts <= int.MaxValue) discharge = (int)Math.Round(watts);
+                    estimated = true;
+                }
+                if (remainingSeconds > 0) lifeSeconds = remainingSeconds;
+                else if (remainingMwh is > 0 && discharge is > 0)
+                {
+                    double seconds = remainingMwh.Value * 3600.0 / discharge.Value;
+                    if (seconds < 360000) lifeSeconds = (int)Math.Round(seconds);
+                }
             }
+            if (!hasBattery) percent = -1;
+            // 电池的充电速率无法证明适配器使用 PD，也无法证明厂商开启了保养模式。
+            return new BatteryStatusInfo(percent, isCharging,
+                onAc == true ? BatteryChargeType.StandardAC : BatteryChargeType.Unknown,
+                eventType, rate, discharge, lifeSeconds, hasBattery, onAc, estimated, DateTime.UtcNow);
+        }
+        /// <summary>把毫瓦格式化成瓦（如 18.4 W）。</summary>
+        public static string FormatPower(int? milliwatts)
+            => milliwatts.HasValue && milliwatts.Value > 0 ? $"{milliwatts.Value / 1000.0:0.#} W" : "—";
 
-            return new BatteryStatusInfo(percent, isCharging, chargeType, eventType, chargeRateMw);
+        /// <summary>把剩余秒数格式化成「2 小时 15 分」/「45 分钟」。</summary>
+        public static string FormatRemaining(int? seconds)
+        {
+            if (!seconds.HasValue || seconds.Value <= 0) return "—";
+            var span = TimeSpan.FromSeconds(seconds.Value);
+            if (span.TotalHours >= 1) return $"{(int)span.TotalHours} 小时 {span.Minutes} 分";
+            return $"{Math.Max(1, span.Minutes)} 分钟";
         }
 
         private void Publish(BatteryStatusInfo info)

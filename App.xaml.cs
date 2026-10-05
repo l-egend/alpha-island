@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using alpha_island.Core;
 
 namespace alpha_island
 {
@@ -12,18 +13,23 @@ namespace alpha_island
     /// （ImplicitUsings 会全局引入 System.Windows.Forms），必须显式限定。
     public partial class App : System.Windows.Application
     {
-        private static readonly object LogGate = new();
-
         /// <summary>异常日志路径：%LOCALAPPDATA%\alpha-island\error.log</summary>
-        public static string LogPath { get; } = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "alpha-island", "error.log");
+        public static string LogPath => AppPaths.ErrorLogFile;
 
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
 
-            Exit += (_, args) => Log(new Exception($"Application.Exit fired! Code={args.ApplicationExitCode}"), "AppExit");
+            // 正常退出不是异常。旧实现在这里塞一个 new Exception(..)，导致每次关程序
+            // error.log 末尾都多一条假的 "Application.Exit fired!" 堆栈。
+            Exit += (_, args) => IslandLog.Info("AppExit", $"Application.Exit code={args.ApplicationExitCode}");
+
+            // 服务层既有的上百处 Debug.WriteLine 经由这个监听器统一落盘（Debug 构建）。
+            // .NET Core 里 Debug.WriteLine 会转发到 Trace.Listeners；
+            // Debug.Listeners 在 .NET Core 已被移除，只能挂在 Trace 上。
+            System.Diagnostics.Trace.Listeners.Add(new IslandLogTraceListener(IslandLogLevel.Debug));
+
+            IslandLog.Info("App", $"启动 v{typeof(App).Assembly.GetName().Version} pid={Environment.ProcessId}");
 
             // 托盘/设置窗口跑在 WinForms 的消息循环里，异常默认会弹一个
             // "Microsoft .NET 未处理的异常" 模态框，既难看又断掉调试现场。
@@ -47,21 +53,10 @@ namespace alpha_island
             catch (Exception ex) { Log(ex, "SetupThreadException"); }
         }
 
-        public static void Log(Exception? ex, string source)
-        {
-            if (ex == null) return;
-            try
-            {
-                var dir = Path.GetDirectoryName(LogPath);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-                lock (LogGate)
-                {
-                    File.AppendAllText(LogPath,
-                        $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ({source}) {ex}{Environment.NewLine}{Environment.NewLine}");
-                }
-            }
-            catch { /* 日志失败不能再抛 */ }
-        }
+        /// <summary>
+        /// 保留的老入口，转发到统一的 <see cref="IslandLog"/>。
+        /// 新代码请直接调 IslandLog.Debug/Info/Warn/Error。
+        /// </summary>
+        public static void Log(Exception? ex, string source) => IslandLog.Error(source, ex);
     }
 }

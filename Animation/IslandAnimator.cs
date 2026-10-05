@@ -59,6 +59,11 @@ namespace alpha_island.Animation
         private const double SpecularBaseWidth = 90.0;
         private const double SpecularExtraWidth = 70.0;
 
+        /// <summary>帧预算看门狗：单帧超过这个时长算"慢帧"。</summary>
+        private const double SlowFrameSeconds = 0.045;
+        /// <summary>连续这么多帧都是慢帧 → 判定逐帧积分不划算，直接降级成瞬变。</summary>
+        private const int SlowFrameLimit = 4;
+
         private readonly Border _body;
         private readonly TranslateTransform _translate;
         private readonly ScaleTransform _squashScale;
@@ -110,6 +115,10 @@ namespace alpha_island.Animation
         private string _doneReason = "";
         private double _lastTick = -1;
         private Action? _completed;
+        /// <summary>连续慢帧计数（帧预算看门狗）。</summary>
+        private int _slowFrames;
+        /// <summary>降级日志只打一次，否则每次形变都刷一行。</summary>
+        private static bool _degradeLogged;
 
         /// <summary>
         /// 每帧回传主通道进度 t（0→1，可过冲；缓动模式下已过缓动函数）。
@@ -176,6 +185,21 @@ namespace alpha_island.Animation
         {
             Stop("MorphTo");
 
+            // 「减弱动效」或软件渲染：不做逐帧积分，直接落到目标几何。
+            // SetImmediate 内部会 Stop 一次（幂等）并把 ProgressHook 推到 t=1，
+            // 所以内容层的透明度/封面球会一起到位，不会卡在半透明。
+            if (MotionPolicy.InstantMorph)
+            {
+                if (!_degradeLogged)
+                {
+                    _degradeLogged = true;
+                    Core.IslandLog.Debug("Motion", "形变降级为瞬变：" + MotionPolicy.Describe());
+                }
+                SetImmediate(to);
+                completed?.Invoke();
+                return;
+            }
+
             _from = CurrentGeometry();
             _to = to;
             _via = via;
@@ -235,6 +259,19 @@ namespace alpha_island.Animation
             _completed = null;
         }
 
+        /// <summary>
+        /// 立刻把几何推到终点并触发完成回调。帧预算不足时的降级出口 ——
+        /// 与"被用户打断的 Stop"不同，这里必须回调，否则三段落位链会断在半路。
+        /// </summary>
+        private void FinishImmediately(string reason)
+        {
+            Action? cb = _completed;
+            Stop(reason);
+            _squash = 0;
+            ApplyProgress(1.0, 1.0, 1.0);
+            cb?.Invoke();
+        }
+
         private void OnRendering(object? sender, EventArgs e)
         {
             double now = (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency;
@@ -242,6 +279,26 @@ namespace alpha_island.Animation
             _lastTick = now;
             if (dt <= 0) dt = 1.0 / 60.0;
             if (dt > 0.1) dt = 0.1;
+
+            // 帧预算看门狗：远程桌面 / 虚拟机 / 显卡驱动异常时，逐帧积分只会把 CPU 烧掉、
+            // 帧率还是个位数 —— 连续几帧都慢就直接跳到终点（等价降级成 SetImmediate），
+            // 并把整机标成软件渲染，后续形变一开始就瞬变。
+            if (dt > SlowFrameSeconds)
+            {
+                if (++_slowFrames >= SlowFrameLimit)
+                {
+                    Core.IslandLog.Warn("Motion", string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "连续 {0} 帧超预算（最近 {1:F0}ms）→ 形变降级为瞬变", _slowFrames, dt * 1000.0));
+                    MotionPolicy.MarkSoftwareRendering();
+                    FinishImmediately("slow-frames");
+                    return;
+                }
+            }
+            else
+            {
+                _slowFrames = 0;
+            }
 
             double t;
             double h;

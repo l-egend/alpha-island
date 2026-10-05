@@ -1,0 +1,9 @@
+{
+  "id": "example.clock",
+  "name": "时钟示例",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "assembly": "AlphaIsland.Examples.ClockPlugin.dll",
+  "entryType": "AlphaIsland.Examples.ClockPlugin.ClockPlugin",
+  "description": "演示独立卡片、自动设置和服务生命周期。"
+}

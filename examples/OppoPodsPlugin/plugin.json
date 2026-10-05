@@ -1,0 +1,9 @@
+{
+  "id": "oppo.pods",
+  "name": "耳机控制 · OPPO / 一加 / realme",
+  "version": "0.1.2",
+  "apiVersion": 1,
+  "assembly": "AlphaIsland.Plugins.OppoPods.dll",
+  "entryType": "AlphaIsland.Plugins.OppoPods.OppoPodsPlugin",
+  "description": "独立耳机卡片：左右耳与充电盒电量、降噪、EQ、游戏模式、空间音频和双设备控制。禁用插件即关闭私有蓝牙连接。"
+}

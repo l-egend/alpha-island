@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AssemblyName>AlphaIsland.Plugins.OppoPods</AssemblyName>
+    <Version>0.1.2</Version>
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\PluginSdk\AlphaIsland.PluginSdk.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+    <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
+    <EmbeddedResource Include="upstream\Data\DeviceModels.json" LogicalName="OppoPodsManager.DeviceModels.json" />
+    <EmbeddedResource Include="upstream\Data\EqModeNames*.json" LogicalName="OppoPodsManager.%(Filename)%(Extension)" />
+    <None Update="plugin.json;LICENSE;THIRD-PARTY-NOTICES.md;README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="DeployEarbudsPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
+    <ItemGroup>
+      <PluginFiles Include="$(TargetDir)AlphaIsland.Plugins.OppoPods.dll;$(TargetDir)AlphaIsland.Plugins.OppoPods.pdb;$(TargetDir)AlphaIsland.Plugins.OppoPods.deps.json;$(TargetDir)plugin.json;$(TargetDir)LICENSE;$(TargetDir)THIRD-PARTY-NOTICES.md;$(TargetDir)README.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\oppo.pods" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
