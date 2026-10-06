@@ -24,8 +24,11 @@ namespace alpha_island.Core
     {
         public const string Appearance = "appearance";
         public const string Island = "island";
+        public const string Media = "media";
         public const string Audio = "audio";
         public const string Lyrics = "lyrics";
+        public const string Focus = "focus";
+        public const string Notifications = "notifications";
         public const string Behavior = "behavior";
         public const string System = "system";
         public const string Ai = "ai";

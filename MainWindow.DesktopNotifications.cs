@@ -27,11 +27,12 @@ public partial class MainWindow
     private Grid _notificationsView = null!;
     private UIElement? _notificationRoot;
     private StackPanel _notificationList = null!;
-    private TextBlock _notificationAccessText = null!, _notificationSummary = null!;
+    private TextBlock _notificationAccessText = null!;
+    private DesktopNotificationPill _notificationSummary = null!;
     private CheckBox _notificationQuiet = null!;
     private DispatcherTimer? _notificationUiTimer;
     private DateTimeOffset _desktopExpires;
-    private bool _sessionEventsStarted, _sessionLocked, _notificationAutoCard, _refreshingQuiet;
+    private bool _sessionEventsStarted, _sessionLocked, _notificationAutoCard, _notificationAutoPill, _refreshingQuiet;
     private IslandState _notificationReturnState;
     private string _notificationReturnKey = "music";
 
@@ -39,12 +40,9 @@ public partial class MainWindow
     {
         _desktopPolicy = new DesktopNotificationPolicy(_options);
         _notificationRoot = Content as UIElement;
-        var summaryLayer = new Grid { Width = 328, Height = 32, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        _notificationSummary = UtilityText("系统通知", 12);
-        _notificationSummary.TextWrapping = TextWrapping.NoWrap; _notificationSummary.TextTrimming = TextTrimming.CharacterEllipsis;
-        summaryLayer.Children.Add(_notificationSummary);
-        ((Panel)NetSpeedNotifyLayer.Parent).Children.Add(summaryLayer);
-        _layers.Register(new IslandLayerSpec(DesktopToastKey, summaryLayer, Priority: 60,
+        _notificationSummary = new DesktopNotificationPill();
+        ((Panel)NetSpeedNotifyLayer.Parent).Children.Add(_notificationSummary);
+        _layers.Register(new IslandLayerSpec(DesktopToastKey, _notificationSummary, Priority: 60,
             PriorityOverride: () => _desktopCurrent == null ? 60 : _desktopPolicy.Priority(_desktopCurrent)));
 
         _notificationsView = new Grid { Height = 194, VerticalAlignment = VerticalAlignment.Center, RenderTransform = new TranslateTransform() };
@@ -169,7 +167,7 @@ public partial class MainWindow
     private void OnNotificationUiTick(object? sender, EventArgs e) => TickDesktopNotifications();
     private void StopNotificationTimerIfUnused()
     {
-        if (_systemToasts != null || _sessionEventsStarted) return;
+        if (_systemToasts != null || _sessionEventsStarted || _radioMonitoring) return;
         if (_notificationUiTimer != null) { _notificationUiTimer.Stop(); _notificationUiTimer.Tick -= OnNotificationUiTick; _notificationUiTimer = null; }
     }
     private void TickDesktopNotifications()
@@ -191,18 +189,25 @@ public partial class MainWindow
         _notificationReturnState = _state == IslandState.Bar ? IslandState.Bar : IslandState.Pill;
         _notificationReturnKey = _activeMainIslandKey;
         _desktopCurrent = next; _desktopExpires = now.AddSeconds(SettingsRegistry.GetInt(_options, "NotificationDisplaySeconds", 8));
-        _notificationSummary.Text = $"{next.AppName} · {next.Title}";
-        ShowPillNotification(IslandNotification.Seconds(DesktopToastKey, 120));
-        SetState(IslandState.Card); SwitchCardPage(_pages.IndexOf(IslandPageIds.Notifications), animated: false);
-        _notificationAutoCard = true; RefreshDesktopInbox();
+        _notificationSummary.SetNotification(next);
+        ShowPillNotification(IslandNotification.Seconds(DesktopToastKey, 120) with
+        { Title = _notificationSummary.Title.Text, Detail = _notificationSummary.Detail.Text });
+        if (next.Kind == DesktopEventKind.Message)
+        {
+            SetState(IslandState.Card); SwitchCardPage(_pages.IndexOf(IslandPageIds.Notifications), animated: false);
+            _notificationAutoCard = true;
+        }
+        else _notificationAutoPill = true;
+        RefreshDesktopInbox();
     }
     private void FinishDesktopPopup()
     {
+        bool closePopup = (_notificationAutoCard && _state == IslandState.Card && _pages.ActiveId == IslandPageIds.Notifications)
+            || (_notificationAutoPill && _state == IslandState.Pill && _activeMainIslandKey == DesktopToastKey);
         _desktopCurrent = null;
+        _notificationAutoCard = false; _notificationAutoPill = false;
         if (_layers.IsRegistered(DesktopToastKey)) _layers.Hide(DesktopToastKey);
-        bool closeCard = _notificationAutoCard && _state == IslandState.Card && _pages.ActiveId == IslandPageIds.Notifications;
-        _notificationAutoCard = false;
-        if (closeCard && !_exiting && _approvalCurrent == null)
+        if (closePopup && !_exiting && _approvalCurrent == null)
         {
             if (CanRetainIsland(_notificationReturnKey)) SwitchMainIsland(_notificationReturnKey);
             else if (_activeMainIslandKey == DesktopToastKey)

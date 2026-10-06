@@ -4,10 +4,11 @@ using System.Linq;
 
 namespace alpha_island.Core;
 
-public enum DesktopEventKind { Message, Volume, PowerConnected, PowerDisconnected, LowBattery, CriticalBattery, Locked, Unlocked, System }
+public enum DesktopEventKind { Message, Volume, PowerConnected, PowerDisconnected, LowBattery, CriticalBattery, Locked, Unlocked, System, WifiRadio, BluetoothRadio }
 
 public sealed record DesktopNotification(string Key, string AppId, string AppName, string Title, string Body,
-    DateTimeOffset Created, DesktopEventKind Kind = DesktopEventKind.Message, uint? WindowsId = null, byte[]? Logo = null)
+    DateTimeOffset Created, DesktopEventKind Kind = DesktopEventKind.Message, uint? WindowsId = null, byte[]? Logo = null,
+    bool? RadioEnabled = null)
 {
     public bool IsCritical => Kind is DesktopEventKind.LowBattery or DesktopEventKind.CriticalBattery;
     public bool CanOpenApp => Kind == DesktopEventKind.Message && !string.IsNullOrWhiteSpace(AppId);

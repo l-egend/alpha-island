@@ -639,11 +639,19 @@ namespace alpha_island
         private bool _airplaneKnown;
         private bool _barAirVisible;
         private bool _radioBusy;
+        private bool _radioMonitoring, _radioResample;
+        private int _radioVersion;
+        private long _radioEventSequence;
+        private readonly WirelessRadioTransitions _radioTransitions = new();
+        private readonly List<Windows.Devices.Radios.Radio> _observedRadios = new();
         private bool? _airplaneFake;              // 调试钩子：伪造飞行模式状态
         private const double RadioSampleSeconds = 10;
 
         private void StartTelemetryService()
         {
+            if (_radioMonitoring) return;
+            _radioMonitoring = true; _radioVersion++; _radioTransitions.Reset();
+            StartNotificationUiTimer();
             if (_ticker != null)
             {
                 _ticker.Register("radio", TimeSpan.FromSeconds(RadioSampleSeconds),
@@ -662,6 +670,10 @@ namespace alpha_island
 
         private void StopTelemetryService()
         {
+            _radioMonitoring = false; _radioVersion++; _radioTransitions.Reset();
+            foreach (var radio in _observedRadios) radio.StateChanged -= OnWirelessRadioChanged;
+            _observedRadios.Clear();
+            StopNotificationTimerIfUnused();
             try
             {
                 Windows.Networking.Connectivity.NetworkInformation.NetworkStatusChanged -= OnNetworkStatusChanged;
@@ -681,10 +693,40 @@ namespace alpha_island
             Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => _ = SampleRadioAsync()));
         }
 
+        private void OnWirelessRadioChanged(Windows.Devices.Radios.Radio sender, object args)
+        {
+            if (Dispatcher.HasShutdownStarted) return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+            {
+                if (_radioMonitoring && !_exiting) _ = SampleRadioAsync();
+            }));
+        }
+
+        private void ApplyWirelessRadioStates(IEnumerable<(Windows.Devices.Radios.RadioKind Kind, Windows.Devices.Radios.RadioState State)> radios)
+        {
+            var snapshot = radios.ToArray();
+            foreach (var kind in new[] { Windows.Devices.Radios.RadioKind.WiFi, Windows.Devices.Radios.RadioKind.Bluetooth })
+            {
+                bool? state = WirelessRadioTransitions.Aggregate(snapshot.Where(r => r.Kind == kind).Select(r => r.State));
+                if (!_radioTransitions.Apply(kind, state)) continue;
+                bool wifi = kind == Windows.Devices.Radios.RadioKind.WiFi;
+                if (!SettingsRegistry.GetBool(_options, wifi ? "NotificationWifiRadio" : "NotificationBluetoothRadio", true)) continue;
+                string label = wifi ? "Wi-Fi" : "蓝牙";
+                var item = new DesktopNotification("radio-" + kind + "-" + (++_radioEventSequence), "", "系统状态",
+                    $"{label}已{(state == true ? "开启" : "关闭")}", state == true ? "无线开关已打开" : "无线开关已关闭",
+                    DateTimeOffset.Now, wifi ? DesktopEventKind.WifiRadio : DesktopEventKind.BluetoothRadio, RadioEnabled: state);
+                _desktopInbox.Add(item, _desktopPolicy.CanPopup(item, _sessionLocked), _desktopPolicy);
+                IslandLog.Info("Radio", item.Title);
+            }
+            RefreshDesktopInbox(); TickDesktopNotifications();
+        }
+
         private async Task SampleRadioAsync()
         {
-            if (_radioBusy) return;
+            if (_radioBusy) { _radioResample = true; return; }
+            if (!_radioMonitoring || _exiting) return;
             _radioBusy = true;
+            int version = _radioVersion;
 
             try
             {
@@ -696,12 +738,19 @@ namespace alpha_island
                 else
                 {
                     var radios = await Windows.Devices.Radios.Radio.GetRadiosAsync().AsTask();
+                    if (!_radioMonitoring || _exiting || version != _radioVersion) return;
+                    foreach (var radio in _observedRadios) radio.StateChanged -= OnWirelessRadioChanged;
+                    _observedRadios.Clear();
+                    foreach (var radio in radios) { _observedRadios.Add(radio); radio.StateChanged += OnWirelessRadioChanged; }
+                    ApplyWirelessRadioStates(radios.Select(r => (r.Kind, r.State)));
                     // 每台无线电的开关不能证明系统飞行模式的开关状态。
                     _airplaneKnown = false;
                     _barAirVisible = false;
-                    _wirelessSummary = radios.Count == 0 ? "未检测到无线设备" : string.Join(" / ", radios.Select(r =>
+                    string summary = radios.Count == 0 ? "未检测到无线设备" : string.Join(" / ", radios.Select(r =>
                         r.Kind + " " + (r.State == Windows.Devices.Radios.RadioState.On ? "开" :
-                            r.State == Windows.Devices.Radios.RadioState.Off ? "关" : "未知")));
+                            r.State is Windows.Devices.Radios.RadioState.Off or Windows.Devices.Radios.RadioState.Disabled ? "关" : "未知")));
+                    if (summary != _wirelessSummary) IslandLog.Debug("Radio", "无线开关监听：" + summary);
+                    _wirelessSummary = summary;
                     SyncBarIndicators();
                     if (IsSystemCardVisible) SyncSystemCard();
                     return;
@@ -711,6 +760,8 @@ namespace alpha_island
             }
             catch (Exception ex)
             {
+                if (!_radioMonitoring || version != _radioVersion) return;
+                _radioTransitions.Reset();
                 IslandLog.Warn("Radio", "读取飞行模式失败: " + ex.Message);
                 _airplaneKnown = false;
                 _barAirVisible = false;
@@ -721,6 +772,7 @@ namespace alpha_island
             finally
             {
                 _radioBusy = false;
+                if (_radioResample) { _radioResample = false; if (_radioMonitoring && !_exiting) _ = SampleRadioAsync(); }
             }
         }
 

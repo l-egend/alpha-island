@@ -416,7 +416,7 @@
                 </Grid>
 
                 <!-- ================= 网速提示层（A 组①：下行持续超过阈值时弹一次） ================= -->
-                <Grid x:Name="NetSpeedNotifyLayer" Opacity="0" Width="158" Height="36"
+                <Grid x:Name="NetSpeedNotifyLayer" Opacity="0" Width="284" Height="36"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
                       IsHitTestVisible="False">
                     <controls:NetworkSpeedPill x:Name="NetSpeedRates"/>

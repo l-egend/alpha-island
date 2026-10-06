@@ -8,7 +8,7 @@ public partial class MainWindow
 {
     private void UpdateCompactIslandContent(string key)
     {
-        SideBubble.Width = key == "netspeed" ? IslandSizing.NetworkSatelliteWidth : 144;
+        SideBubble.Width = key == "netspeed" ? StatusSatelliteWidth : 144;
         SideBubble.Height = 40; SideBubble.CornerRadius = new CornerRadius(20);
         SideBubbleArtwork.Source = key == "music" ? _smtc?.Current?.Artwork : null;
         SideBubbleArtwork.Visibility = SideBubbleArtwork.Source != null ? Visibility.Visible : Visibility.Collapsed;

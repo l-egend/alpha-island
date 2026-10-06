@@ -7,7 +7,7 @@ namespace alpha_island.Interop
     /// 所有 Win32 调用集中在这里。原先这些 DllImport 直接堆在 MainWindow.xaml.cs 末尾，
     /// 和界面逻辑混在一起；抽出来后任何模块都能用，也方便单独核对签名。
     /// </summary>
-    internal static class NativeMethods
+    internal static partial class NativeMethods
     {
         // ---- 低级鼠标钩子 ----
         public const int WH_MOUSE_LL = 14;

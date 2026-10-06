@@ -43,7 +43,7 @@ namespace alpha_island
         private double FocusSatelliteWidth => _pomodoro.Options.ShowSeconds ? 112 : 138;
         private double SatelliteWidth(string key) => key switch
         {
-            "netspeed" => IslandSizing.NetworkSatelliteWidth,
+            "netspeed" => StatusSatelliteWidth,
             "card/focus" => FocusSatelliteWidth,
             _ => 36
         };
@@ -56,9 +56,10 @@ namespace alpha_island
             State: PlaybackState.Playing or PlaybackState.Paused or PlaybackState.Changing };
 
         private bool ShouldHidePausedMedia => SettingsRegistry.GetBool(_options, "MediaHideWhenPaused", false)
-            && !_isPinned && _smtc?.Current?.State == PlaybackState.Paused;
-        private bool MusicIslandCanShow => MusicIslandHasMedia && !ShouldHidePausedMedia;
-        private bool HasVisibleMusicPin => _isPinned && MusicIslandHasMedia;
+            && !_isPinned && _smtc?.Current?.State == PlaybackState.Paused
+            && !(_upNextKind == "pause" && UpNextActive);
+        private bool MusicIslandCanShow => MusicIslandHasMedia && !ShouldHidePausedMedia && !ShouldHideForegroundMedia;
+        private bool HasVisibleMusicPin => _isPinned && MusicIslandHasMedia && !ShouldHideForegroundMedia;
 
         private bool CanRetainIsland(string key) => IsIslandActive(key);
 
@@ -893,7 +894,7 @@ namespace alpha_island
             "bluetooth" => "蓝牙设备",
             "netspeed" => "系统状态与网络",
             "system" => "系统事件",
-            DesktopToastKey => "消息通知",
+            DesktopToastKey => _notificationSummary.Title.Text,
             "clipboard" => "剪贴板",
             "approval" => "权限审批",
             "agentstatus" => "AI 助手",

@@ -11,10 +11,10 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\alpha-island.csproj" />
-    <ProjectReference Include="..\..\examples\ClockPlugin\ClockPlugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\examples\TrafficMonitorPlugin\TrafficMonitorPlugin.csproj" />
-    <ProjectReference Include="..\..\examples\OppoPodsPlugin\OppoPodsPlugin.csproj" />
-    <ProjectReference Include="..\..\examples\VivoOfficePlugin\VivoOfficePlugin.csproj" />
+    <ProjectReference Include="..\..\examples\ClockPlugin\ClockPlugin.csproj" ReferenceOutputAssembly="false" AdditionalProperties="DeployPlugin=false" />
+    <ProjectReference Include="..\..\examples\TrafficMonitorPlugin\TrafficMonitorPlugin.csproj" AdditionalProperties="DeployPlugin=false" />
+    <ProjectReference Include="..\..\examples\OppoPodsPlugin\OppoPodsPlugin.csproj" AdditionalProperties="DeployPlugin=false" />
+    <ProjectReference Include="..\..\examples\VivoOfficePlugin\VivoOfficePlugin.csproj" AdditionalProperties="DeployPlugin=false" />
     <ProjectReference Include="..\PluginFixture\PluginFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

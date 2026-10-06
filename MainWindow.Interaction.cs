@@ -37,6 +37,7 @@ namespace alpha_island
 
         private void IslandBody_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            _mediaOpenPointer = IsMediaOpenSurface(e.OriginalSource as DependencyObject) ? e.GetPosition(this) : null;
             if (IsDescendantOf(e.OriginalSource as DependencyObject, ComponentHandle)
                 || IsDescendantOf(e.OriginalSource as DependencyObject, ApprovalAllowButton)
                 || IsDescendantOf(e.OriginalSource as DependencyObject, ApprovalDenyButton)
@@ -126,13 +127,21 @@ namespace alpha_island
             }
         }
 
-        private void IslandBody_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        private async void IslandBody_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
+            var openPointer = _mediaOpenPointer;
+            _mediaOpenPointer = null;
             _isSwiping = false;
             _dragStartedInsideIsland = false;
             if (IslandBody.IsMouseCaptured)
             {
                 IslandBody.ReleaseMouseCapture();
+            }
+            if (openPointer is Point start && (e.GetPosition(this) - start).Length <= 5
+                && IsMediaOpenSurface(e.OriginalSource as DependencyObject))
+            {
+                e.Handled = true;
+                await OpenMediaWindowAsync();
             }
         }
 
@@ -416,7 +425,7 @@ namespace alpha_island
             "battery" => "电量",
             "bluetooth" => "蓝牙",
             "clipboard" => "剪贴板",
-            "netspeed" => "网速",
+            "netspeed" => "系统状态",
             "system" => "系统",
             "download" => "下载",
             "agentstatus" => "助手",
@@ -516,6 +525,7 @@ namespace alpha_island
 
         private void ExpandIslandFromBar()
         {
+            if (ShouldHideForegroundMedia && !HasActiveNotification && _approvalCurrent == null) return;
             _musicIslandDismissed = false;
             // 自动暂停隐藏不妨碍手动访问播放控制；此时直接打开卡片，避免展开空胶囊。
             if (ShouldHidePausedMedia && !HasActiveNotification && _approvalCurrent == null)

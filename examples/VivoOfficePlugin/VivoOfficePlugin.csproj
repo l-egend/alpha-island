@@ -18,7 +18,7 @@
   </ItemGroup>
   <Target Name="DeployVivoPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
     <ItemGroup>
-      <PluginFiles Include="$(TargetDir)AlphaIsland.Plugins.VivoOffice.dll;$(TargetDir)AlphaIsland.Plugins.VivoOffice.pdb;$(TargetDir)AlphaIsland.Plugins.VivoOffice.deps.json;$(TargetDir)plugin.json;$(TargetDir)README.md" />
+      <PluginFiles Include="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).deps.json;$(MSBuildProjectDirectory)\plugin.json;$(MSBuildProjectDirectory)\README.md" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\vivo.office" SkipUnchangedFiles="true" />
   </Target>

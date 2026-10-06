@@ -29,11 +29,30 @@
 	  <Compile Remove="tools\RegressionTests\**\*.cs" />
 	  <Compile Remove="tools\PluginFixture\**\*.cs" />
 	  <Compile Remove="PluginSdk\**\*.cs;examples\**\*.cs" />
+	  <Compile Remove="Hardware\**\*.cs;HardwareWorker\**\*.cs" />
 	  <Page Remove="PluginSdk\**\*.xaml;examples\**\*.xaml" />
 	  <ProjectReference Include="PluginSdk\AlphaIsland.PluginSdk.csproj" />
+	  <ProjectReference Include="Hardware\AlphaIsland.Hardware.csproj" />
+	  <ProjectReference Include="HardwareWorker\AlphaIsland.HardwareWorker.csproj" ReferenceOutputAssembly="false" Private="false" GlobalPropertiesToRemove="OutputPath" />
 	  <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
 	</ItemGroup>
 
+	<!-- Keep the privileged reader and its runtime dependencies together, outside the UI assembly. -->
+	<Target Name="CopyHardwareWorker" AfterTargets="Build">
+	  <ItemGroup>
+	    <HardwareWorkerFiles Include="$(MSBuildProjectDirectory)\HardwareWorker\bin\$(Configuration)\net8.0-windows\**\*" />
+	  </ItemGroup>
+	  <Copy SourceFiles="@(HardwareWorkerFiles)" DestinationFiles="@(HardwareWorkerFiles->'$(OutDir)hardware\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+	</Target>
+
+  <Target Name="PublishHardwareWorker" AfterTargets="ComputeFilesToPublish" DependsOnTargets="CopyHardwareWorker">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(HardwareWorkerFiles)">
+        <RelativePath>hardware\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 	<!-- WPF 资源：窗口 Icon 与托盘图标都从这里按 pack URI 取（用户可在 exe 旁替换同名文件重编译，或直接放 user 覆盖图标） -->
 	<ItemGroup>
 	  <Resource Include="Assets\alpha-island.ico" />

@@ -34,6 +34,7 @@ namespace alpha_island.Core
         // ── 第二批③：下载进度（浏览器 downloads 表 + Steam 清单，只读）──
         public const string DownloadMonitor = "downloadmonitor";
         public const string Cpu = "cpu";
+        public const string HardwarePower = "hardwarepower";
         public const string DesktopNotifications = "desktopnotifications";
         public const string SessionEvents = "sessionevents";
 
@@ -42,7 +43,7 @@ namespace alpha_island.Core
         {
             Smtc, Spectrum, Lyrics, Clipboard, FileTransfer, Volume, Battery, Bluetooth,
             Telemetry, NetworkSpeed, MemoryTrim, PrivacyIndicator, AiChat, AgentBridge,
-            TrafficMonitorLink, DownloadMonitor, Cpu, DesktopNotifications, SessionEvents,
+            TrafficMonitorLink, DownloadMonitor, Cpu, HardwarePower, DesktopNotifications, SessionEvents,
         };
 
         /// <summary>Id → 中文显示名的兜底映射（服务自己的 <c>DisplayName</c> 优先）。</summary>
@@ -65,6 +66,7 @@ namespace alpha_island.Core
             TrafficMonitorLink => "每日流量（TrafficMonitor）",
             DownloadMonitor => "下载进度（浏览器 / Steam）",
             Cpu => "CPU 占用采样",
+            HardwarePower => "CPU＋GPU 硬件功耗",
             DesktopNotifications => "Windows 通知监听",
             SessionEvents => "锁屏与解锁事件",
             _ => id,

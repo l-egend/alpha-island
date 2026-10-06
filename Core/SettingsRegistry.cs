@@ -93,6 +93,8 @@ namespace alpha_island.Core
         {
             if (options == null) return;
             options.Extras ??= new Dictionary<string, JsonElement>();
+            // The temporary easing comparison ended; window handoff now uses quadratic easing.
+            options.Extras.Remove("MediaWindowHandoffEasing");
 
             foreach (var d in Items)
             {
@@ -273,33 +275,36 @@ namespace alpha_island.Core
             var list = new List<SettingDescriptor>();
 
             list.Add(ExtraInt("PomodoroFocusMinutes", "专注时长", "分钟；未开始的阶段立即生效，已开始的阶段保留进度",
-                25, 1, 240, "分钟", SettingsPageIds.System, controlName: "PomodoroFocusMinutesBox"));
+                25, 1, 240, "分钟", SettingsPageIds.Focus, controlName: "PomodoroFocusMinutesBox"));
             list.Add(ExtraInt("PomodoroShortBreakMinutes", "短休息时长", "每轮专注后的短休息", 5, 1, 120,
-                "分钟", SettingsPageIds.System, controlName: "PomodoroShortBreakMinutesBox"));
+                "分钟", SettingsPageIds.Focus, controlName: "PomodoroShortBreakMinutesBox"));
             list.Add(ExtraBool("PomodoroUseLongBreak", "使用长休息", "每完成指定轮数的专注，改用长休息", false,
-                SettingsPageIds.System, controlName: "PomodoroUseLongBreakToggle"));
+                SettingsPageIds.Focus, controlName: "PomodoroUseLongBreakToggle"));
             list.Add(ExtraInt("PomodoroLongBreakMinutes", "长休息时长", "长休息持续时间", 15, 1, 240,
-                "分钟", SettingsPageIds.System, "PomodoroUseLongBreak", controlName: "PomodoroLongBreakMinutesBox"));
+                "分钟", SettingsPageIds.Focus, "PomodoroUseLongBreak", controlName: "PomodoroLongBreakMinutesBox"));
             list.Add(ExtraInt("PomodoroLongBreakEvery", "长休息间隔", "每完成多少轮专注使用一次长休息", 4, 1, 20,
-                "轮", SettingsPageIds.System, "PomodoroUseLongBreak", controlName: "PomodoroLongBreakEveryBox"));
+                "轮", SettingsPageIds.Focus, "PomodoroUseLongBreak", controlName: "PomodoroLongBreakEveryBox"));
             list.Add(ExtraBool("PomodoroAutoStart", "启动时自动开始", "下次启动岛时开始一轮专注", false,
-                SettingsPageIds.System, controlName: "PomodoroAutoStartToggle"));
+                SettingsPageIds.Focus, controlName: "PomodoroAutoStartToggle"));
             list.Add(ExtraBool("PomodoroShowSeconds", "剩余时间显示秒", "关闭后显示向上取整的剩余分钟", true,
-                SettingsPageIds.System, controlName: "PomodoroShowSecondsToggle"));
+                SettingsPageIds.Focus, controlName: "PomodoroShowSecondsToggle"));
             list.Add(ExtraBool("PomodoroAutoCycle", "自动循环", "自动开始下一阶段，完成指定轮数及最后的休息后停止", false,
-                SettingsPageIds.System, controlName: "PomodoroAutoCycleToggle"));
+                SettingsPageIds.Focus, controlName: "PomodoroAutoCycleToggle"));
             list.Add(ExtraInt("PomodoroCycleCount", "自动循环次数", "一次计划包含的专注轮数", 4, 1, 100,
-                "轮", SettingsPageIds.System, "PomodoroAutoCycle", controlName: "PomodoroCycleCountBox"));
+                "轮", SettingsPageIds.Focus, "PomodoroAutoCycle", controlName: "PomodoroCycleCountBox"));
             list.Add(ExtraBool("PomodoroDoubleClickSettings", "双击打开番茄钟设置", "开启：双击打开设置；关闭：双击开始或暂停计时", false,
-                SettingsPageIds.System, controlName: "PomodoroDoubleClickSettingsToggle"));
+                SettingsPageIds.Focus, controlName: "PomodoroDoubleClickSettingsToggle"));
             list.Add(ExtraBool("PomodoroPlaySound", "播放提示音", "专注或休息阶段结束时播放所选系统提示音", false,
-                SettingsPageIds.System, controlName: "PomodoroPlaySoundToggle"));
+                SettingsPageIds.Focus, controlName: "PomodoroPlaySoundToggle"));
             list.Add(ExtraText("PomodoroSound", "提示音", "可选择并试听系统提示音", "提示",
-                SettingsPageIds.System, controlName: "PomodoroSoundBox"));
+                SettingsPageIds.Focus, controlName: "PomodoroSoundBox"));
 
             list.Add(ExtraBool("MediaHideWhenPaused", "媒体暂停时隐藏",
-                "未置顶的媒体暂停时自动收起；手动置顶保持显示，可随时打开继续播放", false, SettingsPageIds.Behavior,
+                "暂停提醒结束后自动收起；手动置顶保持显示，可随时打开继续播放", false, SettingsPageIds.Media,
                 controlName: "MediaHideWhenPausedToggle"));
+            list.Add(ExtraBool("MediaWindowHandoffEnabled", "媒体窗口联动（试验）",
+                "网易云、QQ 音乐、Spotify、酷狗、酷我和 Apple Music 最小化进入岛，点击媒体卡片空白处还原；浏览器仅随前台切换显隐", true, SettingsPageIds.Media,
+                controlName: "MediaWindowHandoffToggle"));
 
             // ===== 已有强类型属性：原先没有 UI 的三项（3.5 顺手补齐滑杆） =====
             // 三个依赖用的总开关也登记进来，让「置灰级联」由注册表统一处理。
@@ -309,7 +314,7 @@ namespace alpha_island.Core
                 Kind = SettingKind.Bool,
                 Label = "音量调节提示",
                 Hint = "调节系统主音量时弹出胶囊，展示动态音量条与数字",
-                PageId = SettingsPageIds.Behavior,
+                PageId = SettingsPageIds.Notifications,
                 ControlName = "VolumeNotifyToggle",
                 DefaultValue = true,
                 Get = o => o.VolumeNotifyEnabled,
@@ -322,7 +327,7 @@ namespace alpha_island.Core
                 Kind = SettingKind.Int,
                 Label = "音量提示停留时长",
                 Hint = "音量胶囊展示指定时长后自动收回细条",
-                PageId = SettingsPageIds.Behavior,
+                PageId = SettingsPageIds.Notifications,
                 ControlName = "VolumeNotifySecondsSlider",
                 ValueTextName = "VolumeNotifySecondsValue",
                 Min = 1,
@@ -341,7 +346,7 @@ namespace alpha_island.Core
                 Kind = SettingKind.Bool,
                 Label = "蓝牙连接提示",
                 Hint = "蓝牙设备连接时弹出一级胶囊，展示 3D 旋转模型与电量",
-                PageId = SettingsPageIds.Behavior,
+                PageId = SettingsPageIds.Notifications,
                 ControlName = "BluetoothNotifyToggle",
                 DefaultValue = true,
                 Get = o => o.BluetoothNotifyEnabled,
@@ -354,7 +359,7 @@ namespace alpha_island.Core
                 Kind = SettingKind.Bool,
                 Label = "电池状态提示",
                 Hint = "电池接入/拔出/充满时弹出胶囊",
-                PageId = SettingsPageIds.Behavior,
+                PageId = SettingsPageIds.System,
                 ControlName = "BatteryNotifyToggle",
                 DefaultValue = true,
                 Get = o => o.BatteryNotifyEnabled,
@@ -367,7 +372,7 @@ namespace alpha_island.Core
                 Kind = SettingKind.Int,
                 Label = "电池提示停留时长",
                 Hint = "电池胶囊展示指定时长后自动收回细条",
-                PageId = SettingsPageIds.Behavior,
+                PageId = SettingsPageIds.System,
                 ControlName = "BatteryNotifySecondsSlider",
                 ValueTextName = "BatteryNotifySecondsValue",
                 Min = 2,
@@ -413,17 +418,24 @@ namespace alpha_island.Core
             }));
 
             // ===== A 组：系统状态（设置页 system，随各功能落地再补 UI） =====
-            list.Add(ExtraBool("CpuMonitorEnabled", "CPU 占用检测", "", true, SettingsPageIds.System, controlName: "CpuMonitorToggle"));
-            list.Add(ExtraBool("SystemToastEnabled", "接收 Windows 通知", "需安装版与通知读取权限", true, SettingsPageIds.System, controlName: "SystemToastToggle"));
-            list.Add(ExtraBool("SessionEventNotifyEnabled", "锁屏与解锁事件", "", true, SettingsPageIds.System, controlName: "SessionEventsToggle"));
-            list.Add(ExtraBool("NotificationQuietMode", "静默模式", "普通消息仅保留在通知中心", false, SettingsPageIds.System, controlName: "NotificationQuietToggle"));
-            list.Add(ExtraBool("NotificationQuietAllowPriority", "静默时允许高优先级", "工具审批始终提示", true, SettingsPageIds.System, controlName: "NotificationQuietPriorityToggle"));
-            list.Add(ExtraBool("NotificationPriorityOnly", "只弹出高优先级通知", "", false, SettingsPageIds.System, controlName: "NotificationPriorityOnlyToggle"));
-            list.Add(ExtraInt("NotificationDisplaySeconds", "消息展示时长", "", 8, 3, 30, "秒", SettingsPageIds.System, controlName: "NotificationDurationSlider", valueTextName: "NotificationDurationValue"));
-            list.Add(ExtraText("NotificationBlockedApps", "屏蔽应用", "应用名称或 AppID；多项用分号分隔", "", SettingsPageIds.System, controlName: "NotificationBlockedAppsBox"));
-            list.Add(ExtraText("NotificationAllowedApps", "仅接收这些应用", "留空接收全部；多项用分号分隔", "", SettingsPageIds.System, controlName: "NotificationAllowedAppsBox"));
-            list.Add(ExtraText("NotificationPriorityApps", "高优先级应用", "多项用分号分隔", "", SettingsPageIds.System, controlName: "NotificationPriorityAppsBox"));
-            list.Add(ExtraText("NotificationKeywords", "仅接收包含这些关键词的消息", "留空不过滤；多项用分号分隔", "", SettingsPageIds.System, controlName: "NotificationKeywordsBox"));
+            list.Add(ExtraBool("CpuMonitorEnabled", "CPU 占用检测", "每秒更新，自动适配当前 Windows 的任务管理器统计方式", true, SettingsPageIds.System, controlName: "CpuMonitorToggle"));
+            foreach (string item in StatusDisplayOptions.All)
+                list.Add(ExtraBool(StatusDisplayOptions.SettingKey(item), StatusDisplayOptions.Label(item), "在状态栏中显示", true,
+                    SettingsPageIds.System, controlName: StatusDisplayOptions.SettingKey(item) + "Toggle"));
+            list.Add(ExtraText("StatusDisplayOrder", "状态栏显示顺序", "按列排列：先上后下，再从左到右", StatusDisplayOptions.DefaultOrder, SettingsPageIds.System));
+            list.Add(ExtraBool("HardwarePowerElevatedReader", "启动时启用硬件读取", "独立读取进程需要 Windows 管理员授权，岛保持普通权限运行", false, SettingsPageIds.System, "HardwarePowerElevatedReaderToggle"));
+            list.Add(ExtraBool("NotificationWifiRadio", "Wi-Fi 开关提醒", "开启或关闭 Wi-Fi 时提醒；遵守静默设置", true, SettingsPageIds.Notifications, controlName: "NotificationWifiRadioToggle"));
+            list.Add(ExtraBool("NotificationBluetoothRadio", "蓝牙开关提醒", "开启或关闭系统蓝牙时提醒；与设备连接提醒独立", true, SettingsPageIds.Notifications, controlName: "NotificationBluetoothRadioToggle"));
+            list.Add(ExtraBool("SystemToastEnabled", "接收 Windows 通知", "需安装版与通知读取权限", true, SettingsPageIds.Notifications, controlName: "SystemToastToggle"));
+            list.Add(ExtraBool("SessionEventNotifyEnabled", "锁屏与解锁事件", "", true, SettingsPageIds.Notifications, controlName: "SessionEventsToggle"));
+            list.Add(ExtraBool("NotificationQuietMode", "静默模式", "普通消息仅保留在通知中心", false, SettingsPageIds.Notifications, controlName: "NotificationQuietToggle"));
+            list.Add(ExtraBool("NotificationQuietAllowPriority", "静默时允许高优先级", "工具审批始终提示", true, SettingsPageIds.Notifications, controlName: "NotificationQuietPriorityToggle"));
+            list.Add(ExtraBool("NotificationPriorityOnly", "只弹出高优先级通知", "", false, SettingsPageIds.Notifications, controlName: "NotificationPriorityOnlyToggle"));
+            list.Add(ExtraInt("NotificationDisplaySeconds", "消息展示时长", "", 8, 3, 30, "秒", SettingsPageIds.Notifications, controlName: "NotificationDurationSlider", valueTextName: "NotificationDurationValue"));
+            list.Add(ExtraText("NotificationBlockedApps", "屏蔽应用", "应用名称或 AppID；多项用分号分隔", "", SettingsPageIds.Notifications, controlName: "NotificationBlockedAppsBox"));
+            list.Add(ExtraText("NotificationAllowedApps", "仅接收这些应用", "留空接收全部；多项用分号分隔", "", SettingsPageIds.Notifications, controlName: "NotificationAllowedAppsBox"));
+            list.Add(ExtraText("NotificationPriorityApps", "高优先级应用", "多项用分号分隔", "", SettingsPageIds.Notifications, controlName: "NotificationPriorityAppsBox"));
+            list.Add(ExtraText("NotificationKeywords", "仅接收包含这些关键词的消息", "留空不过滤；多项用分号分隔", "", SettingsPageIds.Notifications, controlName: "NotificationKeywordsBox"));
             list.Add(ExtraBool("NetSpeedEnabled", "网速检测",
                 "细条上常驻显示实时上下行速率（自动排除回环与虚拟网卡）", true, SettingsPageIds.System,
                 controlName: "NetSpeedEnabledToggle"));

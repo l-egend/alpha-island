@@ -16,6 +16,7 @@ internal static partial class Program
         var pages = AgentField<IslandPageHost>(window, "_pages"); string oldPage = pages.ActiveId;
         var layers = AgentField<IslandLayerHost>(window, "_layers");
         bool oldPlay = options.PlayNotifyEnabled;
+        bool oldPause = options.PauseNotifyEnabled;
         using var smtc = new SmtcService(window.Dispatcher);
         var media = new NowPlayingInfo { Title = "保留的后台媒体", SourceApp = "msedge.exe", SessionId = "pause-hide-ui",
             State = PlaybackState.Playing, CanToggle = true, Duration = TimeSpan.FromMinutes(3) };
@@ -25,6 +26,7 @@ internal static partial class Program
         try
         {
             SetAgentField(window, "_smtc", smtc); layers.HideAll();
+            options.PauseNotifyEnabled = false;
             Check(!SettingsRegistry.GetBool(options, "MediaHideWhenPaused", false), "暂停隐藏默认关闭，旧配置保持可见");
             Apply(paused); PrivateCall(window, "SetMusicPinned", true, true); PrivateCall(window, "SetState", IslandState.Pill);
             Check(Active(), "关闭暂停隐藏时后台暂停的媒体仍可置顶");
@@ -100,6 +102,44 @@ internal static partial class Program
             Apply(paused); PrivateCall(window, "SelectComponent", IslandPageIds.Music);
             Check(AgentField<IslandState>(window, "_state") == IslandState.Card && pages.ActiveId == IslandPageIds.Music
                 && window.PlayPauseButton.IsEnabled, "暂停隐藏后仍可从组件菜单手动打开播放器继续播放");
+            SettingsRegistry.Write(options, "MediaHideWhenPaused", false);
+            options.PlayNotifyEnabled = true; options.PauseNotifyEnabled = false;
+            Apply(paused); Apply(media with { PlaybackStateInferred = true });
+            Check(AgentField<bool>(window, "_upNextShowing") && AgentField<string>(window, "_upNextKind") == "play",
+                "经过音频仲裁确认的恢复播放仍会提醒");
+            Apply(paused); Apply(media);
+            Check(AgentField<bool>(window, "_upNextShowing") && AgentField<string>(window, "_upNextKind") == "play",
+                "明确恢复播放仍保留正在播放提醒");
+            Apply(paused);
+            Check(!AgentField<bool>(window, "_upNextShowing"), "暂停时立即撤销旧播放提示，即使暂停提醒关闭");
+            PrivateCall(window, "SetMusicPinned", false);
+            PrivateCall(window, "CollapseToBar");
+            SettingsRegistry.Write(options, "MediaHideWhenPaused", true);
+            options.PauseNotifyEnabled = true;
+            Apply(media); Apply(paused); PumpAnimations(450); root.UpdateLayout();
+            Check(AgentField<bool>(window, "_upNextShowing") && AgentField<string>(window, "_upNextKind") == "pause"
+                && AgentField<IslandState>(window, "_state") == IslandState.Pill && Active()
+                && window.PillUpNext.Visibility == Visibility.Visible && window.PillUpNextText.Text == "已暂停",
+                "开启暂停隐藏时先展开并显示已暂停提醒");
+            var pauseUntil = AgentField<DateTime>(window, "_upNextUntil");
+            Apply(paused);
+            Check(AgentField<DateTime>(window, "_upNextUntil") == pauseUntil, "重复暂停刷新不会延长提醒时间");
+            PrivateCall(window, "DismissUpNext"); PumpAnimations(450); root.UpdateLayout();
+            Check(!Active() && AgentField<IslandState>(window, "_state") == IslandState.Bar
+                && window.PillLayer.Visibility == Visibility.Collapsed, "暂停提醒结束后自动隐藏，不留下空胶囊");
+            Apply(media); Apply(paused); Apply(media); root.UpdateLayout();
+            Check(AgentField<bool>(window, "_upNextShowing") && window.PillUpNextText.Text == "正在播放"
+                && Active(), "快速暂停后播放立即替换提醒，不被暂停隐藏吞掉");
+            var playUntil = AgentField<DateTime>(window, "_upNextUntil");
+            Apply(media);
+            Check(AgentField<DateTime>(window, "_upNextUntil") == playUntil, "重复播放刷新不会重弹或延长提醒");
+            options.PlayNotifyEnabled = false; Apply(paused); Apply(media);
+            Check(!AgentField<bool>(window, "_upNextShowing"), "关闭恢复播放提醒后播放仍会清除旧暂停提醒");
+            options.PlayNotifyEnabled = true;
+            MediaAudioPromptChecks(window, root, options);
+            SetAgentField(window, "_smtc", smtc); Apply(paused);
+            PrivateCall(window, "DismissUpNext");
+            SettingsRegistry.Write(options, "MediaHideWhenPaused", true);
             PrivateCall(window, "OnClipboardContentCopied", null, ("隔离剪切板测试", false));
             PrivateCall(window, "SyncPausedMediaVisibility");
             Check(AgentField<IslandState>(window, "_state") == IslandState.Pill && layers.IsActive("clipboard"), "暂停隐藏不会连带收回待粘贴剪切板");
@@ -108,10 +148,51 @@ internal static partial class Program
         }
         finally
         {
-            options.PlayNotifyEnabled = oldPlay; options.Extras = savedExtras;
+            options.PlayNotifyEnabled = oldPlay; options.PauseNotifyEnabled = oldPause; options.Extras = savedExtras;
             SetAgentField(window, "_clipboardLocked", false); SetAgentField(window, "_isPinned", false);
             PrivateCall(window, "ApplyNoMedia"); layers.SetPinned("netspeed", false); layers.HideAll();
             SetAgentField(window, "_smtc", oldSmtc); PrivateCall(window, "SetState", oldState, false, oldPage);
         }
+    }
+
+    private static void MediaAudioPromptChecks(alpha_island.MainWindow window, Grid root, IslandOptions options)
+    {
+        using var service = new SmtcService(window.Dispatcher) { AudioProbeEnabled = true };
+        SetAgentField(window, "_smtc", service);
+        service.NowPlayingChanged += (_, info) => { if (info != null) PrivateCall(window, "ApplyMedia", info); };
+        var info = new NowPlayingInfo { Title = "状态提示证据", SourceApp = "cloudmusic.exe", SessionId = "prompt-audio",
+            State = PlaybackState.Paused, Position = TimeSpan.FromSeconds(10), Duration = TimeSpan.Zero };
+        PrivateCall(service, "ObserveReportedState", PlaybackState.Paused);
+        service.UpdateTrack(info, "prompt-audio", null);
+        PrivateCall(window, "DismissUpNext");
+        service.ReportAudioEvidence(0, 2, true, 0, true);
+        Check(service.Current?.State == PlaybackState.Paused && !AgentField<bool>(window, "_upNextShowing"),
+            "暂停尾音既不恢复播放也不误弹正在播放");
+        service.ObserveTimelineEvidence(TimeSpan.FromSeconds(11), DateTimeOffset.UtcNow);
+        service.ReportAudioEvidence(0, .5, true, 0, true); root.UpdateLayout();
+        Check(service.Current?.IsPlaying == true && service.Current.PlaybackStateInferred
+            && AgentField<bool>(window, "_upNextShowing") && window.PillUpNextText.Text == "正在播放",
+            "自身音频与新进度确认恢复播放时真正触发界面提醒");
+        var until = AgentField<DateTime>(window, "_upNextUntil");
+        PrivateCall(service, "ObserveReportedState", PlaybackState.Playing);
+        service.UpdateTrack(service.Current! with { Duration = TimeSpan.FromMinutes(3) }, "prompt-audio", null);
+        Check(AgentField<DateTime>(window, "_upNextUntil") == until, "迟到原生播放确认和时长更新不重复提醒");
+        service.ReportAudioEvidence(2, 0, true, 0, true); root.UpdateLayout();
+        Check(service.Current?.State == PlaybackState.Paused && AgentField<bool>(window, "_upNextShowing")
+            && window.PillUpNextText.Text == "已暂停", "播放器漏报暂停时自身持续静音仍触发已暂停提醒");
+        PrivateCall(window, "DismissUpNext");
+        options.PauseNotifyEnabled = false;
+        service.ObserveTimelineEvidence(TimeSpan.FromSeconds(12), DateTimeOffset.UtcNow);
+        service.ReportAudioEvidence(0, .5, true, 0, true);
+        PrivateCall(window, "DismissUpNext");
+        PrivateCall(service, "ObserveReportedState", PlaybackState.Paused);
+        PrivateCall(service, "PublishResolvedState");
+        service.UpdateTrack(service.Current! with { Duration = TimeSpan.Zero }, "prompt-audio", null);
+        SetAgentField(window, "_lastFetchDuration", TimeSpan.Zero);
+        PrivateCall(service, "ObserveReportedState", PlaybackState.Playing);
+        service.UpdateTrack(service.Current! with { Duration = TimeSpan.FromMinutes(3) }, "prompt-audio", null);
+        Check(AgentField<bool>(window, "_upNextShowing") && window.PillUpNextText.Text == "正在播放",
+            "时长补齐和恢复播放同时到达不会吞掉提醒");
+        options.PauseNotifyEnabled = true;
     }
 }

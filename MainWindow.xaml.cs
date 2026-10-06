@@ -521,6 +521,7 @@ namespace alpha_island
         private SettingsWindow CreateSettingsWindow()
         {
             var window = new SettingsWindow();
+            window.BindHardwarePowerActions(EnableHardwarePowerFromSettingsAsync);
             if (_plugins != null) window.BindPluginHost(_plugins);
             window.Closed += (_, __) => _settingsWindow = null;
             window.OptionsChanged += (_, options) =>
@@ -645,6 +646,7 @@ namespace alpha_island
             // 与「关掉 → 退订 + Dispose」三组手写分支已收敛到 _services.Sync 里，每个服务独立 try/catch。
             _services.Sync(_options);
             _plugins?.Sync(_options);
+            OnStatusDisplayOptionsChanged();
             OnDesktopNotificationOptionsChanged();
 
             // 分页宿主也吃设置：某页在当前设置下不可用时它就从翻页序列里下线（页与翻页点同源）。
@@ -660,6 +662,7 @@ namespace alpha_island
 
             // 「减弱动效」「节能模式」（C 组②）：策略灌进 MotionPolicy，并按当前形态重算节能节奏。
             ApplyMotionPolicy();
+            SyncMediaWindowOptions();
 
             // 「3D 封面」（C 组④）：默认关闭；开启时先过渲染层级门槛，再探一次 3D 到底画不画得出来。
             ApplyCover3DMode();
@@ -681,6 +684,7 @@ namespace alpha_island
 
         private void ExitApplication()
         {
+            StopMediaWindowHandoff();
             EndVolumeDrag();
             CloseComponentSwitcher();
             if (!_runtimeEnabled)

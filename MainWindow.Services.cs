@@ -37,6 +37,8 @@ namespace alpha_island
             // 低频采样的统一节拍（阶段 3.6）。网速/内存/功率/飞行模式/隐私灯都往这里挂订阅，
             // 不再各写一个 DispatcherTimer；没有活跃订阅时它自己会把定时器停掉。
             _ticker = new IslandTicker(Dispatcher);
+            _services.Register(new DelegateIslandService(IslandServiceIds.HardwarePower, IslandServiceIds.DisplayName(IslandServiceIds.HardwarePower),
+                options => SettingsRegistry.GetBool(options, "StatusShowPower", true), StartHardwarePowerService, StopHardwarePowerService, autoStart: true));
 
             // 「关于」页的服务状态区块：直接读宿主，切到那页时现取。
             DiagnosticsReport.RegisterSection("服务状态", () => _services.Report());
@@ -109,7 +111,9 @@ namespace alpha_island
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.Telemetry, IslandServiceIds.DisplayName(IslandServiceIds.Telemetry),
                 options => SettingsRegistry.GetBool(options, "AirplaneBarEnabled", true)
-                           || SettingsRegistry.GetBool(options, "AirplaneNotifyEnabled", false),
+                           || SettingsRegistry.GetBool(options, "AirplaneNotifyEnabled", false)
+                           || SettingsRegistry.GetBool(options, "NotificationWifiRadio", true)
+                           || SettingsRegistry.GetBool(options, "NotificationBluetoothRadio", true),
                 StartTelemetryService, StopTelemetryService,
                 _ => OnTelemetryOptionsChanged(),
                 autoStart: true));

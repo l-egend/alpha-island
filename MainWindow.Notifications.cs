@@ -296,6 +296,7 @@ namespace alpha_island
             "bluetooth" => "蓝牙设备",
             "netspeed" => "系统状态与网络",
             "system" => "系统状态",
+            DesktopToastKey => _notificationSummary.Title.Text,
             "agentstatus" => "助手忙碌",
             _ => CardPinDisplayName(key) ?? "有新提示",
         };

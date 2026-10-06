@@ -22,7 +22,7 @@
   </ItemGroup>
   <Target Name="DeployEarbudsPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
     <ItemGroup>
-      <PluginFiles Include="$(TargetDir)AlphaIsland.Plugins.OppoPods.dll;$(TargetDir)AlphaIsland.Plugins.OppoPods.pdb;$(TargetDir)AlphaIsland.Plugins.OppoPods.deps.json;$(TargetDir)plugin.json;$(TargetDir)LICENSE;$(TargetDir)THIRD-PARTY-NOTICES.md;$(TargetDir)README.md" />
+      <PluginFiles Include="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).deps.json;$(MSBuildProjectDirectory)\plugin.json;$(MSBuildProjectDirectory)\LICENSE;$(MSBuildProjectDirectory)\THIRD-PARTY-NOTICES.md;$(MSBuildProjectDirectory)\README.md" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\oppo.pods" SkipUnchangedFiles="true" />
   </Target>

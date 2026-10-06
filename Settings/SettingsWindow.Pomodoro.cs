@@ -75,11 +75,11 @@ public partial class SettingsWindow
         }
         panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = group });
         _pomodoroSettingsPanel = panel;
-        Page_System.Children.Insert(1, panel);
+        Page_Focus.Children.Add(panel);
     }
     internal void OpenPomodoroSettings()
     {
-        SelectPageByTag(SettingsPageIds.System);
+        SelectPageByTag(SettingsPageIds.Focus);
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
             _pomodoroSettingsPanel.BringIntoView(new Rect(0, 0, Math.Max(1, _pomodoroSettingsPanel.ActualWidth), 40))));
     }

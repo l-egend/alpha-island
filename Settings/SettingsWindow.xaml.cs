@@ -73,6 +73,7 @@ namespace alpha_island.Settings
             };
             InitializeSettingsMotion();
             AddNotificationSettings();
+            AddStatusDisplaySettings();
             AddPomodoroSettings();
 
             _saveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
@@ -391,6 +392,7 @@ namespace alpha_island.Settings
             // 注册表驱动的项（含新功能的 Extras）统一回填；必须在 _suppress 复位之前，
             // 否则回填过程会触发 Setting_Changed/Slider_Changed 把值又写回去。
             LoadRegistryControls();
+            LoadStatusDisplayRows();
             RefreshAiKeyState();
             RefreshAiModelConnection();
 
@@ -721,9 +723,12 @@ namespace alpha_island.Settings
             {
                 (SettingsPageIds.Appearance, Page_Appearance),
                 (SettingsPageIds.Island, Page_Island),
+                (SettingsPageIds.Media, Page_Media),
                 (SettingsPageIds.Audio, Page_Audio),
                 (SettingsPageIds.Lyrics, Page_Lyrics),
+                (SettingsPageIds.Focus, Page_Focus),
                 (SettingsPageIds.Behavior, Page_Behavior),
+                (SettingsPageIds.Notifications, Page_Notifications),
                 (SettingsPageIds.System, Page_System),
                 (SettingsPageIds.Ai, Page_Ai),
                 (SettingsPageIds.Plugins, Page_Plugins),

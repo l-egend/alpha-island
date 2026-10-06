@@ -22,9 +22,7 @@ public static class MediaSourceNames
         if (source.Contains("chrome", StringComparison.OrdinalIgnoreCase)) return "Google Chrome";
         if (source.Contains("firefox", StringComparison.OrdinalIgnoreCase)) return "Firefox";
         if (source.Contains("brave", StringComparison.OrdinalIgnoreCase)) return "Brave";
-        if (source.Contains("cloudmusic", StringComparison.OrdinalIgnoreCase)) return "网易云音乐";
-        if (source.Contains("qqmusic", StringComparison.OrdinalIgnoreCase)) return "QQ音乐";
-        if (source.Contains("spotify", StringComparison.OrdinalIgnoreCase)) return "Spotify";
+        if (MediaHandoffPolicy.PlayerName(source) is { } playerName) return playerName;
         return string.IsNullOrWhiteSpace(source) ? "系统媒体" : System.IO.Path.GetFileNameWithoutExtension(source);
     }
     public static string? Select(IReadOnlyList<MediaSessionInfo> sessions, string? selected, string? previous)

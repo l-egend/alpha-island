@@ -46,11 +46,19 @@ public partial class SettingsWindow
                 box.TextChanged += (s, e) => Setting_Changed(s, e); control = box;
             }
             control.Name = descriptor.ControlName; RegisterName(control.Name, control); Grid.SetColumn(control, 1); row.Children.Add(control);
-            group.Children.Add(row); group.Children.Add(new Border { Style = (Style)FindResource("W11RowDivider") });
+            if (descriptor.PageId == SettingsPageIds.System)
+            {
+                Page_System.Children.Insert(1, new TextBlock { Text = "处理器", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
+                Page_System.Children.Insert(2, new Border { Style = (Style)FindResource("W11Card"), Child = row });
+            }
+            else
+            {
+                group.Children.Add(row); group.Children.Add(new Border { Style = (Style)FindResource("W11RowDivider") });
+            }
         }
         var open = new Button { Style = (Style)FindResource("W11Button"), Content = "通知中心与权限", Margin = new Thickness(14, 12, 14, 12), Padding = new Thickness(10, 6, 10, 6), HorizontalAlignment = HorizontalAlignment.Left };
         open.Click += (_, _) => NotificationCenterRequested?.Invoke(this, EventArgs.Empty); group.Children.Add(open);
         panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = group });
-        Page_System.Children.Insert(1, panel);
+        Page_Notifications.Children.Insert(1, panel);
     }
 }

@@ -94,6 +94,14 @@
                         </RadioButton>
 
                         <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="media" Uid="媒体与播放 音乐 播放 暂停 换曲 窗口 联动 动画 网易云 QQ Spotify 酷狗 酷我 Apple">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8A7;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="媒体与播放" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
                                      Tag="audio" Uid="音频可视化 频谱 灵敏度 设备">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE9E9;" VerticalAlignment="Center" Width="22"/>
@@ -110,10 +118,26 @@
                         </RadioButton>
 
                         <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
-                                     Tag="behavior" Uid="行为 换曲提示 重置">
+                                     Tag="focus" Uid="番茄钟 专注 休息 计时 循环 提示音">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE916;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="番茄钟" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="behavior" Uid="交互与工具 剪切板 热键 文件中转站 重置 维护">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE713;" VerticalAlignment="Center" Width="22"/>
-                                <TextBlock Text="行为" VerticalAlignment="Center"/>
+                                <TextBlock Text="交互与工具" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Checked="Nav_Checked" GroupName="nav" Style="{StaticResource W11NavItem}"
+                                     Tag="notifications" Uid="通知与提醒 消息 静默 权限 过滤 音量 蓝牙 连接 启动 问候">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE7F4;" VerticalAlignment="Center" Width="22"/>
+                                <TextBlock Text="通知与提醒" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
 
@@ -332,6 +356,148 @@
                     </StackPanel>
 
                     <!-- ========== 音频可视化 ========== -->
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Media">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="媒体与播放"/>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="播放行为"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_KeepCompact">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE7C4;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="播放时保持紧凑"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" Style="{StaticResource W11Switch}"
+                                              Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="KeepCompactToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_HidePausedMedia">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE769;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="媒体暂停时隐藏"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="暂停提醒结束后收起；置顶保持显示"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" Style="{StaticResource W11Switch}"
+                                              Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="MediaHideWhenPausedToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_MediaHandoff">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8A7;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="媒体窗口联动（试验）"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="网易云、QQ 音乐、Spotify、酷狗、酷我及 Apple Music；浏览器仅前台隐藏" TextWrapping="Wrap" MaxWidth="370"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="MediaWindowHandoffToggle" Grid.Column="2" Style="{StaticResource W11Switch}"
+                                              Checked="Setting_Changed" Unchecked="Setting_Changed" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_UpNext">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE893;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="换曲提示"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="UpNextToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Pause">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE769;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="暂停提示"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="PauseNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_PlayPrompt">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE768;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="继续播放提示"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="PlayNotifyToggle"/>
+                                </Grid>
+
+                                <Border Style="{StaticResource W11RowDivider}"/>
+
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Duration">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE916;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="提示停留时长"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Slider IsSnapToTickEnabled="True" LargeChange="1" Maximum="20" Minimum="2"
+                                                SmallChange="1" Style="{StaticResource W11Slider}" TickFrequency="1"
+                                                Value="5" ValueChanged="Slider_Changed" Width="140" x:Name="UpNextSlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="UpNextValue"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+
                     <StackPanel Visibility="Collapsed" x:Name="Page_Audio">
                         <TextBlock Style="{StaticResource W11PageTitle}" Text="音频可视化"/>
 
@@ -503,10 +669,14 @@
                     </StackPanel>
 
                     <!-- ========== 行为 ========== -->
-                    <StackPanel Visibility="Collapsed" x:Name="Page_Behavior">
-                        <TextBlock Style="{StaticResource W11PageTitle}" Text="行为"/>
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Focus">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="番茄钟"/>
+                    </StackPanel>
 
-                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="交互"/>
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Behavior">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="交互与工具"/>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="剪切板与热键"/>
                         <Border Style="{StaticResource W11Card}">
                             <StackPanel Orientation="Vertical">
                                 <Grid Style="{StaticResource W11Row}">
@@ -515,52 +685,16 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_KeepCompact">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE7C4;"/>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Clipboard">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8C8;"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="播放时保持紧凑"/>
-                                    </StackPanel>
-                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" Style="{StaticResource W11Switch}"
-                                              Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="KeepCompactToggle"/>
-                                </Grid>
-
-                                <Border Style="{StaticResource W11RowDivider}"/>
-
-                                <Grid Style="{StaticResource W11Row}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_HidePausedMedia">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE769;"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="媒体暂停时隐藏"/>
-                                        <TextBlock Style="{StaticResource W11RowHint}" Text="恢复播放或关闭此开关后重新显示"/>
-                                    </StackPanel>
-                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" Style="{StaticResource W11Switch}"
-                                              Unchecked="Setting_Changed" VerticalAlignment="Center" x:Name="MediaHideWhenPausedToggle"/>
-                                </Grid>
-
-                                <Border Style="{StaticResource W11RowDivider}"/>
-
-                                <Grid Style="{StaticResource W11Row}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_UpNext">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE893;"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="换曲提示"/>
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="复制内容时提示"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="保留至粘贴，可上滑收回"/>
                                     </StackPanel>
                                     <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
                                               Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
-                                              VerticalAlignment="Center" x:Name="UpNextToggle"/>
+                                              VerticalAlignment="Center" x:Name="ClipboardNotifyToggle"/>
                                 </Grid>
 
                                 <Border Style="{StaticResource W11RowDivider}"/>
@@ -571,60 +705,91 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Pause">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE769;"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="暂停提示"/>
-                                    </StackPanel>
-                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
-                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
-                                              VerticalAlignment="Center" x:Name="PauseNotifyToggle"/>
-                                </Grid>
-
-                                <Border Style="{StaticResource W11RowDivider}"/>
-
-                                <Grid Style="{StaticResource W11Row}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_PlayPrompt">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE768;"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="继续播放提示"/>
-                                    </StackPanel>
-                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
-                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
-                                              VerticalAlignment="Center" x:Name="PlayNotifyToggle"/>
-                                </Grid>
-
-                                <Border Style="{StaticResource W11RowDivider}"/>
-
-                                <Grid Style="{StaticResource W11Row}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Duration">
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_ClipboardDuration">
                                         <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE916;"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="提示停留时长"/>
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="粘贴完成提示时长"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Slider IsSnapToTickEnabled="True" LargeChange="1" Maximum="20" Minimum="2"
+                                        <Slider IsSnapToTickEnabled="True" LargeChange="1" Maximum="5" Minimum="1"
                                                 SmallChange="1" Style="{StaticResource W11Slider}" TickFrequency="1"
-                                                Value="5" ValueChanged="Slider_Changed" Width="140" x:Name="UpNextSlider"/>
-                                        <TextBlock Style="{StaticResource W11Value}" x:Name="UpNextValue"/>
+                                                Value="2" ValueChanged="Slider_Changed" Width="140" x:Name="ClipboardAutoCollapseSecondsSlider"/>
+                                        <TextBlock Style="{StaticResource W11Value}" x:Name="ClipboardAutoCollapseSecondsValue"/>
                                     </StackPanel>
                                 </Grid>
 
                                 <Border Style="{StaticResource W11RowDivider}"/>
 
+                                <Grid Style="{StaticResource W11Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_ClipboardPaste">
+                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE77F;"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="鼠标右键替换为粘贴"/>
+                                        <TextBlock Style="{StaticResource W11RowHint}" Text="有待粘贴内容时，右键直接粘贴"/>
+                                    </StackPanel>
+                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                              VerticalAlignment="Center" x:Name="ClipboardRightClickPasteToggle"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="文件中转站"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <Grid Style="{StaticResource W11Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_FileTransfer">
+                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8B7;"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="文件拖拽中转站"/>
+                                </StackPanel>
+                                <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
+                                          Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
+                                          VerticalAlignment="Center" x:Name="FileTransferToggle"/>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="维护"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <Grid Style="{StaticResource W11Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Reset">
+                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE777;"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="重置所有设置"/>
+                                </StackPanel>
+                                <Button Click="ResetDefaultsButton_Click" Content="恢复默认设置" Grid.Column="2"
+                                        Style="{StaticResource W11Button}" VerticalAlignment="Center" x:Name="ResetDefaultsButton"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ========== 系统状态（A 组） ========== -->
+                    <!-- 行里的控件名必须与 Core\SettingsRegistry.cs 的 ControlName 完全一致，
+                         回填/写盘/置灰级联全由注册表统一处理。还没做的功能先只放注册表条目。 -->
+                    <StackPanel Visibility="Collapsed" x:Name="Page_Notifications">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="通知与提醒"/>
+
+                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="音量与蓝牙"/>
+                        <Border Style="{StaticResource W11Card}">
+                            <StackPanel Orientation="Vertical">
                                 <Grid Style="{StaticResource W11Row}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
@@ -772,6 +937,10 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
+                    </StackPanel>
+
+                    <StackPanel Visibility="Collapsed" x:Name="Page_System">
+                        <TextBlock Style="{StaticResource W11PageTitle}" Text="系统状态"/>
 
                         <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="电池与电源"/>
                         <Border Style="{StaticResource W11Card}">
@@ -836,116 +1005,6 @@
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="剪切板与热键"/>
-                        <Border Style="{StaticResource W11Card}">
-                            <StackPanel Orientation="Vertical">
-                                <Grid Style="{StaticResource W11Row}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Clipboard">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8C8;"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="复制内容时提示"/>
-                                        <TextBlock Style="{StaticResource W11RowHint}" Text="保留至粘贴，可上滑收回"/>
-                                    </StackPanel>
-                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
-                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
-                                              VerticalAlignment="Center" x:Name="ClipboardNotifyToggle"/>
-                                </Grid>
-
-                                <Border Style="{StaticResource W11RowDivider}"/>
-
-                                <Grid Style="{StaticResource W11Row}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_ClipboardDuration">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE916;"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="粘贴完成提示时长"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Slider IsSnapToTickEnabled="True" LargeChange="1" Maximum="5" Minimum="1"
-                                                SmallChange="1" Style="{StaticResource W11Slider}" TickFrequency="1"
-                                                Value="2" ValueChanged="Slider_Changed" Width="140" x:Name="ClipboardAutoCollapseSecondsSlider"/>
-                                        <TextBlock Style="{StaticResource W11Value}" x:Name="ClipboardAutoCollapseSecondsValue"/>
-                                    </StackPanel>
-                                </Grid>
-
-                                <Border Style="{StaticResource W11RowDivider}"/>
-
-                                <Grid Style="{StaticResource W11Row}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_ClipboardPaste">
-                                        <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE77F;"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource W11RowLabel}" Text="鼠标右键替换为粘贴"/>
-                                        <TextBlock Style="{StaticResource W11RowHint}" Text="有待粘贴内容时，右键直接粘贴"/>
-                                    </StackPanel>
-                                    <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
-                                              Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
-                                              VerticalAlignment="Center" x:Name="ClipboardRightClickPasteToggle"/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="文件中转站"/>
-                        <Border Style="{StaticResource W11Card}">
-                            <Grid Style="{StaticResource W11Row}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_FileTransfer">
-                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE8B7;"/>
-                                </Border>
-                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="文件拖拽中转站"/>
-                                </StackPanel>
-                                <CheckBox Checked="Setting_Changed" Grid.Column="2" IsChecked="True"
-                                          Style="{StaticResource W11Switch}" Unchecked="Setting_Changed"
-                                          VerticalAlignment="Center" x:Name="FileTransferToggle"/>
-                            </Grid>
-                        </Border>
-
-                        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="维护"/>
-                        <Border Style="{StaticResource W11Card}">
-                            <Grid Style="{StaticResource W11Row}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource W11IconTile}" x:Name="Icon_Reset">
-                                    <TextBlock Style="{StaticResource W11IconGlyph}" Text="&#xE777;"/>
-                                </Border>
-                                <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                                    <TextBlock Style="{StaticResource W11RowLabel}" Text="重置所有设置"/>
-                                </StackPanel>
-                                <Button Click="ResetDefaultsButton_Click" Content="恢复默认设置" Grid.Column="2"
-                                        Style="{StaticResource W11Button}" VerticalAlignment="Center" x:Name="ResetDefaultsButton"/>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-
-                    <!-- ========== 系统状态（A 组） ========== -->
-                    <!-- 行里的控件名必须与 Core\SettingsRegistry.cs 的 ControlName 完全一致，
-                         回填/写盘/置灰级联全由注册表统一处理。还没做的功能先只放注册表条目。 -->
-                    <StackPanel Visibility="Collapsed" x:Name="Page_System">
-                        <TextBlock Style="{StaticResource W11PageTitle}" Text="系统状态"/>
 
                         <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="网络"/>
                         <Border Style="{StaticResource W11Card}">

@@ -42,7 +42,7 @@ namespace alpha_island
 
         private void SyncPausedMediaVisibility()
         {
-            bool hidden = ShouldHidePausedMedia;
+            bool hidden = ShouldHidePausedMedia || ShouldHideForegroundMedia;
             bool wasHidden = _mediaHiddenWhenPaused;
             _mediaHiddenWhenPaused = hidden;
             if (hidden)
@@ -115,6 +115,7 @@ namespace alpha_island
 
         private void ApplyMedia(NowPlayingInfo info)
         {
+            _mediaWindows?.SetSource(info.SourceApp);
             TitleText.Text = info.DisplayTitle;
             ArtistText.Text = string.IsNullOrWhiteSpace(info.Artist) && (info.ContentKind != MediaContentKind.Music || MediaSourceNames.IsBrowser(info.SourceApp))
                 ? info.ContentKind == MediaContentKind.Video ? "视频播放" : "网页媒体" : info.DisplayArtist;
@@ -136,6 +137,11 @@ namespace alpha_island
             ProgressTrack.Cursor = info.CanSeek ? Cursors.Hand : Cursors.Arrow;
             ProgressTrack.Opacity = info.CanSeek ? 1.0 : 0.6;
 
+            if (_upNextShowing && (_upNextKind == "play" && !info.IsPlaying || _upNextKind == "pause" && info.IsPlaying))
+            {
+                _upNextTimer?.Stop(); _upNextShowing = false; _upNextUntil = DateTime.MinValue;
+                SyncUpNextContent();
+            }
             if (!info.IsPlaying)
             {
                 PillSpectrum.Clear();
@@ -154,6 +160,7 @@ namespace alpha_island
             string artist = info.Artist ?? "";
             string identity = info.SourceApp + "|" + info.SessionId + "|" + info.ContentKind;
             bool trackChanged = title != _lastTitle || artist != _lastArtist || _lastMediaIdentity != identity;
+            if (trackChanged || _lastIsPlaying != info.IsPlaying) _mediaWindows?.RefreshSnapshot();
 
             if (trackChanged)
             {
@@ -175,13 +182,16 @@ namespace alpha_island
                 _lastFetchDuration = info.Duration;
                 StartLyricsFetch(info);
             }
-            else if (_sawMedia && _lastIsPlaying == true && !info.IsPlaying && _options.PauseNotifyEnabled && !ShouldHidePausedMedia)
+            // Playback notifications are independent of metadata/lyrics refreshes;
+            // a duration update must not consume the same playback transition.
+            if (_sawMedia && _lastIsPlaying == true && !info.IsPlaying && _options.PauseNotifyEnabled)
             {
                 // 播放中暂停提示：与换曲提示形态一致，中间为当前曲名、右侧为“已暂停”
                 _lyricIndex = -2;
                 BeginPausePrompt(info);
             }
-            else if (_sawMedia && _lastIsPlaying != true && info.IsPlaying && _options.PlayNotifyEnabled)
+            else if (_sawMedia && _lastIsPlaying != true && info.IsPlaying && _options.PlayNotifyEnabled
+                && (!trackChanged || !_options.UpNextEnabled))
             {
                 // 暂停后恢复播放提示：中间为当前曲名、右侧为“正在播放”
                 _lyricIndex = -2;
@@ -196,6 +206,7 @@ namespace alpha_island
 
         private void ApplyNoMedia()
         {
+            _mediaWindows?.SetSource(null);
             _mediaHiddenWhenPaused = false;
             _lastTitle = "";
             _lastMediaIdentity = "";
@@ -391,7 +402,7 @@ namespace alpha_island
                 }
 
                 // 翻页动画期间跳过这一拍的同步 WinRT 调用，杜绝跨进程 IPC 钉住 UI 线程造成掉帧
-                if (!_cardAnimating)
+                if (!_cardAnimating && !_mediaHandoffInFlight)
                 {
                     media.CheckFastPlaybackState();
                 }

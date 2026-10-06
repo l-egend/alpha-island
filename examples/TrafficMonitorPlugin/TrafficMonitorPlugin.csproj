@@ -4,8 +4,8 @@
     <ProjectReference Include="..\..\PluginSdk\AlphaIsland.PluginSdk.csproj"><Private>false</Private><ExcludeAssets>runtime</ExcludeAssets></ProjectReference>
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <Target Name="DeployTrafficMonitorPlugin" AfterTargets="Build">
-    <ItemGroup><PluginFiles Include="$(TargetDir)*.dll;$(TargetDir)*.pdb;$(TargetDir)*.deps.json;$(TargetDir)plugin.json" Exclude="$(TargetDir)AlphaIsland.PluginSdk.dll;$(TargetDir)AlphaIsland.PluginSdk.pdb" /></ItemGroup>
+  <Target Name="DeployTrafficMonitorPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
+    <ItemGroup><PluginFiles Include="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).deps.json;$(MSBuildProjectDirectory)\plugin.json" /></ItemGroup>
     <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\alpha.trafficmonitor" SkipUnchangedFiles="true" />
   </Target>
 </Project>

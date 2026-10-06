@@ -86,9 +86,11 @@ namespace alpha_island
             // 审批操作位于胶囊：不能被普通点击或选页入口切到没有审批按钮的卡片。
             if (_approvalCurrent != null && next == IslandState.Card) next = IslandState.Pill;
             // 暂停隐藏只撤下音乐内容；所有自动降级/再展开入口也必须跳过没有载荷的胶囊。
-            if (next == IslandState.Pill && ShouldHidePausedMedia && _approvalCurrent == null
+            if (next == IslandState.Pill && (ShouldHidePausedMedia || ShouldHideForegroundMedia) && _approvalCurrent == null
                 && !_clipboardLocked && !HasActiveNotification)
                 next = IslandState.Bar;
+            if (next == IslandState.Card && ShouldHideForegroundMedia
+                && (preferredPage ?? _pages.ActiveId) == IslandPageIds.Music) next = IslandState.Bar;
             if (!force && next == _state) return;
             if (_exiting) return;
 

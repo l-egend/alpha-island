@@ -101,7 +101,7 @@ namespace alpha_island
                 UpNextActive || _musicIslandDismissed || ShouldHidePausedMedia || (_greetingShowing && GreetingActive) || _approvalCurrent != null);
 
         /// <summary>当前胶囊形态该用的宽度：通知层在展时回落到基准宽度。</summary>
-        private double CurrentPillWidth => _activeMainIslandKey == "netspeed" ? IslandSizing.SystemPillWidth
+        private double CurrentPillWidth => _activeMainIslandKey == "netspeed" ? StatusPillWidth
             : IslandSizing.PillWidth(PillLyricWantsWide, _pillLyricWidth);
 
         /// <summary>写入胶囊歌词：文本变化时做换行过场动画，然后重新量宽度决定伸缩 / 跑马灯。</summary>
@@ -647,6 +647,7 @@ namespace alpha_island
             _upNextUntil = DateTime.MinValue;
             _lyricIndex = -2;
             SyncUpNextContent();
+            SyncPausedMediaVisibility();
             SyncVisualizers();
             SyncMusicPillContent();
 
@@ -685,7 +686,6 @@ namespace alpha_island
         private void BeginPausePrompt(NowPlayingInfo info)
         {
             if (!info.HasMedia) return;
-            if (ShouldHidePausedMedia) return;
             if (!_options.PauseNotifyEnabled) return;
             if (_greetingShowing && GreetingActive) return;
             if (!CanPresentMediaStatePrompt) return;
@@ -706,6 +706,9 @@ namespace alpha_island
         private void BeginPlayPrompt(NowPlayingInfo info)
         {
             if (!info.HasMedia) return;
+            // SMTC already requires sustained player audio and, after a reported
+            // pause, fresh advancing transport progress. Its resolved transition
+            // can notify even when the player's native status arrives late.
             if (!_options.PlayNotifyEnabled) return;
             if (_greetingShowing && GreetingActive) return;
             if (!CanPresentMediaStatePrompt) return;
@@ -720,7 +723,7 @@ namespace alpha_island
             SyncUpNextContent();
         }
 
-        private bool CanPresentMediaStatePrompt => !_sessionLocked && !_clipboardLocked
+        private bool CanPresentMediaStatePrompt => !ShouldHideForegroundMedia && !_sessionLocked && !_clipboardLocked
             && !_fileDragActive && !_exportingTransferItem && _approvalCurrent == null && !_layers.IsActive(ApprovalLayerKey);
 
         private void BringMediaPromptToMain()

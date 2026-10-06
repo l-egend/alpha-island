@@ -15,8 +15,9 @@
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- 普通 VS 构建即部署示例；不生成安装包。 -->
-  <Target Name="DeployExamplePlugin" AfterTargets="Build">
-    <ItemGroup><PluginFiles Include="$(TargetDir)*.dll;$(TargetDir)*.pdb;$(TargetDir)*.deps.json;$(TargetDir)plugin.json" Exclude="$(TargetDir)AlphaIsland.PluginSdk.dll;$(TargetDir)AlphaIsland.PluginSdk.pdb" /></ItemGroup>
+  <Target Name="DeployExamplePlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
+    <!-- Shared build outputs can contain another project's plugin.json and DLLs. -->
+    <ItemGroup><PluginFiles Include="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).deps.json;$(MSBuildProjectDirectory)\plugin.json" /></ItemGroup>
     <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\example.clock" SkipUnchangedFiles="true" />
   </Target>
 </Project>

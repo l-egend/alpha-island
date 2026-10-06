@@ -43,6 +43,7 @@ namespace alpha_island.Services
         public bool CanNext { get; init; }
         public bool CanPrevious { get; init; }
         public bool CanSeek { get; init; }
+        public bool PlaybackStateInferred { get; init; }
 
         public bool HasMedia => !string.IsNullOrWhiteSpace(Title) || Artwork != null;
         public bool IsPlaying => State == PlaybackState.Playing;
@@ -82,7 +83,14 @@ namespace alpha_island.Services
         private PlaybackState? _commandState;
         private long _commandUntilMs;
         private long _commandVersion;
-        /// <summary>会话、明确状态或控制命令改变后，UI 应重新开始累计音频证据。</summary>
+        private bool _commandAcknowledged;
+        private TimeSpan _pausePosition;
+        private DateTime _pauseStampUtc;
+        private bool _pausedTimelineAdvancing;
+        private readonly DispatcherTimer _metadataProbe;
+        private readonly DispatcherTimer _metadataEvents;
+        private bool _artworkLoading;
+        /// <summary>会话、曲目或控制命令改变后，UI 应重新开始累计音频证据。</summary>
         internal long AudioEvidenceEpoch { get; private set; }
 
         private NowPlayingInfo? _current;
@@ -178,29 +186,50 @@ namespace alpha_island.Services
                 : (endpointEvidenceUsable && endpointSilentSeconds >= AudioSilenceTimeout.TotalSeconds);
             bool active = playerEvidenceAvailable
                           && playerActiveSeconds >= AudioActiveConfirmTime.TotalSeconds;
+            bool confirming = _commandState != null && Environment.TickCount64 < _commandUntilMs;
+            // A peak alone may be the player's buffered tail after pausing. To undo
+            // an explicit pause, require newer transport progress or an accepted play command.
+            if (_reportedState == PlaybackState.Paused && !_pausedTimelineAdvancing
+                && !(confirming && _commandState == PlaybackState.Playing)) active = false;
 
             // 同一份会话证据不可能同时得出两个结论；真出现就按"在出声"处理（宁可显示播放）。
             if (active && silent) silent = false;
 
             if (_reportedState is not (PlaybackState.Playing or PlaybackState.Paused))
             {
+                if (_reportedState == PlaybackState.Changing) return;
                 _audioVetoLatched = false;
                 _audioActiveLatched = false;
                 return;
             }
 
             // 成功命令后的短暂确认窗口不采用执行前残留的音频样本。
-            if (_commandState != null && Environment.TickCount64 < _commandUntilMs)
+            if (confirming && _commandState == PlaybackState.Playing && _commandAcknowledged
+                && _reportedState == PlaybackState.Paused && playerEvidenceAvailable && playerSilentSeconds >= .2)
+            {
+                _commandState = null; confirming = false;
+                _audioActiveLatched = false; _audioVetoLatched = true;
+                PublishResolvedState();
+            }
+            if (confirming)
             {
                 if (_commandState == PlaybackState.Paused) active = false;
                 else silent = false;
             }
 
-            if (silent == _audioVetoLatched && active == _audioActiveLatched) return;
+            // An inconclusive sample (a short gap or a missing meter) cannot undo a
+            // confirmed correction. Only continuous evidence in the opposite direction can.
+            bool veto = _audioVetoLatched, playing = _audioActiveLatched;
+            if (silent) { veto = true; playing = false; }
+            else if (active) { veto = false; playing = true; }
+            else if (playerEvidenceAvailable && _reportedState == PlaybackState.Paused && playerSilentSeconds >= .3
+                && !(confirming && _commandState == PlaybackState.Playing))
+            { veto = true; playing = false; }
+            if (veto == _audioVetoLatched && playing == _audioActiveLatched) return;
 
-            _audioVetoLatched = silent;
-            _audioActiveLatched = active;
-            LogAudioArbitration(silent, active, playerSilentSeconds, endpointSilentSeconds,
+            _audioVetoLatched = veto;
+            _audioActiveLatched = playing;
+            LogAudioArbitration(veto, playing, playerSilentSeconds, endpointSilentSeconds,
                                 playerActiveSeconds, playerEvidenceAvailable);
 
             PublishResolvedState();
@@ -229,6 +258,8 @@ namespace alpha_island.Services
         private PlaybackState ResolveState(PlaybackState reported, string? source = null, MediaContentKind? kind = null)
         {
             if (_commandState is { } requested && Environment.TickCount64 < _commandUntilMs) return requested;
+            if (reported == PlaybackState.Changing && (_current?.State is PlaybackState.Playing or PlaybackState.Paused)
+                && (source == null || source == _current.SourceApp)) return _current.State;
             if (MediaSourceNames.IsBrowser(source ?? Current?.SourceApp ?? "") || (kind ?? Current?.ContentKind) == MediaContentKind.Video) return reported;
             if (!AudioProbeEnabled) return reported;
             if (reported == PlaybackState.Paused && _audioActiveLatched) return PlaybackState.Playing;
@@ -238,13 +269,47 @@ namespace alpha_island.Services
 
         private void ObserveReportedState(PlaybackState reported)
         {
-            if (reported != _reportedState)
+            if (reported == PlaybackState.Paused && _reportedState != PlaybackState.Paused) ObservePause();
+            if (reported is PlaybackState.Closed or PlaybackState.Stopped)
             {
                 _audioActiveLatched = _audioVetoLatched = false;
-                AudioEvidenceEpoch++;
             }
             _reportedState = reported;
-            if (_commandState == reported) _commandState = null;
+            if (_commandState == reported) _commandAcknowledged = true;
+            // Keep the full command confirmation window after an acknowledgement:
+            // some players deliver another old playback notification immediately after it.
+        }
+
+        private void ObservePause()
+        {
+            _pausePosition = EstimatedPosition;
+            _pauseStampUtc = DateTime.UtcNow;
+            _pausedTimelineAdvancing = false;
+            _audioActiveLatched = false;
+            AudioEvidenceEpoch++;
+        }
+
+        private void ObservePlaybackEvent(PlaybackState reported)
+        {
+            bool repeatedPause = reported == PlaybackState.Paused && _reportedState == PlaybackState.Paused;
+            ObserveReportedState(reported);
+            if (reported == PlaybackState.Paused)
+            {
+                if (repeatedPause) ObservePause();
+                // Once play was acknowledged, a new explicit pause is a newer action;
+                // a stale polling sample still uses the command's confirmation window.
+                if (_commandState == PlaybackState.Playing && _commandAcknowledged) _commandState = null;
+            }
+            else if (reported == PlaybackState.Playing
+                && !(_commandState == PlaybackState.Paused && Environment.TickCount64 < _commandUntilMs))
+                _audioVetoLatched = false;
+        }
+
+        internal void ObserveTimelineEvidence(TimeSpan position, DateTimeOffset lastUpdated)
+        {
+            if (_reportedState == PlaybackState.Paused && lastUpdated.UtcDateTime > _pauseStampUtc
+                && lastUpdated <= DateTimeOffset.UtcNow.AddSeconds(1) && position > _pausePosition + TimeSpan.FromMilliseconds(150))
+                _pausedTimelineAdvancing = true;
         }
 
         private void PublishResolvedState()
@@ -254,12 +319,18 @@ namespace alpha_island.Services
             if (state == _current.State) return;
             var position = EstimatedPosition;
             _positionStampUtc = DateTime.UtcNow;
-            Publish(_current with { State = state, Position = position });
+            Publish(_current with { State = state, Position = position, PlaybackStateInferred = true });
         }
 
         public SmtcService(Dispatcher dispatcher)
         {
             _dispatcher = dispatcher;
+            _metadataProbe = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+                { Interval = TimeSpan.FromMilliseconds(500) };
+            _metadataProbe.Tick += (_, _) => { if (!_refreshing) QueueRefresh(); };
+            _metadataEvents = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+                { Interval = TimeSpan.FromMilliseconds(35) };
+            _metadataEvents.Tick += (_, _) => { _metadataEvents.Stop(); QueueRefresh(); };
         }
 
         public async Task InitializeAsync()
@@ -273,6 +344,7 @@ namespace alpha_island.Services
                     _manager = manager;
                     _manager.CurrentSessionChanged += OnCurrentSessionChanged;
                     _manager.SessionsChanged += OnSessionsChanged;
+                    _metadataProbe.Start();
                     QueueRefresh();
                     await _refreshTask;
                 }).Task.Unwrap();
@@ -293,7 +365,15 @@ namespace alpha_island.Services
                                        SessionsChangedEventArgs args) => QueueRefresh();
 
         private void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender,
-                                              MediaPropertiesChangedEventArgs args) => QueueRefresh();
+                                              MediaPropertiesChangedEventArgs args)
+        {
+            _dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_disposed) return;
+                // Coalesce a player's title/artist/album burst before replacing a read.
+                _metadataEvents.Stop(); _metadataEvents.Start();
+            }));
+        }
 
         private void OnTimelinePropertiesChanged(GlobalSystemMediaTransportControlsSession sender,
                                                  TimelinePropertiesChangedEventArgs args)
@@ -311,7 +391,7 @@ namespace alpha_island.Services
                     _activated[SessionId(sender)] = ++_activationOrder; } catch { }
                 var best = GetBestSession();
                 if (!IsSameSession(best, _session)) QueueRefresh();
-                else CheckFastPlaybackState(updateTimeline: true);
+                else CheckFastPlaybackState(updateTimeline: true, fromPlaybackEvent: true);
             }));
         }
 
@@ -319,7 +399,7 @@ namespace alpha_island.Services
         /// 极速同步检测当前会话播放状态。
         /// 媒体事件直接调用，主界面定时器补查漏发事件；状态同步不等待曲目属性或封面。
         /// </summary>
-        public void CheckFastPlaybackState(bool updateTimeline = false)
+        public void CheckFastPlaybackState(bool updateTimeline = false, bool fromPlaybackEvent = false)
         {
             if (_disposed) return;
             var session = _session;
@@ -334,12 +414,14 @@ namespace alpha_island.Services
                 if (playback != null)
                 {
                     var reported = MapState(playback.PlaybackStatus);
-                    ObserveReportedState(reported);
+                    if (fromPlaybackEvent) ObservePlaybackEvent(reported);
+                    else ObserveReportedState(reported);
                     var newState = ResolveState(reported);
                     var controls = playback.Controls;
                     var updated = _current with
                     {
                         State = newState,
+                        PlaybackStateInferred = newState != reported && !(_commandState == newState && Environment.TickCount64 < _commandUntilMs),
                         CanToggle = controls?.IsPlayPauseToggleEnabled == true || controls?.IsPlayEnabled == true || controls?.IsPauseEnabled == true,
                         CanNext = controls?.IsNextEnabled ?? false,
                         CanPrevious = controls?.IsPreviousEnabled ?? false
@@ -419,8 +501,10 @@ namespace alpha_island.Services
         {
             _session = null;
             _artworkKey = ""; _artwork = null; _audioVetoLatched = _audioActiveLatched = false;
+            _artworkLoading = false;
             _artworkVersion++; _artworkCancellation?.Cancel();
             _commandState = null; _commandVersion++; AudioEvidenceEpoch++;
+            _commandAcknowledged = false; _pausedTimelineAdvancing = false; _pausePosition = TimeSpan.Zero;
         }
 
         // ---------------- 刷新（合并高频事件） ----------------
@@ -494,7 +578,8 @@ namespace alpha_island.Services
             _metadataCancellation?.Dispose();
             _metadataCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             var token = _metadataCancellation.Token;
-            var props = await capturedSession.TryGetMediaPropertiesAsync().AsTask(token).WaitAsync(token);
+            var readStarted = Stopwatch.GetTimestamp();
+            var props = await Task.Run(async () => await capturedSession.TryGetMediaPropertiesAsync().AsTask(token).ConfigureAwait(false), token).WaitAsync(token);
             if (_disposed || version != _metadataVersion || !IsSameSession(capturedSession, _session)) return;
 
             string title = props?.Title ?? "";
@@ -509,7 +594,7 @@ namespace alpha_island.Services
                 await Task.Delay(100, token);
                 if (_session != null)
                 {
-                    props = await capturedSession.TryGetMediaPropertiesAsync().AsTask(token).WaitAsync(token);
+                    props = await Task.Run(async () => await capturedSession.TryGetMediaPropertiesAsync().AsTask(token).ConfigureAwait(false), token).WaitAsync(token);
                     if (_disposed || version != _metadataVersion || !IsSameSession(capturedSession, _session)) return;
                     title = props?.Title ?? "";
                     artist = props?.Artist ?? "";
@@ -521,6 +606,8 @@ namespace alpha_island.Services
             _titles[SessionId(capturedSession)] = title;
             Sessions = Sessions.Select(item => item.Id == SessionId(capturedSession) ? item with { Title = title } : item).ToArray();
             string key = SessionId(capturedSession) + "\u0001" + title + "\u0001" + artist + "\u0001" + album;
+            if (key != _artworkKey)
+                IslandLog.Debug("SMTC", $"曲目属性更新: source={source} read={Stopwatch.GetElapsedTime(readStarted).TotalMilliseconds:0}ms");
             // 属性请求完成后才取播放状态，不能让异步读取前的旧状态覆盖较新的播放事件。
             var playback = capturedSession.GetPlaybackInfo();
             var state = MapState(playback?.PlaybackStatus);
@@ -566,6 +653,7 @@ namespace alpha_island.Services
                 if (duration > TimeSpan.Zero && position > duration) position = duration;
 
                 DateTimeOffset lastUpdated = timeline.LastUpdatedTime;
+                ObserveTimelineEvidence(position, lastUpdated);
                 if (lastUpdated != default)
                 {
                     var now = DateTimeOffset.UtcNow;
@@ -613,12 +701,25 @@ namespace alpha_island.Services
                 _artworkVersion++;
                 _artworkKey = key;
                 _artwork = null;
+                _artworkLoading = false;
+                if (_current == null || _current.SessionId != info.SessionId || _current.SourceApp != info.SourceApp)
+                    _audioActiveLatched = _audioVetoLatched = false;
+                AudioEvidenceEpoch++;
+                if (_reportedState == PlaybackState.Paused)
+                {
+                    _pausePosition = info.Position; _pauseStampUtc = DateTime.UtcNow;
+                    _pausedTimelineAdvancing = false;
+                }
             }
             // 用当前曲目的来源决定仲裁，不借用上一首曲目的类型。
-            Publish(info with { Artwork = _artwork, State = ResolveState(_reportedState, info.SourceApp, info.ContentKind) });
-            if (changed && readArtwork != null)
+            var resolved = ResolveState(_reportedState, info.SourceApp, info.ContentKind);
+            Publish(info with { Artwork = _artwork, State = resolved,
+                PlaybackStateInferred = resolved != _reportedState && !(_commandState == resolved && Environment.TickCount64 < _commandUntilMs) });
+            if (_artwork == null && !_artworkLoading && readArtwork != null)
             {
+                _artworkCancellation?.Dispose();
                 _artworkCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                _artworkLoading = true;
                 _ = RefreshArtworkAsync(key, _artworkVersion, info.SessionId, readArtwork, _artworkCancellation.Token);
             }
         }
@@ -637,6 +738,7 @@ namespace alpha_island.Services
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { Debug.WriteLine("[SMTC] 封面刷新失败: " + ex.Message); }
+            finally { if (version == _artworkVersion) _artworkLoading = false; }
         }
 
         /// <summary>
@@ -653,6 +755,8 @@ namespace alpha_island.Services
         private void Publish(NowPlayingInfo? info)
         {
             if (_debugOverride != null) info = _debugOverride;
+            if (_current?.State != info?.State)
+                IslandLog.Debug("SMTC", $"状态同步: {_current?.State}->{info?.State} reported={_reportedState} command={(_commandState != null && Environment.TickCount64 < _commandUntilMs ? _commandState : null)} veto={_audioVetoLatched} active={_audioActiveLatched}");
             _current = info;
             if (_dispatcher.CheckAccess())
             {
@@ -747,25 +851,32 @@ namespace alpha_island.Services
                     : target == PlaybackState.Paused && controls?.IsPauseEnabled == true
                         ? () => s.TryPauseAsync().AsTask()
                         : controls?.IsPlayPauseToggleEnabled == true ? () => s.TryTogglePlayPauseAsync().AsTask() : null;
-                if (request != null) await ExecutePlaybackCommandAsync(SessionId(s), target, request);
+                bool explicitRequest = target == PlaybackState.Playing ? controls?.IsPlayEnabled == true : controls?.IsPauseEnabled == true;
+                var reported = MapState(playback?.PlaybackStatus);
+                bool predictableToggle = target == PlaybackState.Playing ? reported == PlaybackState.Paused : reported == PlaybackState.Playing;
+                if (request != null) await ExecutePlaybackCommandAsync(SessionId(s), target, request, explicitRequest || predictableToggle);
             }
             catch (Exception ex) { Debug.WriteLine(ex); }
             CheckFastPlaybackState();
             QueueRefresh();
         }
 
-        internal async Task ExecutePlaybackCommandAsync(string sessionId, PlaybackState target, Func<Task<bool>> request)
+        internal async Task ExecutePlaybackCommandAsync(string sessionId, PlaybackState target, Func<Task<bool>> request, bool optimistic = true)
         {
             long version = ++_commandVersion;
             bool accepted = await request();
             if (!accepted || _disposed || version != _commandVersion || _current?.SessionId != sessionId) return;
+            // Toggle-only providers do not describe the resulting state. If the raw
+            // state disagrees with the button, wait for feedback instead of guessing "playing".
+            if (!optimistic) return;
             var position = EstimatedPosition;
             _commandState = target;
+            _commandAcknowledged = false;
             _commandUntilMs = Environment.TickCount64 + 2000;
             _audioVetoLatched = _audioActiveLatched = false;
             AudioEvidenceEpoch++;
             _positionStampUtc = DateTime.UtcNow;
-            Publish(_current with { State = target, Position = position });
+            Publish(_current with { State = target, Position = position, PlaybackStateInferred = false });
         }
 
         public async Task NextAsync()
@@ -828,7 +939,8 @@ namespace alpha_island.Services
                         Duration = cur.Duration,
                         CanNext = cur.CanNext,
                         CanPrevious = cur.CanPrevious,
-                        CanSeek = cur.CanSeek
+                        CanSeek = cur.CanSeek,
+                        PlaybackStateInferred = cur.PlaybackStateInferred
                     };
                     _positionStampUtc = DateTime.UtcNow;
                 }
@@ -841,6 +953,7 @@ namespace alpha_island.Services
         {
             if (_disposed) return;
             _disposed = true;
+            _metadataProbe.Stop(); _metadataEvents.Stop();
             _metadataCancellation?.Cancel(); _metadataCancellation?.Dispose();
             _artworkCancellation?.Cancel(); _artworkCancellation?.Dispose();
             _artworkCancellation = null;

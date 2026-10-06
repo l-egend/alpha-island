@@ -112,11 +112,41 @@ internal static partial class Program
                 System.Console.WriteLine($"All {_checks} paused media checks passed.");
                 return;
             }
+            if (args.Contains("--media-handoff-only"))
+            {
+                MediaHandoffPolicyChecks();
+                IslandUi(root, handoffOnly: true);
+                System.Console.WriteLine($"All {_checks} media window handoff checks passed.");
+                return;
+            }
             if (args.Contains("--media-sync-only"))
             {
                 await MediaSynchronizationChecks();
                 IslandUi(root, pausedOnly: true);
                 System.Console.WriteLine($"All {_checks} media synchronization checks passed.");
+                return;
+            }
+            if (args.Contains("--cpu-only"))
+            {
+                CpuSamplingPolicyChecks();
+                await CpuLiveSamplingChecks();
+                IslandUi(root, cpuOnly: true);
+                System.Console.WriteLine($"All {_checks} CPU sampling checks passed.");
+                return;
+            }
+            if (args.Contains("--hardware-power-only") || args.Contains("--hardware-power-elevated"))
+            {
+                StatusDisplayPolicyChecks();
+                await HardwarePowerArchitectureChecks(args.Contains("--hardware-power-elevated"));
+                Console.WriteLine($"All {_checks} independent hardware power checks passed.");
+                return;
+            }
+            if (args.Contains("--status-display-only"))
+            {
+                StatusDisplayPolicyChecks();
+                await HardwarePowerLiveChecks();
+                IslandUi(root, statusOnly: true);
+                System.Console.WriteLine($"All {_checks} status display and wireless checks passed.");
                 return;
             }
             if (args.Contains("--ai-config-only"))
@@ -133,8 +163,10 @@ internal static partial class Program
             PinDismissal();
             NetworkTelemetry();
             MediaAndTrafficChecks(root);
+            MediaHandoffPolicyChecks();
             await MediaSynchronizationChecks();
             DesktopNotifications();
+            CpuSamplingPolicyChecks();
             NativeClipboardReadChecks();
             IslandUi(root);
             Storage(root);
@@ -406,7 +438,7 @@ internal static partial class Program
             "CPU 重置或无采样间隔显示未知而非假数值");
     }
 
-    private static void IslandUi(string testRoot, bool agentOnly = false, bool pausedMedia = false, bool focusOnly = false, bool vivoOnly = false, bool uninstallOnly = false, bool batteryOnly = false, bool coverClipboardOnly = false, bool pausedOnly = false, bool aiConfigOnly = false)
+    private static void IslandUi(string testRoot, bool agentOnly = false, bool pausedMedia = false, bool focusOnly = false, bool vivoOnly = false, bool uninstallOnly = false, bool batteryOnly = false, bool coverClipboardOnly = false, bool pausedOnly = false, bool aiConfigOnly = false, bool handoffOnly = false, bool cpuOnly = false, bool statusOnly = false)
     {
         Exception? error = null;
         var thread = new Thread(() =>
@@ -454,12 +486,17 @@ internal static partial class Program
                 if (uninstallOnly) { PluginUninstallChecks(window, testRoot); return; }
                 if (batteryOnly) { DeviceBatteryUiChecks(window, root); return; }
                 if (pausedOnly) { PausedMediaVisibilityChecks(window, root); return; }
+                if (cpuOnly) { CpuSamplingUiChecks(window); return; }
+                if (statusOnly) { StatusDisplayUiChecks(window, root); return; }
+                if (handoffOnly) { SettingsCategoryChecks(); MediaHandoffUiChecks(window, root); PausedMediaVisibilityChecks(window, root); return; }
                 if (coverClipboardOnly) { RoundedCoverChecks(window, root); ClipboardMusicChecks(window, root, testRoot); return; }
                 ThemeControls(window, root, source);
                 ClipboardMusicChecks(window, root, testRoot);
                 MediaAndCompactUiChecks(window, root);
                 DownloadAndMediaEventUiChecks(window, root, testRoot);
                 PluginAndSettingsChecks(window, testRoot);
+                SettingsCategoryChecks();
+                CpuSamplingUiChecks(window);
                 AiSettingsConfigurationUiChecks(testRoot);
                 AiModelPickerUiChecks(testRoot);
                 PluginUninstallChecks(window, testRoot);
@@ -1343,6 +1380,7 @@ internal static partial class Program
                     }
                     finally { Call("EndVolumeDrag"); SetField("_volumeService", null); }
                 }
+                MediaHandoffUiChecks(window, root);
                 PausedMediaVisibilityChecks(window, root);
                 AgentApprovalInteractionChecks(window, root);
             }

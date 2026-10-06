@@ -25,6 +25,8 @@ internal static class DesktopEventAppearance
         DesktopEventKind.Locked => ("\uE72E", Color.FromRgb(0xA7, 0x8B, 0xFA)),
         DesktopEventKind.Unlocked => ("\uE785", Color.FromRgb(0xA7, 0x8B, 0xFA)),
         DesktopEventKind.System => ("\uE950", Color.FromRgb(0xFB, 0xBF, 0x24)),
+        DesktopEventKind.WifiRadio => ("\uE701", Color.FromRgb(0x60, 0xA5, 0xFA)),
+        DesktopEventKind.BluetoothRadio => ("\uE702", Color.FromRgb(0xA7, 0x8B, 0xFA)),
         _ => ("\uE8BD", Color.FromRgb(0x60, 0xA5, 0xFA))
     };
 }
