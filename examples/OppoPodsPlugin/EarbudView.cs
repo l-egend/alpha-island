@@ -19,6 +19,8 @@ internal sealed class EarbudView : Grid
     private readonly ComboBox _device = new() { MinWidth = 120, HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 11, MaxDropDownHeight = 220 };
     private readonly Button _refresh, _connect, _disconnect;
     private readonly StackPanel _settings = new();
+    private readonly Grid _batteryRow;
+    private readonly TextBlock[] _batteryLabels = new TextBlock[3];
     private readonly StackPanel _peers = new();
     private readonly ComboBox _anc, _eq, _spatial;
     private readonly FrameworkElement _ancRow, _eqRow, _spatialRow;
@@ -52,12 +54,12 @@ internal sealed class EarbudView : Grid
         AutomationProperties.SetName(_device, "选择耳机");
         header.Children.Add(connection); Children.Add(header);
         var content = new StackPanel();
-        var batteryRow = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        var batteryRow = _batteryRow = new Grid { Margin = new Thickness(0, 0, 0, 6) };
         for (int i = 0; i < 3; i++)
         {
             batteryRow.ColumnDefinitions.Add(new());
             var tile = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-            tile.Children.Add(Text(new[] { "左耳", "充电盒", "右耳" }[i], 11));
+            tile.Children.Add(_batteryLabels[i] = Text(new[] { "左耳", "充电盒", "右耳" }[i], 11));
             var reading = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Center };
             _batteryMeters[i].Name = new[] { "LeftBatteryMeter", "CaseBatteryMeter", "RightBatteryMeter" }[i];
@@ -127,6 +129,12 @@ internal sealed class EarbudView : Grid
     }
     internal void Update(EarbudSnapshot snapshot, IReadOnlyList<EarbudDevice> devices)
     {
+        _batteryLabels[0].Text = snapshot.SingleBattery ? "耳机电量" : "左耳";
+        for (int column = 1; column < 3; column++)
+        {
+            _batteryRow.Children[column].SetValue(VisibilityProperty, snapshot.SingleBattery ? Visibility.Collapsed : Visibility.Visible);
+            _batteryRow.ColumnDefinitions[column].Width = snapshot.SingleBattery ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        }
         _updating = true;
         try
         {

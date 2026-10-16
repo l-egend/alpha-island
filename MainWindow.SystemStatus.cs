@@ -3,6 +3,8 @@ using Color = System.Windows.Media.Color;
 using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 using System.Windows;
 using System.Windows.Threading;
+using alpha_island.Animation;
+using alpha_island.Controls;
 using alpha_island.Core;
 using alpha_island.Interop;
 using alpha_island.Services;
@@ -16,7 +18,7 @@ namespace alpha_island
         // ================= 低频采样调度（阶段 3.6 的 IslandTicker 的第一个消费者） =================
 
         /// <summary>网速 / 内存 / 功率 / 飞行模式 / 隐私灯共用的采样定时器（一个 timer + 命名订阅）。</summary>
-        private IslandTicker _ticker = null!;
+        private readonly IslandTicker _ticker;
 
         // ================= 网速（A 组①） =================
 
@@ -47,12 +49,6 @@ namespace alpha_island
         /// <summary>网速提示胶囊停留秒数（固定值：这一条不打算做成设置项，避免设置页继续膨胀）。</summary>
         private const double NetSpeedAlertSeconds = 4;
 
-        /// <summary>
-        /// 网速阈值告警的时间窗。网速图层平时优先级 64（让位于下载提示 66），告警期间靠
-        /// 图层注册表里的 PriorityOverride 升到 70 —— 否则下载提示每 2 秒续期一次，
-        /// 告警的 Show 永远输在仲裁上：提示不出现、60 秒冷却却已经开始计时 = 提示丢失。
-        /// </summary>
-        private DateTime _netSpeedAlertUntilUtc = DateTime.MinValue;
 
         private void StartNetworkSpeedService()
         {
@@ -78,7 +74,7 @@ namespace alpha_island
             _netSpeed?.Dispose();
             _netSpeed = null;
             _externalNetwork.Reset();
-            _netSpeedDownHistory.Clear();
+            ClearNetSpeedHistory();
             UpdateNetSpeedPrimary(default);
             UpdateNetSpeedSatelliteVisual(default);
 
@@ -131,6 +127,7 @@ namespace alpha_island
 
             // 卡片页 / 常显胶囊：每拍都推进（曲线不能因为没开卡片页就断点）。
             UpdateNetSpeedSample(sample);
+            SyncResourceSampling();
         }
 
         /// <summary>
@@ -275,18 +272,14 @@ namespace alpha_island
 
             _netSpeedFastTicks = 0;
             _netSpeedNextAlertUtc = DateTime.UtcNow + NetSpeedAlertCooldown;
-            _netSpeedAlertUntilUtc = DateTime.UtcNow + TimeSpan.FromSeconds(NetSpeedAlertSeconds);
-
             bool isDown = downMBps >= upMBps;
-            UpdateNetSpeedPrimary(sample);
-            NetSpeedNotifyLayer.ToolTip = $"{(isDown ? "高速下载提醒" : "高速上传提醒")} · 阈值 {thresholdMBps:0.#} MB/s";
-
-            // 只在细条态主动弹胶囊：用户正开着的胶囊/卡片不该被一个下载提示顶掉
-            // （形态判断已收口到 ShowPillNotification）。
-            ShowPillNotification(IslandNotification.Seconds("netspeed", NetSpeedAlertSeconds));
-
-            // 同 ShowSystemNotify：转成胶囊态后要马上结算，否则音乐胶囊还压在同一个格子上。
-            SyncNotificationLayers();
+            bool downHigh = downMBps >= thresholdMBps, upHigh = upMBps >= thresholdMBps;
+            string title = downHigh && upHigh ? "上传、下载偏高" : downHigh ? "下载速度偏高" : "上传速度偏高";
+            string value = downHigh && upHigh ? $"↓{downMBps:0.#} ↑{upMBps:0.#} MB/s"
+                : NetworkSpeedService.FormatSpeedFull(downHigh ? sample.DownBytesPerSecond : sample.UpBytesPerSecond);
+            string glyph = downHigh && upHigh ? "\uE895" : downHigh ? "\uE896" : "\uE898";
+            ShowSystemNotify(glyph, title, $"阈值 {thresholdMBps:0.#} MB/s", value, NetSpeedAlertSeconds,
+                shape: downHigh && !upHigh ? IconShape.Download : IconShape.Auto, compact: true, targetPage: IslandPageIds.NetSpeed);
 
             IslandLog.Debug("NetworkSpeed",
                 $"{(isDown ? "下行" : "上行")} {(isDown ? downMBps : upMBps):0.0} MB/s 超过阈值 {thresholdMBps:0.#} MB/s，弹出提示（state={_state} action={GetCurrentActionType()}）");
@@ -310,7 +303,7 @@ namespace alpha_island
 
         // ================= 内存占用 + 一键整理（A 组②） =================
 
-        private MemoryService? _memory;
+        // Native resource probes are owned by SystemResourceMonitor.
 
         /// <summary>细条上最后一次写下去的内存文本（避免每拍都重设 XAML 属性）。</summary>
         private string _barMemText = string.Empty;
@@ -328,30 +321,16 @@ namespace alpha_island
 
         /// <summary>系统状态提示的默认停留秒数（内存/功率/飞行模式/隐私灯共用）。</summary>
         private const double SystemNotifySeconds = 4;
+        private const double CompactSystemNotifyWidth = 280;
+        private bool _systemNotifyCompact;
 
-        private void StartMemoryService()
-        {
-            if (_memory != null) return;
-
-            var service = new MemoryService();
-            service.Sample();
-            _memory = service;
-
-            // 内存不像网速那样每秒都在变，2 秒一拍足够（也顺带把任务栏/细条的重排次数压下来）
-            _ticker.Register("memory", TimeSpan.FromSeconds(2), SampleMemory, runImmediately: true);
-
-            IslandLog.Debug("Memory",
-                service.Current.Valid
-                    ? $"内存采样已启动：物理内存 {MemoryService.FormatSize((long)service.Current.TotalBytes)}，当前占用 {service.Current.UsedPercent:0}%"
-                    : "内存采样已启动（GlobalMemoryStatusEx 不可用，细条不显示占用率）");
-        }
+        private void StartMemoryService() => _resourceMonitor.SetMemoryEnabled(true);
 
         private void StopMemoryService()
         {
-            if (_ticker != null) _ticker.Unregister("memory");
+            _resourceMonitor.SetMemoryEnabled(false);
 
-            _memory?.Dispose();
-            _memory = null;
+
 
             _memHighTicks = 0;
             _memNextAlertUtc = DateTime.MinValue;
@@ -362,20 +341,10 @@ namespace alpha_island
             SyncBarIndicators();
         }
 
-        private void SampleMemory()
+        private void OnMemorySampled(MemorySample sample)
         {
-            MemoryService? service = _memory;
-            if (service == null) return;
-
-            service.Sample();
-            MemorySample sample = service.Current;
-
             UpdateBarMemory(sample);
-            RefreshCombinedResources();
             MaybeAlertHighMemory(sample);
-
-            // 系统状态卡片页正显示时跟着刷新（页不显示就不做无谓的写文本 + 日志）。
-            if (IsSystemCardVisible) SyncSystemCard();
         }
 
         /// <summary>
@@ -428,8 +397,8 @@ namespace alpha_island
             _memNextAlertUtc = DateTime.UtcNow + MemoryAlertCooldown;
 
             ShowSystemNotify("\uE950", "内存占用偏高",
-                $"已用 {MemoryService.FormatSize(sample.UsedBytes)} / {MemoryService.FormatSize((long)sample.TotalBytes)}｜阈值 {threshold:0}%",
-                $"{sample.UsedPercent:0}%");
+                $"超过 {threshold:0}% 的提醒阈值",
+                $"{sample.UsedPercent:0}%", compact: true);
 
             IslandLog.Debug("Memory",
                 $"占用率 {sample.UsedPercent:0}% 超过阈值 {threshold:0}%，弹出提示（state={_state} action={GetCurrentActionType()}）");
@@ -439,14 +408,23 @@ namespace alpha_island
         /// 弹出"系统状态"通用提示（A 组②③④⑤共用一层）。
         /// 内容全部在弹出前写入，所以新增一类提示不需要再加 XAML 图层。
         /// </summary>
-        internal void ShowSystemNotify(string glyph, string title, string detail, string value, double seconds = SystemNotifySeconds)
+        private string _systemNotifyTargetPage = IslandPageIds.System;
+        internal void ShowSystemNotify(string glyph, string title, string detail, string value, double seconds = SystemNotifySeconds,
+            IconShape shape = IconShape.Auto, bool active = true, double level = 1, bool compact = false, string? targetPage = null)
         {
             if (SystemNotifyLayer == null) return;
             if (!_exiting) _desktopInbox.Add(new("system-" + DateTimeOffset.UtcNow.UtcTicks, "", "Windows", title, detail + " · " + value, DateTimeOffset.Now, DesktopEventKind.System), false);
-            if (_sessionLocked || SettingsRegistry.GetBool(_options, "NotificationQuietMode", false)) return;
+            if (_sessionLocked || NotificationQuietEffective) return;
 
+            _systemNotifyTargetPage = targetPage ?? IslandPageIds.System;
+            _systemNotifyCompact = compact;
+            SystemNotifyLayer.Width = compact ? CompactSystemNotifyWidth - 16 : IslandMetrics.PillWidth - 16;
+            SysNotifyGlyph.Shape = shape;
+            SysNotifyGlyph.Active = active;
+            SysNotifyGlyph.Level = Math.Clamp(level, 0, 1);
             SysNotifyGlyph.Text = glyph;
-            var accent = glyph == "\uE950" ? Color.FromRgb(0xFB, 0xBF, 0x24) : glyph == "\uE945" ? Color.FromRgb(0xFB, 0x92, 0x3C) : Color.FromRgb(0x22, 0xD3, 0xEE);
+            var accent = glyph == "\uE950" ? Color.FromRgb(0xFB, 0xBF, 0x24) : glyph == "\uE945" ? Color.FromRgb(0xFB, 0x92, 0x3C)
+                : glyph == "\uE896" ? Color.FromRgb(0x34, 0xD3, 0x99) : Color.FromRgb(0x22, 0xD3, 0xEE);
             SysNotifyGlyph.Foreground = new SolidColorBrush(accent);
             SysNotifyTitle.Text = title;
             SysNotifyDetail.Text = detail;
@@ -454,71 +432,16 @@ namespace alpha_island
 
             // 和网速提示一样：细条态主动弹胶囊，不抢占用户正开着的胶囊/卡片
             // （形态判断已收口到 ShowPillNotification）。
-            ShowPillNotification(IslandNotification.Seconds("system", seconds));
+            ShowPillNotification(IslandNotification.Seconds("system", seconds) with
+            { Glyph = glyph, Title = title, Detail = detail, Value = value });
 
             // 弹出后立刻结算图层显隐：细条态刚转成胶囊态，这一拍才轮到本层（PillOnly）上场，
             // 同时把音乐胶囊压下去 —— 少了这一句两层就会在同一次动画里叠着画。
             SyncNotificationLayers();
-        }
-
-        /// <summary>
-        /// 一键内存整理（托盘菜单「🧹 整理内存」）。只回收<b>本进程</b>工作集：
-        /// EmptyWorkingSet 对自身免提权；全系统整理（MemoryTrimSystem）需要管理员权限，本批不提供。
-        /// </summary>
-        private bool _memoryTrimBusy;
-        internal async void TrimMemoryNow()
-        {
-            if (_options == null || _memoryTrimBusy) return;
-
-            if (!SettingsRegistry.GetBool(_options, "MemoryTrimEnabled", false))
-            {
-                // 入口已经变灰了，正常点不到；这里是防"改完设置没生效"或托盘回调乱入
-                IslandLog.Debug("Memory", "一键内存整理被设置项关闭（MemoryTrimEnabled=false），忽略本次请求");
-                return;
-            }
-
-            _memoryTrimBusy = true;
-            try
-            {
-                var result = await Task.Run(() =>
-                {
-                    using var service = new MemoryService();
-                    service.Sample();
-                    long before = service.Current.OwnWorkingSetBytes;
-                    long released = service.TrimOwnWorkingSet();
-                    service.Sample();
-                    return (before, released, after: service.Current.OwnWorkingSetBytes);
-                });
-                if (_exiting) return;
-                var (before, released, after) = result;
-                if (_memory != null) { _memory.Sample(); UpdateBarMemory(_memory.Current); }
-
-                string detail;
-                string value;
-                if (released > 0)
-                {
-                    value = "-" + MemoryService.FormatSize(released);
-                    detail = $"本进程工作集 {MemoryService.FormatSize(before)} → {MemoryService.FormatSize(after)}｜仅优化本程序";
-                }
-                else
-                {
-                    value = "—";
-                    detail = "本进程工作集已经很低，没有可回收的页｜仅优化本程序";
-                }
-
-                ShowSystemNotify("\uE950", released > 0 ? "已整理内存" : "内存已整理", detail, value);
-
-                IslandLog.Debug("Memory",
-                    $"一键整理完成：释放 {MemoryService.FormatSize(released)}（仅本进程；系统级整理需管理员权限，本批不提供）");
-            }
-            catch (Exception ex)
-            {
-                IslandLog.Warn("Memory", "整理失败: " + ex.Message);
-            }
-            finally
-            {
-                _memoryTrimBusy = false;
-            }
+            TryMorphPillWidth();
+            // Each Show call is a new notification, including when this layer stays visible.
+            ActionIconMotion.Stop(SysNotifyGlyph);
+            ActionIconMotion.Play(SysNotifyGlyph);
         }
 
         /// <summary>设置页改了内存相关开关后立即生效。</summary>
@@ -528,10 +451,7 @@ namespace alpha_island
 
             _memHighTicks = 0;
 
-            // 「整理内存」菜单项跟着开关走（菜单项恒在，只是变灰）
-            _tray?.SetMemoryTrimEnabled(SettingsRegistry.GetBool(_options, "MemoryTrimEnabled", false));
-
-            if (_memory == null)
+            if (!_resourceMonitor.MemoryEnabled)
             {
                 _barMemVisible = false;
                 SyncBarIndicators();
@@ -570,7 +490,6 @@ namespace alpha_island
             {
                 var fakeInfo = new BatteryStatusInfo(50, false, BatteryChargeType.Unknown,
                     BatteryPowerEvent.None, null, (int)Math.Round(_powerFakeWatts.Value * 1000), 9000);
-                RecordPowerReading(fakeInfo);   // 系统状态卡片页的功耗格
                 MaybeAlertHighPower(fakeInfo);
                 return;
             }
@@ -580,12 +499,10 @@ namespace alpha_island
             var info = _battery.Current;
             if (info == null || DateTime.UtcNow - info.SampledUtc > TimeSpan.FromSeconds(15))
             {
-                _powerSampled = false;
                 if (IsSystemCardVisible) SyncSystemCard();
                 return;
             }
 
-            RecordPowerReading(info);   // 系统状态卡片页的功耗格
             MaybeAlertHighPower(info);
         }
 
@@ -793,7 +710,7 @@ namespace alpha_island
                 ShowSystemNotify("\uE709",
                     on ? "已进入飞行模式" : "已退出飞行模式",
                     on ? "无线网络已关闭｜网速检测将没有数据" : "无线网络已恢复",
-                    on ? "开" : "关");
+                    on ? "开" : "关", active: on);
             }
 
             _airplaneKnown = true;

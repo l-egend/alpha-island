@@ -1,6 +1,6 @@
 namespace AlphaIsland.Plugins.OppoPods;
 
-internal sealed record EarbudDevice(ulong Address, string Name, bool Connected)
+internal sealed record EarbudDevice(ulong Address, string Name, bool Connected, AlphaIsland.EarbudsV2.Communication.Abstractions.DeviceCandidate? Candidate = null)
 {
     public override string ToString() => Name + (Connected ? " · 已连接" : " · 已配对");
 }
@@ -23,12 +23,13 @@ internal readonly record struct EarbudBattery(int? Percent, bool Charging = fals
 internal sealed record EarbudSnapshot
 {
     internal bool Connected { get; init; }
+    internal bool SingleBattery { get; init; }
     internal bool Busy { get; init; }
     internal bool WaitingForReadback { get; init; }
     internal string DeviceName { get; init; } = "耳机控制";
     internal string ModelName { get; init; } = "";
     internal string Status { get; init; } = "点击刷新，选择已配对的耳机";
-    internal string Hint { get; init; } = "先在 Windows 蓝牙设置中配对";
+    internal string Hint { get; init; } = "先在 Windows 蓝牙设置中配对并连接耳机";
     internal EarbudBattery LeftPower { get; init; }
     internal EarbudBattery RightPower { get; init; }
     internal EarbudBattery CasePower { get; init; }

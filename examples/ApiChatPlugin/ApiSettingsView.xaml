@@ -1,0 +1,146 @@
+<UserControl x:Class="AlphaIsland.Plugins.ApiChat.ApiSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="clr-namespace:AlphaIsland.PluginSdk;assembly=AlphaIsland.PluginSdk">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/alpha-island;component/Themes/Win11Settings.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="AiActionButton" TargetType="Button" BasedOn="{StaticResource W11Button}">
+                <Setter Property="Height" Value="34"/>
+                <Setter Property="MinWidth" Value="96"/>
+                <Setter Property="FontSize" Value="12"/>
+            </Style>
+            <Style x:Key="AiEditor" TargetType="TextBox" BasedOn="{StaticResource W11TextBox}">
+                <Setter Property="MinHeight" Value="36"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Padding" Value="10,7"/>
+            </Style>
+            <Style x:Key="AiHint" TargetType="TextBlock" BasedOn="{StaticResource W11RowHint}">
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+            <Style x:Key="AiLabel" TargetType="TextBlock" BasedOn="{StaticResource W11RowLabel}">
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+            <Style x:Key="AiPasswordEditor" TargetType="PasswordBox">
+                <Setter Property="MinHeight" Value="36"/>
+                <Setter Property="Padding" Value="10,7"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Foreground" Value="{StaticResource W11TextPrimary}"/>
+                <Setter Property="CaretBrush" Value="{StaticResource W11TextPrimary}"/>
+                <Setter Property="Background" Value="{StaticResource W11ControlFill}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource W11ControlBorder}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="PasswordBox">
+                            <Border x:Name="Surface" CornerRadius="7" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="Surface" Property="BorderBrush" Value="{StaticResource W11AccentBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <StackPanel>
+        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="AI 对话"/>
+        <Border Style="{StaticResource W11Card}">
+            <StackPanel>
+                <Grid Style="{StaticResource W11Row}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_AiEnabled">
+                        <icons:GlyphIcon Style="{StaticResource W11IconGlyph}" Text="&#xE99A;"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource AiLabel}" Text="AI 对话"/>
+                        <TextBlock Style="{StaticResource AiHint}" Text="连接验证通过后自动启用"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="ManageAiHistoryButton" Content="管理对话数据" Click="ManageAiHistory_Click"
+                                Style="{StaticResource AiActionButton}" Margin="0,0,12,0"/>
+                        <CheckBox x:Name="AiEnabledToggle" Style="{StaticResource W11Switch}" IsEnabled="False"
+                                  Checked="Setting_Changed" Unchecked="Setting_Changed" VerticalAlignment="Center"
+                                  ToolTip="由密钥与连接结果自动控制"/>
+                    </StackPanel>
+                </Grid>
+                <Border Style="{StaticResource W11RowDivider}"/>
+                <Grid Style="{StaticResource W11Row}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="248"/></Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_AiBaseUrl">
+                        <icons:GlyphIcon Style="{StaticResource W11IconGlyph}" Text="&#xE774;"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource AiLabel}" Text="接口地址"/>
+                        <TextBlock Style="{StaticResource AiHint}" Text="兼容 OpenAI 接口"/>
+                    </StackPanel>
+                    <TextBox x:Name="AiBaseUrlBox" Grid.Column="2" Style="{StaticResource AiEditor}"
+                             VerticalAlignment="Center" TextChanged="TextBox_Changed"/>
+                </Grid>
+                <Border Style="{StaticResource W11RowDivider}"/>
+                <Grid Style="{StaticResource W11Row}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="248"/></Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_AiApiKey">
+                        <icons:GlyphIcon Style="{StaticResource W11IconGlyph}" Text="&#xE72E;"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource AiLabel}" Text="API Key"/>
+                        <TextBlock x:Name="AiApiKeyState" Style="{StaticResource AiHint}" Text="尚未保存（本地模型可留空）"/>
+                    </StackPanel>
+                    <PasswordBox x:Name="AiApiKeyBox" Grid.Column="2" Style="{StaticResource AiPasswordEditor}"
+                                 VerticalAlignment="Center" PasswordChanged="PasswordBox_Changed"/>
+                </Grid>
+                <Grid x:Name="AiKeyActions" Width="248" HorizontalAlignment="Right" Margin="0,0,16,16">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Button x:Name="SaveAiKeyButton" Content="保存密钥" Click="SaveAiKeyButton_Click"
+                            Style="{StaticResource AiActionButton}" Margin="0,0,4,0"/>
+                    <Button x:Name="ClearAiKeyButton" Grid.Column="1" Content="删除密钥" Click="ClearAiKeyButton_Click"
+                            Style="{StaticResource AiActionButton}" Margin="4,0,0,0"/>
+                </Grid>
+                <Border Style="{StaticResource W11RowDivider}"/>
+                <Grid Style="{StaticResource W11Row}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="248"/></Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_AiModel">
+                        <icons:GlyphIcon Style="{StaticResource W11IconGlyph}" Text="&#xE9D9;"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource AiLabel}" Text="模型"/>
+                        <TextBlock Style="{StaticResource AiHint}" Text="连接后选择模型"/>
+                    </StackPanel>
+                    <ComboBox x:Name="AiModelBox" Grid.Column="2" IsEditable="False" IsEnabled="False" MinHeight="36"
+                              VerticalAlignment="Center" MaxDropDownHeight="240" SelectionChanged="AiModel_SelectionChanged" FontSize="12"/>
+                </Grid>
+                <Grid x:Name="AiModelActions" Width="248" HorizontalAlignment="Right" Margin="0,0,16,12">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Button x:Name="ConnectAiModelsButton" Content="连接并获取模型" Click="ConnectAiModelsButton_Click"
+                            Style="{StaticResource AiActionButton}" Margin="0,0,8,0"/>
+                    <Button x:Name="TestAiModelButton" Grid.Column="1" Content="测试模型" IsEnabled="False"
+                            Click="TestAiModelButton_Click" Style="{StaticResource AiActionButton}" ToolTip="测试会发送一条简短请求"/>
+                </Grid>
+                <TextBlock x:Name="AiConnectionStatus" Text="请先连接接口获取模型列表" Style="{StaticResource AiHint}" Margin="62,0,16,14"/>
+                <Border Style="{StaticResource W11RowDivider}"/>
+                <Grid Style="{StaticResource W11Row}" Margin="16,12,16,16">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="248"/></Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource W11IconTile}" x:Name="Icon_AiSystemPrompt">
+                        <icons:GlyphIcon Style="{StaticResource W11IconGlyph}" Text="&#xE8D2;"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource AiLabel}" Text="系统提示词"/>
+                    </StackPanel>
+                    <TextBox x:Name="AiSystemPromptBox" Grid.Column="2" Style="{StaticResource AiEditor}" Height="64"
+                             VerticalContentAlignment="Top" AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" TextChanged="TextBox_Changed"/>
+                </Grid>
+                <Button x:Name="OpenAiConversationButton" Content="打开 AI 对话" Click="OpenAiConversation_Click"
+                        Style="{StaticResource AiActionButton}" HorizontalAlignment="Right" Margin="16,0,16,16"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

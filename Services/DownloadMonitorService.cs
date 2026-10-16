@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using alpha_island.Core;
 using alpha_island.Interop;
 using Microsoft.Win32;
@@ -56,7 +57,7 @@ namespace alpha_island.Services
         public int Percent => (int)Math.Round(Fraction * 100d);
 
         /// <summary>
-        /// 总量是否已知。浏览器「下载中」的那条路永远拿不到总量（见 <see cref="DownloadMonitorService"/> 注释），
+        /// 总量是否已知。仅有下载临时文件时无法得到总量，
         /// 界面遇到 false 就别显示百分比，改显示「已下 X」。
         /// </summary>
         public bool TotalKnown => TotalBytes > 0;
@@ -66,21 +67,10 @@ namespace alpha_island.Services
     }
 
     /// <summary>
-    /// 「下载进度」数据源（第二批③）。三种来源，全部**只读**：
-    /// ① Steam 清单发现任务，content_log.txt 校正暂停、下载、校验、文件更新等状态。
-    ///    ACF 字节数是保存的快照，下载与落盘处理也是两个阶段，不用它推算实时百分比、速率或 ETA；
-    /// ② Chromium 系浏览器的 <c>History</c>（表 <c>downloads</c>）—— **只有下载结束才写进来**（见下面实测），
-    ///    所以浏览器这条路只能给「完成提示 + 最近完成的条目」，给不了实时百分比；
-    /// ③ 浏览器下载目录里的 <c>*.crdownload</c> 半成品文件 —— 能看出「有下载在跑」并拿到**已下字节**
-    ///    （实测会随下载一起涨），但拿不到总量；半成品常叫「未确认 &lt;id&gt;.crdownload」，真实文件名也要等完成。
-    ///
-    /// 浏览器为什么拿不到实时**百分比**（alpha_55 / alpha_55b 探针 + alpha_54b 实跑，Edge 26，30 MB 下载）：
-    /// 整个下载期间 <c>select … from downloads</c> 用**直连只读**（运行中报 <c>prepare rc=5 database is locked</c>）
-    /// 和**复制主库+wal 再读**两种方式都是 0 行；下载一结束才出现 <c>state=1</c> 那行（History 文件同时长大）。
-    /// 库里的行没有总量、盘上的半成品只有字节数 → 拼不出百分比，界面上不能承诺「浏览器下载进度」。
-    ///
-    /// 明确取不到的：Firefox（本机没装，未验证，所以不做）、Epic/WeGame/Battle.net（本机没装）、
-    /// 浏览器的实时百分比与剩余时间、浏览器「暂停中的下载」（暂停了也只是个别扭的半成品文件）。
+    /// Read-only download sources: Steam manifests/logs, Chromium History for completed tasks,
+    /// and live partial files enriched by the actual file-owning process and accessible browser download metadata.
+    /// Browser UI metadata is retained after the flyout closes; partial length supplies subsequent progress.
+    /// Unknown totals remain unknown instead of being guessed from file size or unrelated network traffic.
     /// </summary>
     public sealed class DownloadMonitorService
     {
@@ -93,10 +83,6 @@ namespace alpha_island.Services
 
         /// <summary>Chrome / Edge 给「还没定下文件名」的下载起的临时名（中文版是「未确认 802882」）。</summary>
         private static readonly Regex UnconfirmedNameRx = new(@"^(未确认|Unconfirmed)\s+\d+$", RegexOptions.Compiled);
-
-        /// <summary>从 Preferences 里抠 download.default_directory（那个文件是 JSON，但我们只需要一个值）。</summary>
-        private static readonly Regex DefaultDownloadDirRx = new(
-            "\"default_directory\"\\s*:\\s*\"(?<p>(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.Compiled);
 
         /// <summary>Chrome 的时间戳是「1601-01-01 UTC 起的微秒数」。</summary>
         private static readonly DateTime ChromeEpochUtc = new(1601, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -117,6 +103,10 @@ namespace alpha_island.Services
         /// </summary>
         private readonly Dictionary<string, (string CopyPath, DateTime When, bool IncludeShm, string Stamp)> _copies = new();
 
+        // Parsing unchanged History rows still walks SQLite's downloads table. Keep the
+        // bounded raw result; partial sizes and completed-row expiry are evaluated each sample.
+        private readonly Dictionary<string, (string Stamp, List<string?[]> Rows)> _chromiumRows = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>上一拍还有半成品（= 在下载）的配置目录：这一拍没了说明刚下完，要绕开副本缓存去读完成行。</summary>
         private readonly HashSet<string> _partialProfiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _warned = new();
@@ -124,6 +114,13 @@ namespace alpha_island.Services
         private readonly string _tempRoot;
         private readonly string? _profileOverride;
         private readonly string? _steamPathOverride;
+        private readonly Func<IEnumerable<(string Browser, string ProfileDir)>>? _profilesForTest;
+        private readonly Func<IReadOnlyList<BrowserDownloadReading>> _readBrowser = BrowserDownloadProbe.Read;
+        private readonly Func<string, string?> _readOwner = BrowserPartialOwner.Read;
+        private readonly Dictionary<string, string?> _partialOwners = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, BrowserDownloadReading> _partialDetails = new(StringComparer.OrdinalIgnoreCase);
+        private IReadOnlyList<BrowserDownloadReading> _browserReadings = Array.Empty<BrowserDownloadReading>();
+        private DateTime _lastBrowserReadUtc = DateTime.MinValue;
         private readonly SteamDownloadLog _steamLog = new();
         private DateTime _lastWarnUtc = DateTime.MinValue;
         private DateTime _lastDebugUtc = DateTime.MinValue;
@@ -136,6 +133,15 @@ namespace alpha_island.Services
         }
 
         public IReadOnlyList<DownloadTask> Current => _snapshot;
+
+        internal DownloadMonitorService(Func<IEnumerable<(string Browser, string ProfileDir)>> profiles,
+            Func<IReadOnlyList<BrowserDownloadReading>>? readings = null, Func<string, string?>? owner = null)
+            : this(steamPathOverride: Path.Combine(Path.GetTempPath(), "alpha-island-no-steam"))
+        {
+            _profilesForTest = profiles;
+            _readBrowser = readings ?? (() => Array.Empty<BrowserDownloadReading>());
+            _readOwner = owner ?? (_ => null);
+        }
 
         /// <summary>降级原因（读不到浏览器库 / Steam 目录异常时的最后一次说明）。null = 一切正常。</summary>
         public string? DegradedReason { get; private set; }
@@ -179,6 +185,8 @@ namespace alpha_island.Services
         private void SampleChromium(List<DownloadTask> into)
         {
             var scanned = new List<string>();
+            var pending = new Dictionary<string, (long Size, DateTime When)>(StringComparer.OrdinalIgnoreCase);
+            var knownPartialPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach ((string browser, string profileDir) in EnumerateChromiumProfiles())
             {
                 scanned.Add(browser);
@@ -187,6 +195,7 @@ namespace alpha_island.Services
                 // 先枚举下载目录里的半成品（只动目录，不读库）：既知道这一拍有没有下载在跑，
                 // 也能看出「上一拍有、这一拍没了」= 刚下完。
                 var partials = CollectChromiumPartials(profileDir);
+                foreach (var partial in partials) pending[partial.Path] = (partial.Size, partial.When);
                 bool downloading = partials.Count > 0;
                 bool justFinished = !downloading && _partialProfiles.Contains(profileDir);
                 if (downloading) _partialProfiles.Add(profileDir);
@@ -240,6 +249,11 @@ namespace alpha_island.Services
 
                     string taskPath = targetPath.Length > 0 ? targetPath : currentPath;
                     if (!seenPaths.Add(taskPath)) continue;
+                    if (active)
+                    {
+                        if (currentPath.Length > 0) knownPartialPaths.Add(currentPath);
+                        if (targetPath.Length > 0) knownPartialPaths.Add(targetPath + ".crdownload");
+                    }
 
                     into.Add(new DownloadTask(
                         Kind: DownloadSourceKind.Browser,
@@ -253,7 +267,41 @@ namespace alpha_island.Services
                 }
 
                 // 库里不可能有「下载中」的行（浏览器只在结束时写库），所以「正在下载」只能靠盘上的半成品文件。
-                AddChromiumPartials(into, browser, partials);
+            }
+
+            // Once totals are captured, progress is cheap filesystem sampling; UI probes are only occasional.
+            double probeInterval = pending.Keys.All(_partialDetails.ContainsKey) ? 8 : 1.5;
+            if (pending.Count > 0 && (DateTime.UtcNow - _lastBrowserReadUtc).TotalSeconds >= probeInterval)
+            {
+                _browserReadings = _readBrowser();
+                _lastBrowserReadUtc = DateTime.UtcNow;
+            }
+            var readings = pending.Count > 0 ? _browserReadings : Array.Empty<BrowserDownloadReading>();
+            foreach (string stale in _partialDetails.Keys.Where(p => !pending.ContainsKey(p)).ToArray()) _partialDetails.Remove(stale);
+            foreach (string stale in _partialOwners.Keys.Where(p => !pending.ContainsKey(p)).ToArray()) _partialOwners.Remove(stale);
+            foreach (var entry in pending)
+            {
+                if (knownPartialPaths.Contains(entry.Key)) continue;
+                if (!_partialOwners.TryGetValue(entry.Key, out string? owner) || owner == null)
+                    _partialOwners[entry.Key] = owner = _readOwner(entry.Key);
+                string stem = Path.GetFileNameWithoutExtension(entry.Key);
+                var matches = readings.Where(r => r.TotalBytes > 0 && r.ReceivedBytes >= 0
+                    && (owner == null || r.Browser == owner)
+                    && (r.Path.Equals(entry.Key, StringComparison.OrdinalIgnoreCase)
+                        || r.Name.Equals(stem, StringComparison.OrdinalIgnoreCase)
+                        || UnconfirmedNameRx.IsMatch(stem) && (pending.Count == 1
+                            || owner != null && Math.Abs((double)r.ReceivedBytes - entry.Value.Size) < 1_048_576))).ToArray();
+                if (matches.Length == 1) _partialDetails[entry.Key] = matches[0];
+                _partialDetails.TryGetValue(entry.Key, out var detail);
+                if (owner != null && detail != null && owner != detail.Browser) { _partialDetails.Remove(entry.Key); detail = null; }
+                string browser = owner ?? detail?.Browser ?? "浏览器";
+                string name = detail?.Name ?? (UnconfirmedNameRx.IsMatch(stem) ? "下载中（文件名未确认）" : stem);
+                bool paused = matches.Length == 1 && matches[0].Paused;
+                long total = detail?.TotalBytes ?? 0;
+                // Keep the metadata after the browser flyout closes; file length continues updating in the background.
+                into.Add(new DownloadTask(DownloadSourceKind.Browser, browser, name, entry.Key,
+                    total, total > 0 ? Math.Min(entry.Value.Size, total) : entry.Value.Size, !paused, entry.Value.When,
+                    State: paused ? DownloadState.Paused : DownloadState.Downloading));
             }
 
             // 扫到哪些配置目录必须能看见（否则「没有任务」到底是没下还是没扫到，日志里分不出来）。
@@ -313,33 +361,6 @@ namespace alpha_island.Services
             return found;
         }
 
-        /// <summary>把半成品文件加成任务（库里已完成的行先入的列表，同路径的跳过）。</summary>
-        private void AddChromiumPartials(List<DownloadTask> into, string browser,
-                                        List<(string Path, long Size, DateTime When)> partials)
-        {
-            foreach ((string partial, long size, DateTime when) in partials)
-            {
-                // 同一份下载被多个浏览器配置目录指到同一个「下载」目录时只算一次；
-                // 库里的完成行（目标文件已就位）也不会和它撞路径。
-                if (into.Any(t => string.Equals(t.PathOnDisk, partial, StringComparison.OrdinalIgnoreCase))) continue;
-
-                string stem = Path.GetFileNameWithoutExtension(partial);
-                string label = UnconfirmedNameRx.IsMatch(stem) ? "下载中（文件名未确认）" : stem;
-                into.Add(new DownloadTask(
-                    Kind: DownloadSourceKind.Browser,
-                    Source: browser,
-                    Name: label,
-                    PathOnDisk: partial,
-                    TotalBytes: 0,
-                    ReceivedBytes: size,
-                    IsActive: true,
-                    StartLocal: when));
-
-                DebugOnce("partial:" + partial,
-                    $"浏览器半成品文件：{Path.GetFileName(partial)}（{MemoryService.FormatSize(size)}，浏览器不提供总量）");
-            }
-        }
-
         /// <summary>浏览器把下载写到哪儿：先看 Preferences 的 download.default_directory，没设就是用户「下载」目录。</summary>
         private static IEnumerable<string> CandidateDownloadDirs(string profileDir)
         {
@@ -372,10 +393,11 @@ namespace alpha_island.Services
                 string prefs = Path.Combine(profileDir, "Preferences");
                 if (!File.Exists(prefs)) return null;
 
-                Match m = DefaultDownloadDirRx.Match(ReadAllTextShared(prefs));
-                if (!m.Success) return null;
-
-                string path = m.Groups["p"].Value.Replace("\\\\", "\\").Replace("\\/", "/");
+                using var json = JsonDocument.Parse(ReadAllTextShared(prefs));
+                if (!json.RootElement.TryGetProperty("download", out var download)
+                    || !download.TryGetProperty("default_directory", out var directory)
+                    || directory.ValueKind != JsonValueKind.String) return null;
+                string path = directory.GetString() ?? string.Empty;
                 return path.Length > 0 && Directory.Exists(path) ? path : null;
             }
             catch
@@ -415,6 +437,14 @@ namespace alpha_island.Services
 
         private bool TryQueryChromium(string dbPath, bool forceFresh, out List<string?[]> rows, out string? error)
         {
+            string stamp = SourceStamp(dbPath);
+            if (!forceFresh && _chromiumRows.TryGetValue(dbPath, out var cached) && cached.Stamp == stamp)
+            {
+                rows = cached.Rows;
+                error = null;
+                return true;
+            }
+            _chromiumRows.Remove(dbPath);
             string sql = "select target_path, current_path, total_bytes, received_bytes, state, start_time, end_time " +
                          "from downloads order by max(start_time, end_time) desc limit " + ChromiumRowLimit.ToString(CultureInfo.InvariantCulture);
 
@@ -422,19 +452,39 @@ namespace alpha_island.Services
             error = null;
 
             // 先直连：浏览器没在跑的时候它能直接读。
-            if (WinSqlite.TryQuery(dbPath, sql, ChromiumRowLimit, out rows, out error)) return true;
+            if (WinSqlite.TryQuery(dbPath, sql, ChromiumRowLimit, out rows, out error))
+            {
+                CacheChromiumRows(dbPath, stamp, rows);
+                return true;
+            }
 
             // 浏览器在跑 = 它占着这个库（prepare 直接 database is locked），
             // 唯一办法是复制一份（连 -wal 一起）再读副本。
             // forceFresh 用于「刚下完」那一拍：浏览器是完成时才写库的，必须重读一次而不是拿旧副本。
             string? copy = TryRefreshCopy(dbPath, includeShm: false, force: forceFresh);
-            if (copy != null && WinSqlite.TryQuery(copy, sql, ChromiumRowLimit, out rows, out error)) return true;
+            if (copy != null && WinSqlite.TryQuery(copy, sql, ChromiumRowLimit, out rows, out error))
+            {
+                // A throttled copy can deliberately lag the source; don't label its rows current.
+                if (_copies[dbPath].Stamp == stamp) CacheChromiumRows(dbPath, stamp, rows);
+                return true;
+            }
 
             // 副本里的 -shm 不匹配时也会失败：把 -shm 一起复制再来一次。
             copy = TryRefreshCopy(dbPath, includeShm: true, force: true);
-            if (copy != null && WinSqlite.TryQuery(copy, sql, ChromiumRowLimit, out rows, out error)) return true;
+            if (copy != null && WinSqlite.TryQuery(copy, sql, ChromiumRowLimit, out rows, out error))
+            {
+                if (_copies[dbPath].Stamp == stamp) CacheChromiumRows(dbPath, stamp, rows);
+                return true;
+            }
 
             return false;
+        }
+
+        private void CacheChromiumRows(string dbPath, string stamp, List<string?[]> rows)
+        {
+            if (stamp.Contains('?') || stamp != SourceStamp(dbPath)) return;
+            if (_chromiumRows.Count >= 32) _chromiumRows.Clear();
+            _chromiumRows[dbPath] = (stamp, rows);
         }
 
         /// <summary>
@@ -515,6 +565,11 @@ namespace alpha_island.Services
 
         private IEnumerable<(string Browser, string ProfileDir)> EnumerateChromiumProfiles()
         {
+            if (_profilesForTest != null)
+            {
+                foreach (var profile in _profilesForTest()) yield return profile;
+                yield break;
+            }
             if (_profileOverride != null)
             {
                 // 调试钩子：既接受「配置目录本身含 History」（Opera 那种），也接受「用户数据目录」

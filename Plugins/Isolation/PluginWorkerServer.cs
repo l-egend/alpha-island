@@ -1,0 +1,206 @@
+using System.IO;
+using System.IO.Pipes;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Threading;
+using AlphaIsland.PluginSdk;
+using alpha_island.Core;
+using C = System.Windows.Controls;
+
+namespace alpha_island.Plugins.Isolation;
+
+internal sealed class PluginWorkerServer : IDisposable
+{
+    private readonly System.Windows.Application _application;
+    private readonly NamedPipeClientStream _pipe;
+    private readonly string _nonce;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly SemaphoreSlim _write = new(1, 1);
+    private readonly Dictionary<string, PluginWorkerSurface> _surfaces = new(StringComparer.Ordinal);
+    private readonly List<PluginService> _started = new();
+    private readonly Window _owner;
+    private IIslandPlugin? _plugin;
+    private PluginWorkerContext? _context;
+    private IslandTicker.Subscription? _pulse;
+    private long _lastPulse;
+    private int _disposed;
+    private int _eventWrites;
+    private string? _active;
+    [DllImport("kernel32.dll")] private static extern uint SetErrorMode(uint mode);
+    internal PluginWorkerServer(System.Windows.Application application, string pipe, string nonce)
+    {
+        _application = application; _nonce = nonce;
+        _pipe = new NamedPipeClientStream(".", pipe, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        // Opacity alone leaves a non-layered HWND opaque when a dialog anchor moves on screen.
+        _owner = new Window { Width = 414, Height = 294, AllowsTransparency = true,
+            Background = System.Windows.Media.Brushes.Transparent, Opacity = 0, ShowInTaskbar = false,
+            ShowActivated = false, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+            Left = -30000, Top = -30000, Title = "Alpha Island plugin worker" };
+        _owner.SourceInitialized += (_, _) =>
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(_owner).Handle;
+            int style = Interop.NativeMethods.GetWindowLong(handle, -20);
+            Interop.NativeMethods.SetWindowLong(handle, -20, style | 0x08000000 | 0x20 | 0x80);
+        };
+    }
+    internal async Task RunAsync()
+    {
+        SetErrorMode(0x8003); IslandLog.FileSinkEnabled = false;
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await _pipe.ConnectAsync(deadline.Token);
+            await PluginWire.Write(_pipe, new(0, "hello", PluginWire.Element(_nonce)), _write, _lifetime.Token);
+            _pulse = IslandTicker.Shared(_application.Dispatcher).Subscribe("worker-pulse", TimeSpan.FromSeconds(1),
+                () => Interlocked.Exchange(ref _lastPulse, Environment.TickCount64), runImmediately: true);
+            _owner.Show();
+            while (!_lifetime.IsCancellationRequested)
+            {
+                var packet = await PluginWire.Receive(_pipe, _lifetime.Token).ConfigureAwait(false);
+                if (packet.Kind == "shutdown")
+                { await _application.Dispatcher.InvokeAsync(() => { Dispose(); _application.Shutdown(); }); break; }
+                _ = Handle(packet); // A native dialog or hung UI must not block heartbeat reads.
+            }
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException or InvalidDataException)
+        { }
+        finally
+        {
+            if (!_application.Dispatcher.HasShutdownStarted)
+                await _application.Dispatcher.InvokeAsync(() => { Dispose(); _application.Shutdown(); });
+        }
+    }
+    private async Task Handle(PluginPacket packet)
+    {
+        try
+        {
+            object result = packet.Kind == "heartbeat" ? Interlocked.Read(ref _lastPulse)
+                : await _application.Dispatcher.InvokeAsync(() => Dispatch(packet));
+            await PluginWire.Write(_pipe, new(packet.Id, "result", PluginWire.Element(result)), _write, _lifetime.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                string error = ex.GetBaseException().Message;
+                await PluginWire.Write(_pipe, new(packet.Id, "result", PluginWire.Element(false), error[..Math.Min(error.Length, 1024)]), _write, _lifetime.Token).ConfigureAwait(false);
+            }
+            catch (Exception writeError) when (writeError is IOException or OperationCanceledException or ObjectDisposedException) { }
+        }
+    }
+    private object Dispatch(PluginPacket packet) => packet.Kind switch
+    {
+        "initialize" => Initialize(PluginWire.Read<PluginStart>(packet.Data)),
+        "status" => Status(),
+        "frame" => Frame(PluginWire.Read<RemoteViewRequest>(packet.Data)),
+        "input" => Input(PluginWire.Read<RemoteCommand>(packet.Data)),
+        "prefill" => Prefill(PluginWire.Read<RemoteCommand>(packet.Data)),
+        "action" => Action(PluginWire.Read<string>(packet.Data)),
+        "configuration" => Configure(PluginWire.Read<Dictionary<string, JsonElement>>(packet.Data)),
+        _ => throw new InvalidDataException("未知插件操作")
+    };
+    private RemoteRegistry Initialize(PluginStart start)
+    {
+        if (_plugin != null) throw new InvalidOperationException("插件已经启动");
+        string directory = Path.GetFullPath(start.Directory);
+        string assembly = Path.GetFullPath(Path.Combine(directory, start.Assembly));
+        if (!assembly.StartsWith(directory.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || !PluginManifest.ValidKey(start.PluginId)) throw new InvalidDataException("插件路径或标识无效");
+        _context = new(start, _application.Dispatcher, Publish, _lifetime.Token); _context.Update(start.Configuration);
+        var loader = new PluginLoadContext(assembly);
+        var type = loader.LoadPluginAssembly(assembly, wpfResources: true).GetType(start.EntryType, true)
+            ?? throw new InvalidDataException("找不到插件入口");
+        _plugin = Activator.CreateInstance(type) as IIslandPlugin ?? throw new InvalidDataException("插件未实现 IIslandPlugin");
+        _plugin.Initialize(_context); _context.Sealed = true;
+        foreach (var page in _context.Pages)
+        {
+            var view = page.CreateView() ?? throw new InvalidDataException("插件页面为空");
+            if (view.Parent != null) throw new InvalidDataException("插件页面已经属于另一个容器");
+            _surfaces.Add(page.Key, new(view));
+        }
+        foreach (var service in _context.Services) { _started.Add(service); service.Start(_lifetime.Token); }
+        return new(_context.Pages.Select(page => new RemotePage(page.Key, page.Title, page.Glyph, page.Height, page.Order)).ToArray(),
+            _context.Settings.ToArray(), Actions(), _context.SettingsView != null,
+            _context.Networks.Select(source => new RemoteNetwork(source.Key, source.Title, source.Priority)).ToArray());
+    }
+    private RemoteAction[] Actions() => Context.Actions.Select(action => new RemoteAction(action.Key, action.Title, action.Available?.Invoke() ?? true)).ToArray();
+    private PluginWorkerContext Context => _context ?? throw new InvalidOperationException("插件尚未初始化");
+    private RemoteStatus Status()
+    {
+        PluginNetworkSample? network = null; PluginNetworkSource? selected = null;
+        foreach (var source in Context.Networks.OrderByDescending(source => source.Priority))
+            if (source.Read() is { } sample && PluginNetworkRules.IsUsable(sample, DateTimeOffset.UtcNow)) { network = sample; selected = source; break; }
+        return new(Context.Pages.Select(page => new RemotePageState(page.Key, page.Available?.Invoke() ?? true, page.Summary?.Invoke() ?? page.Title)).ToArray(),
+            Actions(), network, selected?.Title, selected?.Key, selected?.Priority ?? 0, Interlocked.Read(ref _lastPulse));
+    }
+    private RemoteFrame Frame(RemoteViewRequest request)
+    {
+        if (request.Key == "$settings" && !_surfaces.ContainsKey(request.Key))
+            _surfaces.Add(request.Key, new(new C.ScrollViewer { Content = Context.SettingsView?.Invoke() ?? throw new InvalidOperationException("插件没有设置界面"), VerticalScrollBarVisibility = C.ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = C.ScrollBarVisibility.Disabled }));
+        if (!_surfaces.TryGetValue(request.Key, out var surface)) throw new InvalidDataException("插件页面不存在");
+        if (!request.Active)
+        {
+            if (_active == request.Key) { Deactivate(); _owner.Content = null; }
+            return new(request.Width, request.Height, "", [], 0);
+        }
+        if (_active != request.Key)
+        {
+            Deactivate(); _owner.Content = null; _owner.Content = surface.View; _active = request.Key;
+            Context.Pages.FirstOrDefault(page => page.Key == request.Key)?.Activated?.Invoke();
+        }
+        double width = Math.Clamp(request.Width, 160, 1024), height = Math.Clamp(request.Height, 80, 1024);
+        if (request.Key == "$settings")
+        {
+            // Settings are document content, not fixed-height island pages. Keep the
+            // existing scroll limit for long forms without reserving 650px for short ones.
+            var document = surface.View is C.ScrollViewer { Content: FrameworkElement content } ? content : surface.View;
+            document.Measure(new System.Windows.Size(width, double.PositiveInfinity));
+            height = Math.Clamp(Math.Ceiling(document.DesiredSize.Height) + 2, 80, 650);
+        }
+        _owner.Width = width; _owner.Height = height;
+        return surface.Capture(width, height);
+    }
+    private void Deactivate()
+    {
+        if (_active != null) Context.Pages.FirstOrDefault(page => page.Key == _active)?.Deactivated?.Invoke();
+        _active = null;
+    }
+    private bool Input(RemoteCommand command)
+    {
+        if (!_surfaces.TryGetValue(command.View, out var surface)) return false;
+        if (command.X > -10000 && command.Y > -10000 && command.Action == "position")
+        { _owner.Left = command.X; _owner.Top = command.Y; return true; }
+        return surface.Input(command);
+    }
+    private bool Prefill(RemoteCommand command) => _surfaces.TryGetValue(command.View, out var surface) && surface.Prefill(command.Text ?? "");
+    private bool Action(string key)
+    {
+        var action = Context.Actions.FirstOrDefault(action => action.Key == key);
+        if (action == null || action.Available?.Invoke() == false) return false;
+        action.Invoke(); return true;
+    }
+    private bool Configure(Dictionary<string, JsonElement> configuration)
+    { Context.Update(configuration); _plugin?.OnSettingsChanged(); return true; }
+    private void Publish(RemoteEvent value)
+    {
+        if (_lifetime.IsCancellationRequested) return;
+        if (Interlocked.Increment(ref _eventWrites) > 256)
+        { _application.Dispatcher.BeginInvoke(() => _application.Shutdown(95)); return; }
+        _ = SendEvent(value);
+    }
+    private async Task SendEvent(RemoteEvent value)
+    {
+        try { await PluginWire.Write(_pipe, new(0, "event", PluginWire.Element(value)), _write, _lifetime.Token).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException) { }
+        finally { Interlocked.Decrement(ref _eventWrites); }
+    }
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _lifetime.Cancel(); _pulse?.Dispose();
+        foreach (var service in _started.AsEnumerable().Reverse()) { try { service.Stop(); } catch { } }
+        try { _plugin?.Dispose(); } catch { }
+        _surfaces.Clear(); _owner.Content = null; _owner.Close(); _pipe.Dispose();
+    }
+}

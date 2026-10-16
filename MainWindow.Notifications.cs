@@ -81,7 +81,7 @@ namespace alpha_island
             bool pillOn = pill != null
                           && pill.Visibility == Visibility.Visible
                           && pillOpacity > 0.05;
-            if (!pillOn || !_layers.AnyActive)
+            if (!pillOn || _layers.LastPlan?.AnyVisible != true)
             {
                 if (_pillOverlapSinceUtc != DateTime.MinValue)
                 {
@@ -124,8 +124,7 @@ namespace alpha_island
         /// 通知层正独占那 328x32 时被它们点亮，就是"歌词压在通知上"。
         ///
         /// 判据：一级胶囊形态、没有任何通知层要显示、音乐球不在收缩/绽放动画中。
-        /// 注意 Pill 形态下 `_layers.AnyActive` 为真必然等于"有图层可见"：
-        /// `_layers.Sync` 的 ScopeAllows 对全部图层在 Pill 态都放行。
+        /// 左侧卫星可以保持活跃；是否占据中央胶囊由当前仲裁结果决定。
         /// </summary>
         private bool WantPillLayerVisible()
         {
@@ -157,20 +156,27 @@ namespace alpha_island
         private bool ShowPillNotification(IslandNotification notification)
         {
             if (!_layers.Hub.CanRequest(notification)) return false;
+            if (!GameQuietAllowsNotification(notification.Key))
+            {
+                // Preserve ongoing tasks/approvals and pinned views without opening or promoting the island.
+                if (IsAgentIslandKey(notification.Key) || notification.Key == "approval" || _layers.IsPinned(notification.Key))
+                    _layers.Request(notification with { OpensIsland = false }, requestSync: false);
+                return false;
+            }
             // 续期只更新内容与有效期；新事件才自动接管主岛。
             bool promoteToMain = _layers.Hub.ShouldPromoteToMain(notification);
             // 先登记生命周期，再更新形态和主岛；中途同步必须已经能看见新通知。
             if (!_layers.Request(notification, requestSync: false)) return false;
-            if (notification.OpensIsland
-                && _state != IslandState.Pill
-                && (_state == IslandState.Bar || !notification.DeferredInCard))
-            {
-                SetState(IslandState.Pill);
-            }
-
+            // Keep an automatic desktop/boot popup visible for its promised display time.
+            // Background activity remains available as a satellite; higher priority alerts can still interrupt.
+            if (_desktopCurrent != null && _notificationAutoPill && _activeMainIslandKey == DesktopToastKey
+                && DateTimeOffset.Now < _desktopExpires && notification.Key != DesktopToastKey
+                && notification.Key != ApprovalLayerKey
+                && _layers.Hub.ResolvedPriority(notification.Key) <= _desktopPolicy.Priority(_desktopCurrent))
+                promoteToMain = false;
             // 新事件接管主岛，持续刷新的通知保留当前主岛；其它活跃内容进入卫星栏。
             if (promoteToMain
-                && (_approvalCurrent == null || notification.Key == ApprovalLayerKey))
+                && (_approvalCurrent == null || notification.Key == ApprovalLayerKey || GameDoNotDisturbActive && GameQuietAllowsNotification(notification.Key)))
             {
                 if (!string.Equals(_activeMainIslandKey, notification.Key, StringComparison.Ordinal))
                 {
@@ -190,16 +196,22 @@ namespace alpha_island
                 }
             }
 
+            // Choose the new content before calculating its pill width. Otherwise a
+            // compact battery island opens at its old width, then grows a second time.
+            if (notification.OpensIsland && _state != IslandState.Pill
+                && (_state == IslandState.Bar || !notification.DeferredInCard)) SetState(IslandState.Pill);
             SyncNotificationLayers();
             return true;
         }
 
         private void SyncNotificationLayers()
         {
+            CompletePowerIslandTransition();
+            RestoreAfterChargingPreview();
             foreach (var view in _cardPinViews.Values.ToArray())
                 if (view.PageId.StartsWith("plugin:", StringComparison.Ordinal)) UpdateCardPinSummary(view.PageId);
             // 审批的主岛与渲染仲裁保持一致，普通通知只进入卫星栏。
-            if (_approvalCurrent != null && _activeMainIslandKey != ApprovalLayerKey)
+            if (_approvalCurrent != null && !GameDoNotDisturbActive && _activeMainIslandKey != ApprovalLayerKey)
             {
                 string oldKey = _activeMainIslandKey;
                 if (IsIslandActive(oldKey) && !_activeSatelliteOrder.Contains(oldKey))
@@ -214,14 +226,10 @@ namespace alpha_island
             // 先结算独立收起/过期后的主岛，再按新主岛仲裁，避免保留旧一拍的背景与内容。
             SyncSatelliteOrbs();
             var layers = _layers.Sync(_state, _pages.ActiveId == IslandPageIds.Clipboard);
+            SyncResourceSampling();
 
             // 细条上的常驻指示（A 组①网速）：跟通知图层一起结算，只有 Bar 态才画。
             SyncBarIndicators();
-
-            // 3D 设备模型旋转：老实现在这里每次同步都无条件重写这一行（= 图层可见性），
-            // 所以收回重置把它置 false 之后，下一次同步会把它重新转起来。
-            // 只挂 OnVisibilityChanged 只在"翻转的那一次"生效，会丢掉这个重新武装的行为。
-            BtDeviceModel.IsRotating = _layers.IsVisible("bluetooth");
 
             bool showGreeting = layers.GreetingVisible;
 
@@ -262,23 +270,29 @@ namespace alpha_island
         /// <summary>正在播收起动画：这期间不要改它的 X，否则会把动画掐掉、气泡卡在屏幕上（与 <c>_pinBubbleHiding</c> 同理）。</summary>
         private bool _sideBubbleHiding;
         private string? _sideBubbleComponentKey;
+        private string? _sideBubbleMotionEventId;
+        private string? _sideBubbleMotionPhase;
+        private ImageSource? _sideBubbleMotionArtwork;
+        private int _sideBubbleMotionState;
         private Controls.NetworkSpeedPill? _sideNetworkView;
-        private static string? PageForCompactIsland(string key) => key switch
+        private Controls.SystemStatusPill? _sideStatusView;
+        private Controls.BatteryChargePill? _sideChargingView;
+        private string? PageForCompactIsland(string key) => IsAgentIslandKey(key) ? AgentPage(key) : key switch
         {
-            "music" => IslandPageIds.Music, "netspeed" or "system" => IslandPageIds.System,
+            "music" => IslandPageIds.Music, "netspeed" => IslandPageIds.NetSpeed, "status" or "charging" or "battery" or ChargingPreviewIslandKey => IslandPageIds.System, "system" => _systemNotifyTargetPage,
             "clipboard" => IslandPageIds.Clipboard, "volume" => IslandPageIds.Volume,
             "download" => IslandPageIds.Download,
-            "desktoptoast" => IslandPageIds.Notifications, "approval" or "agentstatus" => IslandPageIds.Ai, _ => CardPageFromPinKey(key)
+            "desktoptoast" or GameQuietNoticeKey => IslandPageIds.Notifications, "approval" => IslandPageIds.Ai,"agentstatus" => AgentActivityPage, _ => CardPageFromPinKey(key)
         };
 
-        private string SideBubbleGlyph(string key) => key switch
+        private string SideBubbleGlyph(string key) => IsAgentIslandKey(key) ? AgentGlyph(key) : key switch
         {
             "music" => "\uE8D6",
             "download" => "\uE896",   // Download
             "volume" => "\uE767",     // Volume
             "battery" => "\uE83F",    // Battery
             "bluetooth" => "\uE702",  // Bluetooth
-            "netspeed" => "\uE895",   // NetSpeed
+            "netspeed" => AlphaIsland.PluginSdk.GlyphArtwork.NetworkTransferGlyph,   // NetSpeed
             "system" => "\uE7F4",     // System hardware
             "clipboard" => "\uE8C8",  // Clipboard
             "approval" => "\uE73E",   // Approval Check
@@ -286,7 +300,7 @@ namespace alpha_island
             _ => GetCurrentLayerGlyph(key),
         };
 
-        private string SideBubbleLabel(string key) => key switch
+        private string SideBubbleLabel(string key) => IsAgentIslandKey(key) ? AgentLabel(key) : key switch
         {
             "music" => "媒体播放器",
             "clipboard" => "剪切板",
@@ -294,7 +308,10 @@ namespace alpha_island
             "volume" => "音量",
             "battery" => "电量提醒",
             "bluetooth" => "蓝牙设备",
-            "netspeed" => "系统状态与网络",
+            "netspeed" => "实时网速",
+            "status" => "系统状态",
+            "charging" => "电池电量",
+            ChargingPreviewIslandKey => "充电小岛测试",
             "system" => "系统状态",
             DesktopToastKey => _notificationSummary.Title.Text,
             "agentstatus" => "助手忙碌",
@@ -319,6 +336,7 @@ namespace alpha_island
                     .ThenByDescending(k => k switch { "approval" => 90, "volume" => 80, "bluetooth" => 76,
                         "battery" => 72, "system" => 68, "download" => 66, "netspeed" => 64, "clipboard" => 56, _ => 40 }).FirstOrDefault();
             }
+            if (MultipleAgentCardIslands && IsAgentIslandKey(deferred)) { HideSideBubbleHint(immediate: true); return; }
             if (string.IsNullOrEmpty(deferred))
             {
                 HideSideBubbleHint(immediate: _state != IslandState.Card);
@@ -335,10 +353,101 @@ namespace alpha_island
 
         private void ShowSideBubbleHint(string glyph, string title, string key)
         {
-            _sideBubbleComponentKey = key;
-            SideBubbleIcon.Text = key == "music" && _smtc?.Current?.ContentKind == MediaContentKind.Video ? "\uE714"
+            string iconGlyph = key == "music" ? (_lastIsPlaying == true ? "\uE769" : "\uE768")
                 : key == "download" ? DownloadNotifyGlyph.Text : glyph;
+            ImageSource? artwork = key switch
+            {
+                DesktopToastKey => _notificationSummary.IconImage.Source,
+                "bluetooth" => BtDeviceArt.Source,
+                _ => IsAgentIslandKey(key) ? AgentSession(key)?.Icon.Source : SideBubbleArtwork.Source,
+            };
+            string? eventId = key == DesktopToastKey ? _desktopCurrent?.Key : null;
+            int eventState = key == "bluetooth" ? _btMotionRevision
+                : IsAgentIslandKey(key) ? (int)AgentStateFor(key) : 0;
+            // Focus time and temporary notice text change frequently; only its actual phase is an action.
+            string? phase = key == "card/focus" && _cardPinViews.TryGetValue(key, out var focusView)
+                ? focusView.MotionDetail : null;
+            int? weatherCode = key switch
+            {
+                DesktopToastKey => _notificationSummary.Icon.WeatherCode,
+                "weather" or "card/weather" => _weatherSnapshot?.Code,
+                _ => null,
+            };
+            bool continuingVolume = _sideBubbleShowing && !_sideBubbleHiding
+                && _sideBubbleComponentKey == "volume" && key == "volume";
+            bool volumeChanged = continuingVolume && (SideBubbleIcon.Active != VolumeIcon.Active
+                || Math.Abs(SideBubbleIcon.Level - VolumeIcon.Level) > .001);
+            bool newAction = !_sideBubbleShowing || _sideBubbleHiding
+                || _sideBubbleComponentKey != key || SideBubbleText.Text != title || SideBubbleIcon.Text != iconGlyph
+                || _sideBubbleMotionEventId != eventId || _sideBubbleMotionState != eventState
+                || _sideBubbleMotionPhase != phase || !ReferenceEquals(_sideBubbleMotionArtwork, artwork)
+                || SideBubbleIcon.WeatherCode != weatherCode;
+            // Continuous volume input retargets the current strokes instead of committing
+            // the previous target and replaying from a reset state on every pointer move.
+            if (newAction && !continuingVolume) ActionIconMotion.Stop(SideBubbleIconSlot);
+            _sideBubbleComponentKey = key;
+            _sideBubbleMotionEventId = eventId;
+            _sideBubbleMotionState = eventState;
+            _sideBubbleMotionPhase = phase;
+            _sideBubbleMotionArtwork = artwork;
+            SideBubbleArtwork.Source = artwork;
+            SideBubbleArtwork.Visibility = Visibility.Collapsed;
+            SideBubbleArtwork.Opacity = key == "bluetooth" ? BtDeviceArt.Opacity : 1;
+            SideBubbleIcon.Visibility = Visibility.Visible;
+            SideBubbleIcon.Opacity = key == "bluetooth" ? BtDeviceIcon.Opacity : 1;
+            SideBubbleIcon.Text = iconGlyph;
+            if (IsAgentIslandKey(key)) ApplyAgentArtwork(key, SideBubbleIcon);
+            else
+            {
+                AgentAvatarMotion.Release(SideBubbleIcon); SideBubbleIcon.Source = artwork;
+                SideBubbleIconSlot.Width = SideBubbleIconSlot.Height = 24;
+                SideBubbleIcon.Width = SideBubbleIcon.Height = 24;
+            }
+            SideBubbleIcon.WeatherCode = weatherCode;
+            SideBubbleIcon.Shape = key switch
+            {
+                "bluetooth" => BtDeviceIcon.Shape,
+                "music" => Controls.IconShape.PlayPause,
+                "volume" => Controls.IconShape.Volume,
+                "battery" => Controls.IconShape.Battery,
+                "download" => Controls.IconShape.Download,
+                "clipboard" => Controls.IconShape.Clipboard,
+                "approval" => Controls.IconShape.Approval,
+                "card/focus" => Controls.IconShape.Timer,
+                "weather" or "card/weather" => Controls.IconShape.Weather,
+                _ when IsAgentIslandKey(key) => Controls.IconShape.Agent,
+                DesktopToastKey => _notificationSummary.Icon.Shape,
+                "system" => SysNotifyGlyph.Shape,
+                _ => Controls.IconShape.Auto
+            };
+            SideBubbleIcon.Active = key switch
+            {
+                "bluetooth" => _btDisplayedConnected,
+                "music" => _lastIsPlaying == true,
+                "volume" => VolumeIcon.Active,
+                "battery" => BatteryIcon.Active,
+                "system" => SysNotifyGlyph.Active,
+                DesktopToastKey => _notificationSummary.Icon.Active,
+                "card/focus" => _pomodoro.Running,
+                _ when IsAgentIslandKey(key) => AgentStateFor(key) != AgentRunState.Idle,
+                _ => true
+            };
+            SideBubbleIcon.Level = key switch
+            {
+                "volume" => VolumeIcon.Level,
+                "battery" => BatteryIcon.Level,
+                "system" => SysNotifyGlyph.Level,
+                DesktopToastKey => _notificationSummary.Icon.Level,
+                _ => 1
+            };
             SideBubbleText.Text = title;
+            ActionIconMotion.SetKind(SideBubbleIconSlot, key switch
+            {
+                "bluetooth" => ActionIconMotion.GetKind(BtIconContainer),
+                _ when IsAgentIslandKey(key) => AgentMotion(key),
+                "card/focus" or "clipboard" or "download" or "approval" or "music" => ActionIconAnimation.Tick,
+                _ => ActionIconAnimation.Pulse,
+            });
 
             // 已经挂着：只跟着岛宽挪位置，不重播入场动画
             //（下载提示每 2 秒续期一次，重播会变成一直闪的动画；入场动画没播完时也不能重来，
@@ -346,6 +455,7 @@ namespace alpha_island
             if (_sideBubbleShowing && !_sideBubbleHiding && SideBubble.Visibility == Visibility.Visible)
             {
                 SyncSideBubbleOffset();
+                if (newAction || volumeChanged) ActionIconMotion.Play(SideBubbleIconSlot);
                 return;
             }
 
@@ -354,10 +464,10 @@ namespace alpha_island
             _sideBubbleShowing = true;
             _sideBubbleHiding = false;
 
-            SideBubble.BeginAnimation(UIElement.OpacityProperty, null);
-            SideBubbleScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            SideBubbleScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-            SideBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubble,UIElement.OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleXProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleYProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleTranslate,TranslateTransform.XProperty, null);
             SideBubble.Visibility = Visibility.Visible;
 
             var easeOut = new CubicEase { EasingMode = EasingMode.EaseOut };
@@ -370,27 +480,33 @@ namespace alpha_island
             var scale = new DoubleAnimation(0.6, 1.0, TimeSpan.FromMilliseconds(220)) { EasingFunction = easeOut };
             var fade = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(180));
 
-            SideBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, move);
-            SideBubbleScale.BeginAnimation(ScaleTransform.ScaleXProperty, scale);
-            SideBubbleScale.BeginAnimation(ScaleTransform.ScaleYProperty, scale);
-            SideBubble.BeginAnimation(UIElement.OpacityProperty, fade);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleTranslate,TranslateTransform.XProperty, move);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleXProperty, scale);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleYProperty, scale);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubble,UIElement.OpacityProperty, fade);
+            if (newAction) ActionIconMotion.Play(SideBubbleIconSlot);
         }
 
         private void HideSideBubbleHint(bool immediate = false)
         {
             if (SideBubble == null) return;
+            ActionIconMotion.Stop(SideBubbleIconSlot);
             if (!_sideBubbleShowing && SideBubble.Visibility != Visibility.Visible) return;
 
             _sideBubbleShowing = false;
             _sideBubbleComponentKey = null;
+            _sideBubbleMotionEventId = null;
+            _sideBubbleMotionPhase = null;
+            _sideBubbleMotionArtwork = null;
+            _sideBubbleMotionState = 0;
 
             if (immediate)
             {
                 _sideBubbleHiding = false;
-                SideBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, null);
-                SideBubbleScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-                SideBubbleScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-                SideBubble.BeginAnimation(UIElement.OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleTranslate,TranslateTransform.XProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleXProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleYProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubble,UIElement.OpacityProperty, null);
                 SideBubble.Visibility = Visibility.Collapsed;
                 SideBubble.Opacity = 0;
                 SideBubbleTranslate.X = SideBubbleRestX;
@@ -414,10 +530,10 @@ namespace alpha_island
                 _sideBubbleHiding = false;
             };
 
-            SideBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, move);
-            SideBubbleScale.BeginAnimation(ScaleTransform.ScaleXProperty, scale);
-            SideBubbleScale.BeginAnimation(ScaleTransform.ScaleYProperty, scale);
-            SideBubble.BeginAnimation(UIElement.OpacityProperty, fade);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleTranslate,TranslateTransform.XProperty, move);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleXProperty, scale);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleScale,ScaleTransform.ScaleYProperty, scale);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubble,UIElement.OpacityProperty, fade);
         }
 
         /// <summary>
@@ -441,7 +557,7 @@ namespace alpha_island
             double target = SideBubbleTargetX();
             if (Math.Abs(SideBubbleTranslate.X - target) < 0.5) return;
 
-            SideBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SideBubbleTranslate,TranslateTransform.XProperty, null);
             SideBubbleTranslate.X = target;
         }
 
@@ -525,7 +641,7 @@ namespace alpha_island
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
             };
-            PillLayerTranslate.BeginAnimation(TranslateTransform.XProperty, moveAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLayerTranslate,TranslateTransform.XProperty, moveAnim);
 
             // 透明度交给宿主：它知道唯一判据（WantPillLayerVisible）与形变窗口，
             // 自己写完还会在动画结束时重问一次判据 —— 旧实现在这里无条件写 0，
@@ -550,10 +666,10 @@ namespace alpha_island
             };
             moveAnim.Completed += (_, _) =>
             {
-                PillLayerTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLayerTranslate,TranslateTransform.XProperty, null);
                 PillLayerTranslate.X = 0;
             };
-            PillLayerTranslate.BeginAnimation(TranslateTransform.XProperty, moveAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLayerTranslate,TranslateTransform.XProperty, moveAnim);
 
             // 淡入同样交给宿主：动画结束时它会重问判据，通知层若已独占就保持隐藏。
             _layers.BloomPrimary(240);
@@ -574,7 +690,7 @@ namespace alpha_island
             }
             if (PillLayerTranslate != null)
             {
-                PillLayerTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLayerTranslate,TranslateTransform.XProperty, null);
                 PillLayerTranslate.X = 0;
             }
             _lyricIndex = -2;
@@ -583,126 +699,33 @@ namespace alpha_island
 
         private void ShowMusicOrb()
         {
-            if (MusicOrbBubble == null) return;
-            if (_greetingShowing || GreetingActive) return;
-            if (_isMusicOrbShowing) return;
-            // 收回/塌缩动画也可能还持有透明度、缩放与位移属性。
+            if (MusicOrbBubble == null || _greetingShowing || GreetingActive || _isMusicOrbShowing) return;
             ResetMusicOrbVisual();
-            _isMusicOrbShowing = true;
-            _isMusicOrbReturning = false;
-
+            _isMusicOrbShowing = true; _isMusicOrbReturning = false;
             var art = _lastArt ?? _smtc?.Current?.Artwork;
-            bool hasCover = art != null;
             MusicOrbCoverBrush.ImageSource = art;
-            MusicOrbCover.Opacity = hasCover ? 1 : 0;
-            MusicOrbGradient.Opacity = hasCover ? 0 : 1;
-
-            MusicOrbBubble.Visibility = Visibility.Visible;
-            MusicOrbBubble.Opacity = 1.0;
-            MusicOrbTranslate.X = -148;
-            MusicOrbTranslate.Y = 0;
-            MusicOrbScale.ScaleX = 1.0;
-            MusicOrbScale.ScaleY = 1.0;
-
-            // 关键：立即隐藏主岛 PillCoverHost，从这一刻起封面由 MusicOrbBubble 接管向左滑出，杜绝画面出现两个封面
-            if (PillCoverHost != null)
-            {
-                PillCoverHost.Opacity = 0;
-            }
-
-            // 落点由卫星车道算（S4）："music-orb" 车道在胶囊态给 186+36/2=204、中转站给 222，
-            // 与原硬编码值逐位相同；差别是以后左侧再加卫星时它会自动往外让位。
-            double targetX = _satellites.Offset("music-orb");
-            var splineGlide = new KeySpline(0.16, 0.90, 0.35, 1.0);
-
-            // 1. 水平位移动画（从主岛封面位置平滑向左滑出，不突兀闪烁）
-            var moveFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(420) };
-            moveFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(-148, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            moveFrames.KeyFrames.Add(new SplineDoubleKeyFrame(targetX - 4.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), splineGlide));
-            moveFrames.KeyFrames.Add(new SplineDoubleKeyFrame(targetX, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420))));
-
-            // 2. 水平轻微弹性形变
-            var scaleXFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(420) };
-            scaleXFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            scaleXFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.15, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160)), splineGlide));
-            scaleXFrames.KeyFrames.Add(new SplineDoubleKeyFrame(0.96, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320))));
-            scaleXFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420))));
-
-            // 3. 垂直轻微弹性形变
-            var scaleYFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(420) };
-            scaleYFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            scaleYFrames.KeyFrames.Add(new SplineDoubleKeyFrame(0.88, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160)), splineGlide));
-            scaleYFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.04, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320))));
-            scaleYFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420))));
-
-            MusicOrbTranslate.BeginAnimation(TranslateTransform.XProperty, moveFrames);
-            MusicOrbScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXFrames);
-            MusicOrbScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYFrames);
-
+            MusicOrbCover.Opacity = art != null ? 1 : 0; MusicOrbGradient.Opacity = art != null ? 0 : 1;
+            SatelliteOrbAnimator.Show(MusicOrbBubble);
+            if (PillCoverHost != null) PillCoverHost.Opacity = 0;
+            SatelliteOrbAnimator.SlideOut(MusicOrbBubble, -CurrentIslandVisualWidth / 2 + MusicOrbBubble.Width * .60, _satellites.Offset("music-orb"));
             AnimatePillLayerContract();
         }
 
         private void HideMusicOrb(bool immediate = false)
         {
-            if (MusicOrbBubble == null) return;
-            if (!_isMusicOrbShowing && !_isMusicOrbReturning && MusicOrbBubble.Visibility == Visibility.Collapsed) return;
+            if (MusicOrbBubble == null || (!_isMusicOrbShowing && !_isMusicOrbReturning && MusicOrbBubble.Visibility == Visibility.Collapsed)) return;
             _isMusicOrbShowing = false;
-
-            if (immediate)
-            {
-                _isMusicOrbReturning = false;
-                ResetMusicOrbVisual();
-                if (PillCoverHost != null)
-                {
-                    PillCoverHost.Opacity = 1;
-                }
-                return;
-            }
-
-            if (_isMusicOrbReturning) return;
+            if (_isMusicOrbReturning && !immediate) return;
             _isMusicOrbReturning = true;
-
-            double currentX = MusicOrbTranslate.X;
-            var splineReturn = new KeySpline(0.2, 0.8, 0.4, 1.0);
-
-            // 1. 水平位移（从脱离位置平滑冲回主岛封面 X = -148）
-            var moveFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(320) };
-            moveFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(currentX, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            moveFrames.KeyFrames.Add(new SplineDoubleKeyFrame(-148, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), splineReturn));
-
-            var scaleXFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(320) };
-            scaleXFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(MusicOrbScale.ScaleX, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            scaleXFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), splineReturn));
-
-            var scaleYFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(320) };
-            scaleYFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(MusicOrbScale.ScaleY, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            scaleYFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), splineReturn));
-
-            moveFrames.Completed += (_, __) =>
+            SatelliteOrbAnimator.Return(MusicOrbBubble, -CurrentIslandVisualWidth / 2 + MusicOrbBubble.Width * .36, immediate, () =>
             {
                 _isMusicOrbReturning = false;
-                if (!_isMusicOrbShowing)
-                {
-                    ResetMusicOrbVisual();
-
-                    // 关键：圆球完全滑回主岛原位交接后，才显现 PillCoverHost 并向右舒展展开歌词！
-                    if (PillCoverHost != null)
-                    {
-                        PillCoverHost.Opacity = 1;
-                    }
-
-                    if (_state == IslandState.Pill)
-                    {
-                        AnimatePillLayerBloom();
-                    }
-                }
-            };
-
-            MusicOrbTranslate.BeginAnimation(TranslateTransform.XProperty, moveFrames);
-            MusicOrbScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXFrames);
-            MusicOrbScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYFrames);
+                if (_isMusicOrbShowing) return;
+                ResetMusicOrbVisual();
+                if (PillCoverHost != null) PillCoverHost.Opacity = 1;
+                if (!immediate && _state == IslandState.Pill) AnimatePillLayerBloom();
+            });
         }
-
         /// <summary>
         /// 音乐球复位到"藏在主岛封面里"的静止态：摘掉 5 条属性上的动画时钟，再把终值写回本地值。
         ///
@@ -712,6 +735,7 @@ namespace alpha_island
         /// </summary>
         private void ResetMusicOrbVisual()
         {
+            SatelliteOrbAnimator.Hide(MusicOrbBubble, immediate: true);
             AnimationReset.Translate(MusicOrbTranslate);
             AnimationReset.Scale(MusicOrbScale);
             AnimationReset.Opacity(MusicOrbBubble);
@@ -757,11 +781,11 @@ namespace alpha_island
                 }
             };
 
-            MusicOrbTranslate.BeginAnimation(TranslateTransform.XProperty, moveXAnim);
-            MusicOrbTranslate.BeginAnimation(TranslateTransform.YProperty, moveYAnim);
-            MusicOrbScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnim);
-            MusicOrbScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYAnim);
-            MusicOrbBubble.BeginAnimation(UIElement.OpacityProperty, opacityAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(MusicOrbTranslate,TranslateTransform.XProperty, moveXAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(MusicOrbTranslate,TranslateTransform.YProperty, moveYAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(MusicOrbScale,ScaleTransform.ScaleXProperty, scaleXAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(MusicOrbScale,ScaleTransform.ScaleYProperty, scaleYAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(MusicOrbBubble,UIElement.OpacityProperty, opacityAnim);
         }
 
         private void MusicOrbBubble_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

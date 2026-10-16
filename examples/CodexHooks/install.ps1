@@ -1,19 +1,25 @@
 param(
-    [string]$NodePath = (Get-Command node -ErrorAction Stop).Source,
+    [string]$NodePath = '',
     [string]$CodexDirectory = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }),
     [string]$ConfigDirectory = (Join-Path $env:LOCALAPPDATA 'alpha-island\config'),
-    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
+    [string]$ProjectRoot = '',
+    [switch]$AllProjects,
+    [string]$IntegrationDirectory = '',
+    [string]$RuntimeDirectory = '',
     [int]$Port = 8765,
     [ValidateSet('native', 'island')][string]$ApprovalMode = 'native',
     [switch]$Remove
 )
 $ErrorActionPreference = 'Stop'
 if ($Port -lt 1 -or $Port -gt 65535) { throw 'Port must be in 1..65535' }
-$adapter = (Resolve-Path (Join-Path $PSScriptRoot 'hook.mjs')).Path
-$taskRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+if (!$Remove -and !$AllProjects -and !$ProjectRoot) { throw 'Choose all projects or supply -ProjectRoot.' }
+if ($AllProjects -and $ProjectRoot) { throw 'Choose either all projects or a project directory.' }
+if (!$IntegrationDirectory) { $IntegrationDirectory = Join-Path (Split-Path $ConfigDirectory -Parent) 'integrations\codex' }
+if (!$RuntimeDirectory) { $RuntimeDirectory = Join-Path (Split-Path $ConfigDirectory -Parent) 'runtime\codex' }
+$adapter = Join-Path $IntegrationDirectory 'hook.mjs'
 $configPath = Join-Path $ConfigDirectory 'codex-hooks.json'
 $hookPath = Join-Path $CodexDirectory 'hooks.json'
-$config = if (Test-Path -LiteralPath $hookPath) { Get-Content -LiteralPath $hookPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{ hooks = [pscustomobject]@{} } }
+$config = if (Test-Path -LiteralPath $hookPath) { Get-Content -LiteralPath $hookPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { [pscustomobject]@{ hooks = [pscustomobject]@{} } }
 if (!$config.hooks) { $config | Add-Member -Force NoteProperty hooks ([pscustomobject]@{}) }
 if (Test-Path -LiteralPath $hookPath) {
     $backupDirectory = Join-Path $ConfigDirectory 'backups'
@@ -32,13 +38,16 @@ foreach ($property in @($config.hooks.PSObject.Properties)) {
     if ($groups.Count) { $config.hooks | Add-Member NoteProperty $property.Name $groups }
 }
 if (!$Remove) {
+    if (!$NodePath) { $NodePath = (Get-Command node -ErrorAction Stop).Source }
     $node = (Resolve-Path -LiteralPath $NodePath).Path
     foreach ($commandPath in @($node, $adapter, $configPath)) {
         if ($commandPath -match '["\r\n%]') { throw 'Unsupported character in command path' }
     }
-    New-Item -ItemType Directory -Path $ConfigDirectory -Force | Out-Null
-    $settings = @{ endpoint = "http://127.0.0.1:$Port/"; projectRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path;
-        runtimeDir = (Join-Path $taskRoot 'bin\CodexHooksRuntime'); timeoutSec = 120; approvalMode = $ApprovalMode }
+    New-Item -ItemType Directory -Path $ConfigDirectory,$IntegrationDirectory -Force | Out-Null
+    $source = (Resolve-Path (Join-Path $PSScriptRoot 'hook.mjs')).Path
+    if ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($adapter)) { Copy-Item -LiteralPath $source -Destination $adapter -Force }
+    $settings = @{ endpoint = "http://127.0.0.1:$Port/"; projectRoot = $(if ($AllProjects) { '' } else { (Resolve-Path -LiteralPath $ProjectRoot).Path }); allProjects = [bool]$AllProjects;
+        runtimeDir = $RuntimeDirectory; timeoutSec = 120; approvalMode = $ApprovalMode; hookPath = [IO.Path]::GetFullPath($hookPath) }
     [System.IO.File]::WriteAllText($configPath, ($settings | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
     # Explicit PowerShell invocation works under both cmd and PowerShell hook launchers.
     $nodeLiteral = "'" + $node.Replace("'", "''") + "'"

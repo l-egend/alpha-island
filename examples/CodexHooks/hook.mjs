@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile, unlink, readdir, appendFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, unlink, readdir, appendFile, stat, open, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,7 +12,10 @@ export function validateConfig(config) {
   if (endpoint.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)
       || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname !== '/')
     throw new Error('Endpoint must be a loopback HTTP root URL');
-  if (!path.isAbsolute(config.projectRoot) || !path.isAbsolute(config.runtimeDir)) throw new Error('Absolute paths required');
+  if (config.allProjects !== undefined && typeof config.allProjects !== 'boolean') throw new Error('Invalid project scope');
+  if (typeof config.runtimeDir !== 'string' || !path.isAbsolute(config.runtimeDir)
+      || (config.allProjects !== true && (typeof config.projectRoot !== 'string' || !path.isAbsolute(config.projectRoot))))
+    throw new Error('Absolute paths required');
   const approvalMode = config.approvalMode ?? 'native';
   if (!['native', 'island'].includes(approvalMode)) throw new Error('Approval mode must be native or island');
   return { ...config, endpoint: endpoint.href, approvalMode, timeoutSec: Math.min(120, Math.max(5, Number(config.timeoutSec) || 120)) };
@@ -40,6 +43,10 @@ export function inScope(cwd, projectRoot) {
   return relative === '' || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative));
 }
 
+export function isInScope(cwd, config) {
+  return typeof cwd === 'string' && path.isAbsolute(cwd) && (config.allProjects === true || inScope(cwd, config.projectRoot));
+}
+
 export function redact(value, depth = 0) {
   if (depth > 8) return '[省略]';
   if (Array.isArray(value)) return value.slice(0, 32).map(item => redact(item, depth + 1));
@@ -53,6 +60,37 @@ export function redact(value, depth = 0) {
 }
 
 const sessionKey = input => createHash('sha256').update(input.session_id).digest('hex').slice(0, 24);
+async function conversationIdentity(input) {
+  const fallback = sessionKey(input);
+  if (typeof input.transcript_path !== 'string' || !path.isAbsolute(input.transcript_path)) return { session: fallback, nativeThreadId: input.session_id };
+  let file;
+  try {
+    file = await open(input.transcript_path, 'r');
+    const buffer = Buffer.alloc(512 * 1024);
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+    // Only native metadata is inspected. Message records and the path never leave this process.
+    const records = buffer.subarray(0, bytesRead).toString('utf8').replace(/^\uFEFF/, '').split('\n').slice(0, 4);
+    for (const line of records) {
+      let record; try { record = JSON.parse(line); } catch { continue; }
+      if (record.type !== 'session_meta') continue;
+      const meta = record.payload;
+      if (typeof meta?.id !== 'string' || !/^[a-zA-Z0-9_.:-]{1,256}$/.test(meta.id)) break;
+      const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
+      const frontend = typeof meta.session_id === 'string' && /^[a-zA-Z0-9_.:-]{1,256}$/.test(meta.session_id) ? meta.session_id : '';
+      const child = meta.source === 'subagent' || (meta.source && typeof meta.source === 'object' && 'subagent' in meta.source);
+      // Keep execution lifetimes separate, then group them under the stable frontend.
+      // One finished worker must not clear another worker in the same conversation.
+      const id = !frontend && child && meta.parent_thread_id === input.session_id ? input.session_id : meta.id;
+      const session = hash(id);
+      const parentId = frontend && frontend !== id ? frontend : child && typeof meta.parent_thread_id === 'string'
+        && /^[a-zA-Z0-9_.:-]{1,256}$/.test(meta.parent_thread_id) && meta.parent_thread_id !== id ? meta.parent_thread_id : undefined;
+      const parent = parentId ? hash(parentId) : undefined;
+      return { session, nativeThreadId: meta.id, ...(session !== fallback && parent !== fallback ? { sessionAlias: fallback } : {}), ...(parent ? { parentSession: parent } : {}), startsRootActivity: !parent || Boolean(frontend) };
+    }
+  } catch { /* Missing/partial metadata uses the existing bounded transport identity. */ }
+  finally { await file?.close().catch(() => {}); }
+  return { session: fallback, nativeThreadId: input.session_id };
+}
 const decision = (behavior, message) => ({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior, ...(message ? { message } : {}) } } });
 
 async function request(config, route, body, timeoutMs = 1000, method = 'POST', signal) {
@@ -66,8 +104,25 @@ async function request(config, route, body, timeoutMs = 1000, method = 'POST', s
 }
 
 async function report(config, key, state, detail, configPath, background) {
-  const payload = { source: 'codex', session: key, state, detail, ttlSec: state === 'idle' ? 5 : 300 };
-  await request(config, '/status', payload, 650).catch(() => {});
+  const payload = { source: 'codex', session: key, state, detail, ttlSec: state === 'idle' ? 5 : 300, reporterPid: process.pid, statusEventId: randomUUID(), reportedAtUnixMs: Date.now(), ...(config.statusIdentity || {}) };
+  // A missed loopback delivery must not drop the only start/stop signal. The
+  // island drains this bounded, metadata-only outbox on its existing status tick.
+  let pending;
+  try {
+    const directory = path.join(config.runtimeDir, 'status-events');
+    await mkdir(directory, { recursive: true });
+    const names = (await readdir(directory)).filter(name => /^\d{13}-[a-f0-9-]{36}\.(?:json|tmp)$/.test(name)).sort();
+    await Promise.all(names.slice(0, Math.max(0, names.length - 126)).map(name => unlink(path.join(directory, name)).catch(() => {})));
+    const name = Date.now() + '-' + randomUUID();
+    const temporary = path.join(directory, name + '.tmp');
+    pending = path.join(directory, name + '.json');
+    await writeFile(temporary, JSON.stringify({ version: 1, reportedAtUnixMs: Date.now(), payload }));
+    await rename(temporary, pending);
+  } catch { /* Reporting still works if the optional outbox is not writable. */ }
+  try {
+    await request(config, '/status', payload, 650);
+    if (pending) await unlink(pending).catch(() => {});
+  } catch { /* A failed delivery stays available for local recovery. */ }
 }
 
 async function cancelSession(config, key) {
@@ -82,21 +137,25 @@ async function cancelSession(config, key) {
 
 export async function handleHook(input, rawConfig, { configPath, background = false, signal } = {}) {
   const config = validateConfig(rawConfig);
-  if (!input || typeof input.session_id !== 'string' || !input.session_id || !inScope(input.cwd, config.projectRoot)) return {};
-  const key = sessionKey(input);
+  if (!input || typeof input.session_id !== 'string' || !input.session_id || !isInScope(input.cwd, config)) return {};
+  const { startsRootActivity = true, ...identity } = await conversationIdentity(input);
   const event = input.hook_event_name;
+  const key = identity.session;
+  config.statusIdentity = { ...identity,
+    ...(typeof input.turn_id === 'string' && /^[a-zA-Z0-9_.:-]{1,64}$/.test(input.turn_id) ? { nativeTurnId: input.turn_id } : {}), ...(event === 'UserPromptSubmit' && startsRootActivity ? { beginsActivity: true } : {}),
+    ...(event === 'SessionStart' && input.source !== 'compact' ? { connectOnly: true } : {}) };
   if (event === 'SessionStart' && input.source === 'compact') {
     await report(config, key, 'thinking', 'Codex · 整理上下文', configPath, background);
     return {};
   }
   if (idleEvents.has(event)) {
-    await cancelSession(config, key);
+    if (event !== 'SessionStart') await cancelSession(config, key);
     await report(config, key, 'idle', '', configPath, background);
     return {};
   }
   if (activeEvents.has(event)) {
     const detail = event === 'PreToolUse' ? 'Codex · 执行工具' : event === 'PreCompact' ? 'Codex · 整理上下文' : 'Codex · 思考中';
-    await report(config, key, 'thinking', detail, configPath, background);
+    await report(config, key, event === 'PreToolUse' ? 'working' : 'thinking', detail, configPath, background);
     return {};
   }
   if (event !== 'PermissionRequest' || typeof input.tool_name !== 'string' || !input.tool_name) return {};
@@ -120,6 +179,7 @@ export async function handleHook(input, rawConfig, { configPath, background = fa
     void request(config, '/approval/' + id, undefined, 650, 'DELETE').catch(() => {});
   };
   signal?.addEventListener('abort', cancel, { once: true });
+  let allowed = false;
   try {
     if (signal?.aborted) return decision('deny', 'Codex 请求已取消');
     await mkdir(config.runtimeDir, { recursive: true });
@@ -131,7 +191,7 @@ export async function handleHook(input, rawConfig, { configPath, background = fa
       reason: typeof args?.description === 'string' ? args.description.slice(0, 160) : 'Codex 请求本次工具权限', timeoutSec: config.timeoutSec,
     }, (config.timeoutSec + 3) * 1000, 'POST', controller.signal);
     if (result.id === id && result.approved === true && result.timedOut === false && ['mouse', 'key'].includes(result.decidedBy))
-      return decision('allow');
+      { allowed = true; return decision('allow'); }
     return decision('deny', result.timedOut ? '岛端审批超时' : '岛端未允许本次操作');
   } catch { return decision('deny', '岛端审批已取消或连接中断'); }
   finally {
@@ -139,7 +199,7 @@ export async function handleHook(input, rawConfig, { configPath, background = fa
     const stillActive = await readFile(marker, 'utf8').then(() => true).catch(() => false);
     await request(config, '/approval/' + id, undefined, 650, 'DELETE').catch(() => {});
     await unlink(marker).catch(() => {});
-    if (stillActive && !signal?.aborted) await report(config, key, 'thinking', 'Codex · 思考中', configPath, background).catch(() => {});
+    if (stillActive && !signal?.aborted) await report(config, key, allowed ? 'working' : 'thinking', allowed ? 'Codex · 执行工具' : 'Codex · 思考中', configPath, background).catch(() => {});
   }
 }
 
@@ -158,7 +218,7 @@ async function main() {
     const tracePath = path.join(config.runtimeDir, 'hook-trace.jsonl');
     if ((await stat(tracePath).catch(() => ({ size: 0 }))).size < 32768)
       await appendFile(tracePath, JSON.stringify({ event: input.hook_event_name, keys: Object.keys(input),
-        scoped: inScope(input.cwd, config.projectRoot), devicePath: String(input.cwd).startsWith('\\\\?\\') }) + '\n');
+        scoped: isInScope(input.cwd, config), devicePath: String(input.cwd).startsWith('\\\\?\\') }) + '\n');
   }
   const output = await handleHook(input, config, { configPath, background: true, signal: controller.signal });
   process.stdout.write(JSON.stringify(output) + '\n');

@@ -12,22 +12,19 @@ using HorizontalAlignment = System.Windows.HorizontalAlignment;
 
 namespace alpha_island.Controls;
 
-/// <summary>可选择、可排序的两行状态仪表；分项与累计量在悬停详情中。</summary>
+/// <summary>独立网速小岛；上传下载可排序，累计量与峰值在悬停详情中。</summary>
 public sealed class NetworkSpeedPill : Grid
 {
     private static readonly string[] Units = { "B", "KB", "MB", "GB", "TB" };
-    private string _rateTip = "网速监测未开启", _sessionTip = "", _resourceTip = "CPU / RAM 等待采样", _powerTip = "功耗等待采样";
+    private string _rateTip = "网速监测未开启", _sessionTip = "";
     private readonly bool _compact;
     private readonly Dictionary<string, FrameworkElement> _items = new();
     private string[] _selection = [];
     internal TextBlock UploadValue { get; }
     internal TextBlock DownloadValue { get; }
-    internal TextBlock CpuValue { get; }
-    internal TextBlock RamValue { get; }
-    internal TextBlock PowerValue { get; }
     internal string[] DisplayedItems => _selection.ToArray();
-    internal SolidColorBrush UploadColor { get; } = new(Color.FromRgb(0x5C, 0xDF, 0xAA));
-    internal SolidColorBrush DownloadColor { get; } = new(Color.FromRgb(0x63, 0xBD, 0xFF));
+    internal SolidColorBrush UploadColor { get; } = new(Color.FromRgb(0x3D, 0x9C, 0xF5));
+    internal SolidColorBrush DownloadColor { get; } = new(Color.FromRgb(0xFF, 0x74, 0x5D));
     internal string SessionDescription => _sessionTip;
     public NetworkSpeedPill() : this(false) { }
     public NetworkSpeedPill(bool compact)
@@ -38,15 +35,12 @@ public sealed class NetworkSpeedPill : Grid
         RowDefinitions.Add(new RowDefinition()); RowDefinitions.Add(new RowDefinition());
         UploadValue = AddItem("upload", "↑", UploadColor);
         DownloadValue = AddItem("download", "↓", DownloadColor);
-        CpuValue = AddItem("cpu", "CPU", Brushes.LightGray);
-        RamValue = AddItem("memory", "RAM", Brushes.LightGray);
-        PowerValue = AddItem("power", "⚡", new SolidColorBrush(Color.FromRgb(0xFF, 0xCF, 0x66)));
-        SetDisplayItems(StatusDisplayOptions.All);
-        SetUnavailable(); SetResources(null, null); SetPower(null, "功耗等待采样");
+        SetDisplayItems(new[] { "upload", "download" });
+        SetUnavailable();
     }
     internal void SetDisplayItems(IEnumerable<string> selected)
     {
-        string[] items = selected.Where(_items.ContainsKey).Distinct().ToArray();
+        string[] items = selected.Where(key => key is "upload" or "download").Distinct().ToArray();
         if (_selection.SequenceEqual(items) && Children.Count > 0) return;
         _selection = items; Children.Clear(); ColumnDefinitions.Clear();
         int columns = Math.Max(1, (items.Length + 1) / 2);
@@ -69,7 +63,7 @@ public sealed class NetworkSpeedPill : Grid
         }
         if (items.Length == 0)
         {
-            var empty = new TextBlock { Text = "系统状态", Foreground = Brushes.LightGray, FontSize = 11,
+            var empty = new TextBlock { Text = "实时网速", Foreground = Brushes.LightGray, FontSize = 11,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             SetRowSpan(empty, 2); Children.Add(empty);
         }
@@ -96,30 +90,13 @@ public sealed class NetworkSpeedPill : Grid
         UploadValue.Text = FormatRate(upload).Replace(" ", ""); DownloadValue.Text = FormatRate(download).Replace(" ", "");
         _rateTip = $"上传 {FormatRate(upload)} · 下载 {FormatRate(download)}"; RefreshTip();
     }
-    public void SetResources(double? cpu, double? ram)
-    {
-        cpu = ValidPercent(cpu); ram = ValidPercent(ram);
-        CpuValue.Text = cpu.HasValue ? $"{cpu:0}%" : "—";
-        RamValue.Text = ram.HasValue ? $"{ram:0}%" : "—";
-        CpuValue.Foreground = new SolidColorBrush(cpu >= 90 ? Color.FromRgb(0xF5, 0x9E, 0x0B) : Colors.White);
-        RamValue.Foreground = new SolidColorBrush(ram >= 85 ? Color.FromRgb(0xFF, 0x55, 0x55) : Colors.White);
-        _resourceTip = $"CPU {CpuValue.Text} · RAM {RamValue.Text}"; RefreshTip();
-    }
-    private static double? ValidPercent(double? value) => value.HasValue && double.IsFinite(value.Value) && value >= 0 && value <= 100 ? value : null;
-    internal void SetPower(double? watts, string description)
-    {
-        watts = AlphaIsland.Hardware.HardwarePowerPolicy.ValidWatts(watts);
-        PowerValue.Text = watts.HasValue ? $"{watts:0.0}W" : "—W";
-        _powerTip = description; RefreshTip();
-    }
     public void SetSessionInfo(long? uploaded, long? downloaded, double peakUpload, double peakDownload, IReadOnlyList<double> history)
     {
         _sessionTip = $"本次监测上传 {(uploaded.HasValue ? FormatBytes(uploaded.Value) : "—")}、下载 {(downloaded.HasValue ? FormatBytes(downloaded.Value) : "—")}\n上传峰值 {FormatRate(peakUpload)}、下载峰值 {FormatRate(peakDownload)}";
         RefreshTip();
     }
     public void SetUnavailable() { UploadValue.Text = "—"; DownloadValue.Text = "—"; _rateTip = "网速监测未开启"; _sessionTip = ""; RefreshTip(); }
-    private void RefreshTip() => ToolTip = string.Join("\n", new[] { _rateTip, _resourceTip,
-        _selection.Contains("power") ? _powerTip : "", _sessionTip }.Where(x => x.Length > 0));
+    private void RefreshTip() => ToolTip = string.Join("\n", new[] { _rateTip, _sessionTip }.Where(x => x.Length > 0));
     internal static string FormatShortRate(double speed)
     {
         var (value, unit) = Normalize(speed);

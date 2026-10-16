@@ -12,7 +12,7 @@ public sealed class ClockPlugin : IIslandPlugin
     private IPluginContext? _context;
     private StackPanel? _view;
     private TextBlock? _caption, _time, _date;
-    private DispatcherTimer? _timer;
+    private IPluginScheduledTask? _timer;
     private bool _started, _active;
     public void Initialize(IPluginContext context)
     {
@@ -27,10 +27,9 @@ public sealed class ClockPlugin : IIslandPlugin
         context.RegisterService(new("ticker", token =>
         {
             _started = true;
-            _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) =>
-            { if (token.IsCancellationRequested) _timer?.Stop(); else Update(); }, context.Dispatcher);
-            _timer.Stop(); SyncTimer();
-        }, () => { _started = false; _timer?.Stop(); _timer = null; }));
+            _timer = context.Schedule("clock-ui", TimeSpan.FromSeconds(1), () => { if (token.IsCancellationRequested) _timer?.SetPaused(true); else Update(); }, initiallyPaused: true);
+            _timer.SetPaused(true); SyncTimer();
+        }, () => { _started = false; _timer?.Dispose(); _timer = null; }));
     }
     private FrameworkElement CreateView()
     {
@@ -44,7 +43,7 @@ public sealed class ClockPlugin : IIslandPlugin
     }
     private void VisibilityChanged(object sender, DependencyPropertyChangedEventArgs e) { Update(); SyncTimer(); }
     private void SyncTimer()
-    { if (_started && _active && _view?.IsVisible == true) _timer?.Start(); else _timer?.Stop(); }
+    { if (_started && _active && _view?.IsVisible == true) _timer?.SetPaused(false); else _timer?.SetPaused(true); }
     private void Update()
     {
         if (_context == null || _time == null) return;
@@ -58,7 +57,7 @@ public sealed class ClockPlugin : IIslandPlugin
     public void OnSettingsChanged() => Update();
     public void Dispose()
     {
-        _started = false; _timer?.Stop(); _timer = null;
+        _started = false; _timer?.Dispose(); _timer = null;
         if (_view != null) _view.IsVisibleChanged -= VisibilityChanged;
         _context = null; _view = null; _caption = _time = _date = null;
     }

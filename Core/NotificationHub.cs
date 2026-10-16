@@ -41,6 +41,7 @@ namespace alpha_island.Core
             public DateTime UntilUtc = DateTime.MinValue;
             public IslandNotification? Request;
             public bool Dismissed;
+            public bool PresentationSuppressed;
 
             /// <summary>
             /// 图层级「置顶」（③A）：用户右键钉住了**这一条通知**。语义两件 ——
@@ -105,6 +106,15 @@ namespace alpha_island.Core
         }
 
         public bool IsRegistered(string key) => _byKey.ContainsKey(key);
+        internal bool SetPresentationSuppressed(string key, bool suppressed)
+        {
+            if (!_byKey.TryGetValue(key, out var entry) || entry.PresentationSuppressed == suppressed) return false;
+            entry.PresentationSuppressed = suppressed;
+            return true;
+        }
+        internal bool IsPresentationSuppressed(string key)
+            => _byKey.TryGetValue(key, out var entry) && entry.PresentationSuppressed;
+        internal int ResolvedPriority(string key) => _byKey.TryGetValue(key, out var entry) ? PriorityOf(entry) : int.MinValue;
         public bool Unregister(string key)
         {
             if (!_byKey.Remove(key, out var entry)) return false;
@@ -235,7 +245,7 @@ namespace alpha_island.Core
             {
                 foreach (var entry in _order)
                 {
-                    if (entry.Pinned) return true;
+                    if (entry.Pinned && !entry.PresentationSuppressed) return true;
                 }
                 return false;
             }
@@ -257,6 +267,7 @@ namespace alpha_island.Core
         {
             if (!_byKey.TryGetValue(key, out var entry)) return false;
             if (!entry.Showing) return false;
+            if (entry.PresentationSuppressed || PresentationAllowed?.Invoke(entry.Reg.Key) == false) return false;
             // 置顶的层不自然回收：否则"钉一条 2 秒的下载提示"在下一拍就会被收回，等于没钉。
             if (entry.Pinned) return false;
             if (IsActiveInternal(entry)) return false;
@@ -277,6 +288,7 @@ namespace alpha_island.Core
             foreach (var entry in _order)
             {
                 if (!entry.Showing) continue;
+                if (entry.PresentationSuppressed || PresentationAllowed?.Invoke(entry.Reg.Key) == false) continue;
                 if (entry.Pinned) continue;
                 if (IsActiveInternal(entry)) continue;
 
@@ -433,8 +445,11 @@ namespace alpha_island.Core
 
         // ---------- 内部 ----------
 
-        private static bool IsActiveInternal(Entry entry)
+        internal Func<string, bool>? PresentationAllowed { get; set; }
+        private bool IsActiveInternal(Entry entry)
         {
+            // Foreground suppression preserves the task claim, request and user's pin.
+            if (entry.PresentationSuppressed || PresentationAllowed?.Invoke(entry.Reg.Key) == false) return false;
             // 置顶：始终有效（即便是在卡片态置顶未被触发过弹窗）
             if (entry.Pinned) return true;
             if (!entry.Showing) return false;

@@ -38,11 +38,15 @@ namespace alpha_island
         private void IslandBody_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             _mediaOpenPointer = IsMediaOpenSurface(e.OriginalSource as DependencyObject) ? e.GetPosition(this) : null;
+            _clipboardOpenPointer = IsClipboardLinkOpenSurface(e.OriginalSource as DependencyObject) && _clipboard?.CurrentWebLink is Uri link
+                ? (e.GetPosition(this), link) : null;
+            // 文件条目需要 OLE 拖出，不能同时启动收起手势或剪切板鼠标捕获。
             if (IsDescendantOf(e.OriginalSource as DependencyObject, ComponentHandle)
                 || IsDescendantOf(e.OriginalSource as DependencyObject, ApprovalAllowButton)
                 || IsDescendantOf(e.OriginalSource as DependencyObject, ApprovalDenyButton)
                 || IsDescendantOf(e.OriginalSource as DependencyObject, CardVolumeSliderTrack)
                 || IsDescendantOf(e.OriginalSource as DependencyObject, VolumeTrackContainer)
+                || IsInsideTransferItem(e.OriginalSource)
                 || IsSliderSource(e.OriginalSource as DependencyObject))
             {
                 _isSwiping = false;
@@ -52,7 +56,7 @@ namespace alpha_island
             // 卡片停在 AI 页时，按住左键通常是在拖选气泡里的文字：那不是"上滑收起"手势，
             // 不掐掉的话往上拖 12px 就会把整张卡片收成细条，选中的字也一并没了。
             if (_state == IslandState.Card &&
-                ((_pages.ActiveId == IslandPageIds.Ai && IsDescendantOf(e.OriginalSource as DependencyObject, AiCardLayer))
+                ((_pages.ActivePage is Plugins.PluginIslandPage pluginPage && IsDescendantOf(e.OriginalSource as DependencyObject, pluginPage.View))
                  || (_pages.ActiveId == IslandPageIds.Notifications && IsDescendantOf(e.OriginalSource as DependencyObject, _notificationsView))))
             {
                 _swipeStartPoint = e.GetPosition(this);
@@ -130,12 +134,20 @@ namespace alpha_island
         private async void IslandBody_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             var openPointer = _mediaOpenPointer;
+            var clipboardPointer = _clipboardOpenPointer;
+            _clipboardOpenPointer = null;
             _mediaOpenPointer = null;
             _isSwiping = false;
             _dragStartedInsideIsland = false;
             if (IslandBody.IsMouseCaptured)
             {
                 IslandBody.ReleaseMouseCapture();
+            }
+            if (clipboardPointer is { } copied && (e.GetPosition(this) - copied.Start).Length <= 5
+                && IsClipboardLinkOpenSurface(e.OriginalSource as DependencyObject) && TryOpenClipboardWebLink(copied.Link))
+            {
+                e.Handled = true;
+                return;
             }
             if (openPointer is Point start && (e.GetPosition(this) - start).Length <= 5
                 && IsMediaOpenSurface(e.OriginalSource as DependencyObject))
@@ -147,6 +159,14 @@ namespace alpha_island
 
         private void IslandBody_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
         {
+            // Handle the battery before the parent card's pin gesture in this tunnelling event.
+            if (_state == IslandState.Card && _pages.ActiveId == IslandPageIds.System
+                && IsDescendantOf(e.OriginalSource as DependencyObject, SystemBatterySummary))
+            {
+                e.Handled = true;
+                if (ChargingIslandAvailable) SetLayerPinned(ChargingIslandKey, !_layers.IsPinned(ChargingIslandKey), promoteToMain: false);
+                return;
+            }
             // 诊断：右键到底有没有落到岛体上（脚本化验收时用它区分「事件没到」与「到了但没得钉」）。
             // 卡片态多报两个值：当前页与卡片置顶字段（④ 的验收断言就读这两个 ASCII 标记）。
             Point rp = e.GetPosition(this);
@@ -221,7 +241,7 @@ namespace alpha_island
             if (Math.Abs(PinBubbleTranslate.X - target) < 0.5) return;
 
             // 宽度形变每帧都会调到这里：直接把动画换成当前值，观感是气泡贴着岛边一起走
-            PinBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleTranslate,TranslateTransform.XProperty, null);
             PinBubbleTranslate.X = target;
         }
 
@@ -240,6 +260,12 @@ namespace alpha_island
         /// </summary>
         private void TogglePin()
         {
+            if (_state == IslandState.Pill && _activeMainIslandKey == "battery" && _powerTransitionPending)
+            {
+                string compact = PowerTransitionCompactKey;
+                SetLayerPinned(compact, !_layers.IsPinned(compact), promoteToMain: false);
+                return;
+            }
             if (_state == IslandState.Card)
             {
                 ToggleCardPin();
@@ -313,7 +339,7 @@ namespace alpha_island
             IslandPageIds.Volume => "volume",
             IslandPageIds.Download => "download",
             IslandPageIds.NetSpeed => "netspeed",
-            IslandPageIds.System => "netspeed",
+            IslandPageIds.System => "status",
             IslandPageIds.Notifications => DesktopToastKey,
             IslandPageIds.Clipboard => "clipboard",
             IslandPageIds.Ai => _approvalCurrent != null ? "approval" : "agentstatus",
@@ -329,6 +355,7 @@ namespace alpha_island
         /// </summary>
         private bool SetLayerPinned(string layer, bool pinned, bool promoteToMain = true)
         {
+            if (layer == GameQuietNoticeKey) return false; // The game-entry notice is transient.
             if (pinned)
             {
                 EnsureLayerContent(layer);
@@ -356,7 +383,10 @@ namespace alpha_island
             }
 
             _layers.SetPinned(layer, pinned);
+            if (layer == ChargingIslandKey && _chargingStatus is { } battery)
+                UpdateChargingIsland(battery, expandWhenIdle: false);
             bool now = _layers.IsPinned(layer);
+            if (layer == ChargingPreviewIslandKey) SetChargingIslandContent(ChargingPreviewPrimary, layer);
             IslandLog.Debug("Pin", now
                 ? $"右键置顶：图层 {layer} → 已置顶（形态 {_state}）[pin=layer-on]"
                 : $"右键置顶：图层 {layer} → 已取消置顶（形态 {_state}）[pin=layer-off]");
@@ -419,13 +449,15 @@ namespace alpha_island
         }
 
         /// <summary>图层 Key → 气泡里的短名（气泡只有 11px 字号，名字越短越好）。</summary>
-        private string LayerDisplayName(string key) => key switch
+        private string LayerDisplayName(string key) => IsAgentIslandKey(key) ? AgentLabel(key) : key switch
         {
             "volume" => "音量",
             "battery" => "电量",
             "bluetooth" => "蓝牙",
             "clipboard" => "剪贴板",
-            "netspeed" => "系统状态",
+            "netspeed" => "网速",
+            "status" => "系统状态",
+            "charging" => "充电电量",
             "system" => "系统",
             "download" => "下载",
             "agentstatus" => "助手",
@@ -462,10 +494,10 @@ namespace alpha_island
             var scaleYAnim = new DoubleAnimation(0.4, 1.0, duration) { EasingFunction = easeOut };
             var opacityAnim = new DoubleAnimation(0.0, 1.0, duration) { EasingFunction = easeOut };
 
-            PinBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, moveAnim);
-            PinBubbleScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnim);
-            PinBubbleScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYAnim);
-            PinBubble.BeginAnimation(UIElement.OpacityProperty, opacityAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleTranslate,TranslateTransform.XProperty, moveAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleScale,ScaleTransform.ScaleXProperty, scaleXAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleScale,ScaleTransform.ScaleYProperty, scaleYAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubble,UIElement.OpacityProperty, opacityAnim);
 
             if (_pinBubbleTimer == null)
             {
@@ -488,10 +520,10 @@ namespace alpha_island
 
             if (immediate)
             {
-                PinBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, null);
-                PinBubbleScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-                PinBubbleScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-                PinBubble.BeginAnimation(UIElement.OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleTranslate,TranslateTransform.XProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleScale,ScaleTransform.ScaleXProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleScale,ScaleTransform.ScaleYProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubble,UIElement.OpacityProperty, null);
                 PinBubble.Visibility = Visibility.Collapsed;
                 PinBubble.Opacity = 0;
                 _pinBubbleHiding = false;
@@ -515,21 +547,24 @@ namespace alpha_island
                 }
             };
 
-            PinBubbleTranslate.BeginAnimation(TranslateTransform.XProperty, moveAnim);
-            PinBubbleScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnim);
-            PinBubbleScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYAnim);
-            PinBubble.BeginAnimation(UIElement.OpacityProperty, opacityAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleTranslate,TranslateTransform.XProperty, moveAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleScale,ScaleTransform.ScaleXProperty, scaleXAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubbleScale,ScaleTransform.ScaleYProperty, scaleYAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PinBubble,UIElement.OpacityProperty, opacityAnim);
         }
 
         // ================= 悬停 / 点击 =================
 
         private void ExpandIslandFromBar()
         {
-            if (ShouldHideForegroundMedia && !HasActiveNotification && _approvalCurrent == null) return;
+            bool showingNotification = HasActiveNotification || _approvalCurrent != null || _layers.AnyPinned;
+            string page = LastOpenedCardPage();
+            if (ShouldHideForegroundMedia && !showingNotification && page == IslandPageIds.Music) return;
             _musicIslandDismissed = false;
-            // 自动暂停隐藏不妨碍手动访问播放控制；此时直接打开卡片，避免展开空胶囊。
-            if (ShouldHidePausedMedia && !HasActiveNotification && _approvalCurrent == null)
-                SetState(IslandState.Card, preferredPage: IslandPageIds.Music);
+            // 非媒体页没有常驻胶囊摘要，直接恢复完整页面，避免空白中间态。
+            // 媒体保留两级展开；暂停隐藏时直接提供播放控制。
+            if (!showingNotification && (page != IslandPageIds.Music || ShouldHidePausedMedia))
+                SetState(IslandState.Card, preferredPage: page);
             else
                 SetState(IslandState.Pill);
         }
@@ -544,16 +579,30 @@ namespace alpha_island
             {
                 ExpandIslandFromBar();
             }
-            else if (_state == IslandState.Pill && !_options.TwoStepExpand) SetState(IslandState.Card);
+            // An automatic desktop notification stays small until the user explicitly clicks it.
+            else if (_state == IslandState.Pill && !_options.TwoStepExpand
+                && !IsAgentIslandKey(PinTargetLayer())
+                && !(_desktopCurrent != null && _notificationAutoPill && _activeMainIslandKey == DesktopToastKey))
+                OpenCardFromPill();
         }
 
         /// <summary>一级 → 二级：用户要求"鼠标经过时第一次展开"是一级，再点一下才进完整卡片。</summary>
         private void IslandBody_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (_exiting) return;
+            if (_state == IslandState.Pill && IsAgentIslandKey(PinTargetLayer()) && TryOpenAgentIsland(PinTargetLayer()))
+            {
+                e.Handled = true;
+                return;
+            }
             if (_approvalCurrent != null)
             {
                 PresentCurrentApproval();
+                e.Handled = true;
+                return;
+            }
+            if (_state == IslandState.Pill && TryOpenMessengerNotification(_activeMainIslandKey))
+            {
                 e.Handled = true;
                 return;
             }
@@ -566,13 +615,14 @@ namespace alpha_island
             if (_state == IslandState.Bar) ExpandIslandFromBar();
             else if (_state == IslandState.Pill)
             {
-                SetState(IslandState.Card);
+                OpenCardFromPill();
             }
         }
 
         private void HoverTimer_Tick(object? sender, EventArgs e)
         {
             if (_exiting) return;
+            SyncHoverPacing();
 
             // 实时维护外部前台窗口句柄与屏幕矩形缓存
             try
@@ -595,6 +645,11 @@ namespace alpha_island
                 }
             }
             catch { }
+
+            // Games can consume the low-level hook. Reuse this timer only while a
+            // card is open to detect an outside press without another global loop.
+            if (_state == IslandState.Card) PollOutsideCardClick();
+            else _outsideCardButtonDown = false;
 
             if (ComponentSwitchGestureActive || _fileDragActive) { _hoverOutTicks = 0; return; }
             if (_isDraggingVolumeSlider
@@ -620,7 +675,7 @@ namespace alpha_island
             if (_layers.ExpireAllStale())
             {
                 if (_state == IslandState.Pill && !HasVisibleMusicPin && !_layers.AnyPinned && !HasActiveNotification
-                    && (!_options.KeepCompactWhilePlaying || _smtc?.Current?.IsPlaying != true))
+                    && !KeepPlayingMusicIslandVisible)
                 {
                     CollapseToBar();
                     return;
@@ -644,7 +699,7 @@ namespace alpha_island
             SyncNotificationLayers();
 
             // 若有任何提示/通知处于活跃期，保持展开不收回
-            if ((_upNextShowing && UpNextActive) || HasActiveNotification)
+            if (_state != IslandState.Card && ((_upNextShowing && UpNextActive) || HasActiveNotification))
             {
                 _hoverOutTicks = 0;
                 return;
@@ -699,7 +754,9 @@ namespace alpha_island
 
             if (_state == IslandState.Card && _hoverOutTicks >= HoverDowngradeTicks)
             {
-                SetState(IslandState.Pill);
+                if (!MusicIslandCanShow && !HasActiveNotification && !_layers.AnyPinned)
+                    CollapseToBar();
+                else SetState(IslandState.Pill);
                 return;
             }
 
@@ -708,8 +765,8 @@ namespace alpha_island
                 if (HasVisibleMusicPin || _layers.AnyPinned) return;
                 // 有待裁决的工具权限审批时不许收：收成细条用户就看不见「允许/拒绝」，agent 只能干等到超时。
                 if (_approvalCurrent != null) return;
-                // "保持播放时展开"：用户勾了这个就别收
-                if (_options.KeepCompactWhilePlaying && _smtc?.Current?.IsPlaying == true) return;
+                // 播放保持与窗口联动共用后台活动的保持判据。
+                if (KeepPlayingMusicIslandVisible) return;
                 CollapseToBar();
             }
         }
@@ -818,58 +875,90 @@ namespace alpha_island
                 bool insideInteractive = IsPointInsideInteractiveZone(e.X, e.Y);
                 if (!insideInteractive)
                 {
-                    // 若用户已置顶任意岛（音乐或通知）：点击外部绝不收回至细条。
-                    // 卡片态平滑降回"置顶小岛"（Pill 态常驻置顶）而不是一大张卡片顶置或塌成细条
-                    if ((HasVisibleMusicPin || _layers.AnyPinned) && (_state == IslandState.Pill || _state == IslandState.Card))
-                    {
-                        if (_state == IslandState.Card) SetState(IslandState.Pill);
-                        return;
-                    }
-
-                    // 若正在欢迎动画期间，点击外部立即提前结束欢迎并收缩回细条
-                    if (_greetingShowing || GreetingActive)
-                    {
-                        DismissGreeting();
-                        CollapseToBar();
-                        return;
-                    }
-
-                    // 若剪切板处于复制锁定常驻状态，点击外部绝不收回至细条
-                    if (_clipboardLocked)
-                    {
-                        // 若处于展开的卡片态，则平滑降回胶囊态继续常驻
-                        if (_state == IslandState.Card)
-                        {
-                            SetState(IslandState.Pill);
-                        }
-                        return;
-                    }
-
-                    // 文件中转站若处于展示状态，点击外部：若有暂存文件保持常驻，绝不被点击外部关闭！
-                    if (_state == IslandState.Tray)
-                    {
-                        if (_fileTransfer != null && _fileTransfer.Count > 0)
-                        {
-                            return;
-                        }
-                        if (HasVisibleMusicPin)
-                        {
-                            SetState(IslandState.Pill);
-                        }
-                        else
-                        {
-                            CollapseToBar();
-                        }
-                        return;
-                    }
-
-                    // 正在播放通知提示期间，点击外部不打断
-                    if (VolumeNotifyActive || BatteryNotifyActive || BtNotifyActive || UpNextActive)
-                        return;
-
-                    CollapseToBar();
+                    HandleOutsideIslandClick();
                 }
             }), DispatcherPriority.Input);
+        }
+
+        private bool _outsideCardButtonDown;
+        private void PollOutsideCardClick()
+        {
+            short left = NativeMethods.GetAsyncKeyState(NativeMethods.VK_LBUTTON);
+            short right = NativeMethods.GetAsyncKeyState(NativeMethods.VK_RBUTTON);
+            bool down = ((left | right) & 0x8000) != 0;
+            bool pressed = (!_outsideCardButtonDown && down) || ((left | right) & 1) != 0;
+            _outsideCardButtonDown = down;
+            if (!pressed || ComponentSwitchGestureActive || _fileDragActive || _isDraggingVolumeSlider
+                || Environment.TickCount64 - _componentSelectedTick < 150 || _approvalCurrent != null) return;
+            if (NativeMethods.TryGetCursorPos(out var point) && !IsPointInsideInteractiveZone(point.X, point.Y))
+                HandleOutsideIslandClick();
+        }
+
+        private void HandleOutsideIslandClick()
+        {
+            _componentCardAwaitingPointer = false;
+            _hoverOutTicks = 0;
+            // 若用户已置顶任意岛（音乐或通知）：点击外部绝不收回至细条。
+            // 卡片态平滑降回"置顶小岛"（Pill 态常驻置顶）而不是一大张卡片顶置或塌成细条
+            if ((HasVisibleMusicPin || _layers.AnyPinned) && (_state == IslandState.Pill || _state == IslandState.Card))
+            {
+                if (_state == IslandState.Card) SetState(IslandState.Pill);
+                return;
+            }
+
+            // 若正在欢迎动画期间，点击外部立即提前结束欢迎并收缩回细条
+            if (_greetingShowing || GreetingActive)
+            {
+                DismissGreeting();
+                if (!HasActiveNotification && !KeepPlayingMusicIslandVisible) CollapseToBar();
+                return;
+            }
+
+            // 若剪切板处于复制锁定常驻状态，点击外部绝不收回至细条
+            if (_clipboardLocked)
+            {
+                // 若处于展开的卡片态，则平滑降回胶囊态继续常驻
+                if (_state == IslandState.Card)
+                {
+                    SetState(IslandState.Pill);
+                }
+                return;
+            }
+
+            // 文件中转站若处于展示状态，点击外部：若有暂存文件保持常驻，绝不被点击外部关闭！
+            if (_state == IslandState.Tray)
+            {
+                if (_fileTransfer != null && _fileTransfer.Count > 0)
+                {
+                    return;
+                }
+                if (HasVisibleMusicPin)
+                {
+                    SetState(IslandState.Pill);
+                }
+                else
+                {
+                    CollapseToBar();
+                }
+                return;
+            }
+
+            // Background playback stays compact while the user operates another app.
+            // An open detail card still closes back to the compact music island.
+            if (KeepPlayingMusicIslandVisible)
+            {
+                if (_state == IslandState.Card) SetState(IslandState.Pill);
+                return;
+            }
+
+            // 正在播放通知提示期间，点击外部不打断
+            if (HasActiveNotification || UpNextActive)
+            {
+                if (_state == IslandState.Card) SetState(IslandState.Pill);
+                return;
+            }
+
+            CollapseToBar();
         }
 
         /// <summary>

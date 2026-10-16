@@ -176,11 +176,11 @@ namespace alpha_island.Services
             if (offsetMs != 0)
             {
                 // LRC 约定：offset 为正表示歌词整体提前
-                var shift = TimeSpan.FromMilliseconds(offsetMs);
+                // Decimal ticks keep even malformed 64-bit offsets from overflowing TimeSpan.
                 for (int i = 0; i < lines.Count; i++)
                 {
-                    var t = lines[i].Time - shift;
-                    if (t < TimeSpan.Zero) t = TimeSpan.Zero;
+                    decimal shiftedTicks = lines[i].Time.Ticks - (decimal)offsetMs * TimeSpan.TicksPerMillisecond;
+                    var t = TimeSpan.FromTicks((long)Math.Clamp(shiftedTicks, 0m, long.MaxValue));
                     lines[i] = new LyricLine { Time = t, Text = lines[i].Text, Translation = lines[i].Translation };
                 }
             }

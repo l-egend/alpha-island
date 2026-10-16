@@ -23,12 +23,12 @@ internal static partial class Program
     }
     private static void PluginAndSettingsChecks(alpha_island.MainWindow window, string testRoot)
     {
-        var pages = (IslandPageHost)typeof(alpha_island.MainWindow).GetField("_pages", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        var pages = (IslandPageHost)ReadWindowMember(window, "_pages")!;
         string previous = pages.ActiveId;
-        var previousState = typeof(alpha_island.MainWindow).GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window);
+        var previousState = ReadWindowMember(window, "_state");
         int builtins = pages.Count;
         string pluginRoot = Path.Combine(testRoot, "plugins"); Directory.CreateDirectory(pluginRoot);
-        string build = "Debug", tfm = "net8.0-windows";
+        string build = TestBuildConfiguration, tfm = "net8.0-windows";
         string clockSource = Path.GetFullPath($"examples/ClockPlugin/bin/{build}/{tfm}");
         string fixtureSource = Path.GetFullPath($"tools/PluginFixture/bin/{build}/{tfm}");
         void WritePlugin(string folder, string id, string assembly, string type, string source, int api = 1)
@@ -51,7 +51,7 @@ internal static partial class Program
         using var host = new PluginHost(window.Dispatcher, options, new[] { pluginRoot },
             page => { viewport.Children.Add(page.View); pages.Register(page); },
             page => { pages.Unregister(page.Id); viewport.Children.Remove(page.View); },
-            id => PrivateCall(window, "SelectComponent", id));
+            id => PrivateCall(window, "SelectComponent", id)) { DataRoot = Path.Combine(testRoot, "plugin-data") };
         host.Changed += () => PrivateCall(window, "SwitchCardPage", Math.Max(0, pages.ActiveIndex), false, false);
         try
         {
@@ -59,20 +59,26 @@ internal static partial class Program
             Check(host.Entries.Count == 10 && host.Entries.Count(e => e.Manifest == null) == 4,
                 "插件清单拒绝重复 Id、跨目录 DLL、未来 API 和损坏 JSON，正常插件仍被发现");
             Check(host.Entries.All(e => e.Instance == null) && pages.Count == builtins, "发现插件只读清单，新插件默认禁用且不执行程序集");
-            void Enable(string id, bool enabled) { options.Extras[PluginHost.EnabledKey(id)] = JsonSerializer.SerializeToElement(enabled); host.Sync(options); }
+            void Enable(string id, bool enabled)
+            {
+                options.Extras[PluginHost.EnabledKey(id)] = JsonSerializer.SerializeToElement(enabled); host.Sync(options);
+                var entry = host.Entries.Single(entry => entry.Manifest?.Id == id);
+                if (enabled) PumpUntilState(() => entry.Running || entry.Error.Length > 0);
+                else AwaitPlugin(entry.Teardown.ContinueWith(_ => true));
+            }
             Enable("example.clock", true);
             var clock = host.Entries.Single(e => e.Manifest?.Id == "example.clock");
             var clockPage = clock.Pages.Single();
             Check(clock.Running && pages.Count == builtins + 1 && ReferenceEquals(clockPage.View, viewport.Children[viewport.Children.Count - 1])
-                && clock.Context!.Settings.Count == 4 && clock.Started.Count == 1, "真实示例 DLL 加载并注册卡片、四类设置和服务");
-            Check(clock.Instance!.GetType().Assembly != typeof(PluginApi).Assembly && typeof(IIslandPlugin).IsAssignableFrom(clock.Instance.GetType()),
-                "插件独立加载上下文共享 SDK 类型身份");
+                && clock.Context!.Settings.Count == 4 && clock.Instance is alpha_island.Plugins.Isolation.IsolatedPlugin { IsAlive: true }, "真实示例 DLL 加载并注册卡片、四类设置和服务");
+            Check(clock.Instance is alpha_island.Plugins.Isolation.IsolatedPlugin worker && worker.ProcessId != Environment.ProcessId,
+                "插件代码在子进程执行，主界面只保留受控代理");
             Check(clock.Context!.PluginDirectory == Path.Combine(pluginRoot, "clock"), "SDK 提供独立插件资产目录");
             var menu = new alpha_island.Controls.ComponentRadialMenu(window.IslandBody.Background, System.Windows.Media.Brushes.Cyan);
             menu.SetPages(pages.Pages, pages.ActiveId, window.IslandBody.Background);
-            Check(menu.ItemIds.Contains(clockPage.Id) && Descendants<TextBlock>(menu).Any(t => t.Text == clockPage.Glyph),
+            Check(menu.ItemIds.Contains(clockPage.Id) && Descendants<AlphaIsland.PluginSdk.GlyphIcon>(menu).Any(t => t.Text == clockPage.Glyph),
                 "插件卡片自动进入组件圆形菜单并使用自己的图标");
-            clock.Context.OpenPage("clock"); PumpAnimations(30);
+            clock.Context.OpenPage("clock"); PumpUntilState(() => Descendants<TextBlock>(clockPage.View).Any());
             ((FrameworkElement)window.IslandBody).UpdateLayout();
             Check(pages.ActiveId == clockPage.Id && clockPage.View.IsHitTestVisible && clockPage.View.Visibility == Visibility.Visible,
                 "插件 OpenPage 接入主岛实际展开与卡片切换");
@@ -93,6 +99,8 @@ internal static partial class Program
             host.Sync(options);
             Check(clock.Context!.GetSetting("size", 0d) == 44 && clock.Context.GetSetting("format", "") == "24 小时",
                 "插件数值设置夹取上限，无效枚举回退已验证的默认值");
+            PrivateCall(window, "SelectComponent", clockPage.Id);
+            PumpUntilState(() => Descendants<TextBlock>(clockPage.View).Any(t => t.Text == "独立模块"));
             Check(Descendants<TextBlock>(clockPage.View).Any(t => t.Text == "独立模块"), "设置变更通过插件回调即时更新真实视图");
             var lifetime = clock.Context.Lifetime;
             pages.SetActiveIndex(pages.IndexOf(clockPage.Id));
@@ -109,11 +117,11 @@ internal static partial class Program
 
             Enable("fixture.probe", true);
             var probe = host.Entries.Single(e => e.Manifest?.Id == "fixture.probe"); var probeInstance = probe.Instance!;
-            bool Property(string name) => (bool)probeInstance.GetType().GetProperty(name)!.GetValue(probeInstance)!;
-            var probeToken = (CancellationToken)probeInstance.GetType().GetProperty("Token")!.GetValue(probeInstance)!;
-            Check(Property("Started") && !Property("Stopped"), "插件后台服务在启用时启动");
+            var probeWorker = (alpha_island.Plugins.Isolation.IsolatedPlugin)probeInstance;
+            var probeToken = probe.Context!.Lifetime;
+            Check(probeWorker.IsAlive, "插件后台服务在独立进程启用");
             Enable("fixture.probe", false);
-            Check(Property("Stopped") && Property("Disposed") && probeToken.IsCancellationRequested, "禁用执行服务 Stop、入口 Dispose 和生命周期取消");
+            Check(!probeWorker.IsAlive && probeToken.IsCancellationRequested, "禁用取消生命周期并结束独立插件进程");
             foreach (string id in new[] { "fixture.init-fails", "fixture.start-fails" })
             {
                 Enable(id, true); var failed = host.Entries.Single(e => e.Manifest?.Id == id);
@@ -124,10 +132,13 @@ internal static partial class Program
             }
             Enable("fixture.callback-fails", true);
             var callback = host.Entries.Single(e => e.Manifest?.Id == "fixture.callback-fails");
-            pages.SetActiveIndex(pages.IndexOf(callback.Pages.Single().Id)); PumpAnimations(30);
+            // A page can already have activated during the dispatch pump and been
+            // removed by the expected failure. Assert the final failure, not a transient page list.
+            if (callback.Running) PrivateCall(window, "SelectComponent", PluginHost.PageId("fixture.callback-fails", "probe"));
+            PumpUntilState(() => callback.Error.Length > 0);
             Check(callback.Error.Contains("activation failed") && callback.Instance == null && clock.Running,
                 "页面生命周期异常撤下故障插件，宿主和其它插件可继续工作");
-            Enable("fixture.settings-fails", true); host.Sync(options);
+            Enable("fixture.settings-fails", true); host.Sync(options); PumpUntilState(() => host.Entries.Single(e => e.Manifest?.Id == "fixture.settings-fails").Error.Length > 0);
             Check(host.Entries.Single(e => e.Manifest?.Id == "fixture.settings-fails").Error.Contains("settings failed") && clock.Running,
                 "设置回调异常隔离到单个插件");
             var saved = JsonSerializer.Serialize(options); var restored = JsonSerializer.Deserialize<IslandOptions>(saved)!.Normalized();
@@ -139,10 +150,10 @@ internal static partial class Program
         }
         finally
         {
-            host.Dispose(); pages.SetActiveIndex(pages.IndexOfOrDefault(previous));
+            host.Dispose(); AwaitPlugin(host.ShutdownCompletion.ContinueWith(_ => true)); pages.SetActiveIndex(pages.IndexOfOrDefault(previous));
             PrivateCall(window, "SwitchCardPage", pages.ActiveIndex, false, false);
             PrivateCall(window, "SetState", previousState, true, previous);
-            typeof(alpha_island.MainWindow).GetField("_componentCardAwaitingPointer", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, false);
+            WriteWindowMember(window, "_componentCardAwaitingPointer", false);
         }
     }
 
@@ -161,7 +172,7 @@ internal static partial class Program
             MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
             PrivateCall(settings, "SelectPageByTag", "plugins"); PumpAnimations(45); root.UpdateLayout();
             var pluginPage = (FrameworkElement)settings.FindName("Page_Plugins");
-            Check(pluginPage.Opacity > 0.15 && pluginPage.Opacity < 1 && ((TranslateTransform)pluginPage.RenderTransform).Y > 0,
+            Check(pluginPage.HasAnimatedProperties && pluginPage.Opacity >= 0.15 && pluginPage.Opacity < 1 && ((TranslateTransform)pluginPage.RenderTransform).Y > 0,
                 $"设置页切换具有真实淡入和短距离位移动画（opacity={pluginPage.Opacity:0.000}, y={((TranslateTransform)pluginPage.RenderTransform).Y:0.000}, loaded={pluginPage.IsLoaded}）");
             PrivateCall(settings, "SelectPageByTag", "system"); PumpAnimations(30); PrivateCall(settings, "SelectPageByTag", "plugins");
             PumpAnimations(250); root.UpdateLayout();
@@ -188,11 +199,18 @@ internal static partial class Program
             var enabledToggle = Descendants<CheckBox>(editors).Single(c => Equals(c.Tag, PluginHost.EnabledKey("example.clock")));
             enabledToggle.IsChecked = false; PumpAnimations(30);
             Check(!clock.Running && !PluginHost.IsEnabled(options, "example.clock"), "插件管理页关闭开关实际停用插件");
-            Descendants<CheckBox>(editors).Single(c => Equals(c.Tag, PluginHost.EnabledKey("example.clock"))).IsChecked = true; PumpAnimations(30);
+            Descendants<CheckBox>(editors).Single(c => Equals(c.Tag, PluginHost.EnabledKey("example.clock"))).IsChecked = true; PumpUntilState(() => clock.Running || clock.Error.Length > 0);
             Check(clock.Running && clock.Context!.GetSetting("caption", "") == "插件卡片标题", "插件管理页重新开启恢复插件和设置");
             var nav = (FrameworkElement)settings.FindName("NavPane");
-            PrivateCall(settings, "ApplyNavExpanded", false, true); PumpAnimations(45);
-            Check(nav.Width > 48 && nav.Width < 244, "导航栏收起使用平滑宽度过渡");
+            PrivateCall(settings, "ApplyNavExpanded", true, false);
+            var navElapsed = System.Diagnostics.Stopwatch.StartNew();
+            PrivateCall(settings, "ApplyNavExpanded", false, true);
+            bool navAnimationStarted = nav.HasAnimatedProperties;
+            PumpAnimations(45);
+            // A busy dispatcher can resume this 45 ms timer after the 200 ms animation has completed.
+            Check(navAnimationStarted && nav.Width >= 48 && nav.Width < 244
+                && (nav.Width > 48 || navElapsed.ElapsedMilliseconds >= 200),
+                $"导航栏收起使用平滑宽度过渡（width={nav.Width:0.000}, started={navAnimationStarted}, elapsed={navElapsed.ElapsedMilliseconds}ms）");
             PrivateCall(settings, "ApplyNavExpanded", true, true); PumpAnimations(260);
             Check(nav.Width == 244, "导航栏动画反向切换不会被旧完成回调缩回");
             var switches = new StackPanel(); var first = new CheckBox { Style = (Style)settings.FindResource("W11Switch"), IsChecked = false };

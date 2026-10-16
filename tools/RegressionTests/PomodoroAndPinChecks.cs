@@ -68,12 +68,12 @@ internal static partial class Program
             var parameters = method.GetParameters();
             return method.Invoke(window, parameters.Select((p, i) => i < values.Length ? values[i] : p.DefaultValue).ToArray());
         }
-        T Field<T>(string name) => (T)typeof(alpha_island.MainWindow).GetField(name, flags)!.GetValue(window)!;
+        T Field<T>(string name) => (T)ReadWindowMember(window, name)!;
         var pages = Field<IslandPageHost>("_pages"); var layers = Field<IslandLayerHost>("_layers");
         using var media = new alpha_island.Services.SmtcService(window.Dispatcher);
         media.SetDebugNowPlaying(new alpha_island.Services.NowPlayingInfo { Title = "顶置回归", State = alpha_island.Services.PlaybackState.Playing });
-        typeof(alpha_island.MainWindow).GetField("_smtc", flags)!.SetValue(window, media);
-        typeof(alpha_island.MainWindow).GetField("_weatherBusy", flags)!.SetValue(window, true);
+        WriteWindowMember(window, "_smtc", media);
+        WriteWindowMember(window, "_weatherBusy", true);
         Call("SetMusicPinned", true); Call("SetLayerPinned", "download", true);
         foreach (string id in new[] { "focus", "weather", "screen-tools" })
         {

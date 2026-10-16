@@ -12,21 +12,18 @@ public partial class SettingsWindow
     private StackPanel _statusDisplayRows = null!;
     private readonly Dictionary<string, Grid> _statusDisplayControls = new();
     private string[] _statusDisplayOrder = StatusDisplayOptions.All.ToArray();
-    private bool _hardwarePowerSetupBusy;
     internal void UpdateHardwarePowerState(AlphaIsland.Hardware.HardwarePowerReading reading)
     {
-        if (_hardwarePowerSetupBusy || FindName("HardwarePowerSetupStatus") is not TextBlock state) return;
+        if (FindName("HardwarePowerStatus") is not TextBlock state) return;
         state.Text = reading.TotalWatts is double watts ? $"硬件读取已就绪：CPU＋GPU {watts:0.0} W" : reading.Reason;
         state.ToolTip = reading.Description;
     }
-    private Func<Task<(bool Enabled, string Message)>>? _enableHardwarePower;
-    internal void BindHardwarePowerActions(Func<Task<(bool Enabled, string Message)>> enable) => _enableHardwarePower = enable;
     private void AddStatusDisplaySettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "状态栏显示", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "小岛显示内容", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
         var group = new StackPanel();
-        group.Children.Add(new TextBlock { Text = "勾选要显示的内容，用 ↑ / ↓ 调整顺序。先上后下，再从左到右；宽度随内容调整。",
+        group.Children.Add(new TextBlock { Text = "网速与系统状态各自显示。勾选内容，用 ↑ / ↓ 调整对应小岛内的顺序；宽度随内容调整。",
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(14, 12, 14, 6) });
         _statusDisplayRows = new StackPanel(); group.Children.Add(_statusDisplayRows);
         foreach (string key in StatusDisplayOptions.All)
@@ -54,36 +51,11 @@ public partial class SettingsWindow
         var power = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
         power.Children.Add(new TextBlock { Text = "显示 CPU 封装＋独立 GPU 的实际功耗，接通电源也可读取。核显包含在 CPU 封装中。",
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap });
-        power.Children.Add(new TextBlock { Text = "首次启用会安装官方 PawnIO 2.2.0 内核驱动（系统范围），Windows 会请求管理员授权。独立读取进程负责采样，岛保持普通权限；缺少读数时显示 —W。",
+        power.Children.Add(new TextBlock { Text = "勾选 CPU＋GPU 功耗后自动读取，无需额外安装驱动或管理员授权。设备未提供数据时显示 —W，悬停可查看分项与原因。",
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 8) });
-        var startup = new CheckBox { Name = "HardwarePowerElevatedReaderToggle", Content = "启动时启用独立硬件读取（需要管理员授权）", Foreground = (System.Windows.Media.Brush)FindResource("W11TextPrimary"), Margin = new Thickness(0, 4, 0, 8) };
-        RegisterName(startup.Name, startup); startup.Checked += Setting_Changed; startup.Unchecked += Setting_Changed; power.Children.Add(startup);
-        var state = new TextBlock { Name = "HardwarePowerSetupStatus", Text = AlphaIsland.Hardware.HardwareDriverAccess.Description(AlphaIsland.Hardware.HardwareDriverAccess.Probe()), Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 6) };
+        var state = new TextBlock { Name = "HardwarePowerStatus", Text = "等待功耗采样；请先勾选 CPU＋GPU 功耗。", Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 6) };
         RegisterName(state.Name, state);
-        var enable = new Button { Name = "HardwarePowerEnableButton", Content = "安装驱动并启用读取", Style = (Style)FindResource("W11Button"), HorizontalAlignment = HorizontalAlignment.Left };
-        RegisterName(enable.Name, enable);
-        enable.Click += async (_, _) =>
-        {
-            if (_enableHardwarePower == null) return;
-            _hardwarePowerSetupBusy = true; enable.IsEnabled = false; state.Text = "正在准备驱动与读取进程，请完成 Windows 管理员授权…";
-            try
-            {
-                SettingsRegistry.Write(_options, "StatusShowPower", true);
-                ((CheckBox)FindName("StatusShowPowerToggle")).IsChecked = true; ApplyChanges();
-                var result = await _enableHardwarePower(); state.Text = result.Message;
-                if (result.Enabled) { startup.IsChecked = true; ApplyChanges(); }
-            }
-            catch (Exception ex) { state.Text = "硬件功耗启用失败：" + ex.Message; }
-            finally { _hardwarePowerSetupBusy = false; enable.IsEnabled = true; }
-        };
-        power.Children.Add(enable); power.Children.Add(state);
-        var download = new Button { Content = "PawnIO 官方下载与安装说明", Style = (Style)FindResource("W11Button"), HorizontalAlignment = HorizontalAlignment.Left };
-        download.Click += (_, _) =>
-        {
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/namazso/PawnIO.Setup/releases") { UseShellExecute = true }); }
-            catch (Exception ex) { IslandLog.Warn("HardwarePower", "打开驱动说明失败：" + ex.Message); }
-        };
-        power.Children.Add(download); panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = power });
+        power.Children.Add(state); panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = power });
         Page_System.Children.Insert(1, panel);
     }
     private void LoadStatusDisplayRows()
@@ -93,22 +65,35 @@ public partial class SettingsWindow
     }
     private void MoveStatusDisplayItem(string key, int direction)
     {
-        int from = Array.IndexOf(_statusDisplayOrder, key), to = from + direction;
+        string[] group = _statusDisplayOrder.Where(item => IsNetworkStatusItem(item) == IsNetworkStatusItem(key)).ToArray();
+        int index = Array.IndexOf(group, key), neighbor = index + direction;
+        if (index < 0 || neighbor < 0 || neighbor >= group.Length) return;
+        int from = Array.IndexOf(_statusDisplayOrder, key), to = Array.IndexOf(_statusDisplayOrder, group[neighbor]);
         if (from < 0 || to < 0 || to >= _statusDisplayOrder.Length) return;
         (_statusDisplayOrder[from], _statusDisplayOrder[to]) = (_statusDisplayOrder[to], _statusDisplayOrder[from]);
         SettingsRegistry.SetExtra(_options, "StatusDisplayOrder", string.Join(',', _statusDisplayOrder));
         RefreshStatusDisplayRows(); ApplyChanges();
     }
+    private static bool IsNetworkStatusItem(string key) => key is "upload" or "download";
     private void RefreshStatusDisplayRows()
     {
         _statusDisplayRows.Children.Clear();
-        for (int i = 0; i < _statusDisplayOrder.Length; i++)
+        foreach (bool network in new[] { true, false })
         {
-            var row = _statusDisplayControls[_statusDisplayOrder[i]];
-            var controls = (StackPanel)row.Children[1];
-            ((Button)controls.Children[1]).IsEnabled = i > 0;
-            ((Button)controls.Children[2]).IsEnabled = i < _statusDisplayOrder.Length - 1;
-            _statusDisplayRows.Children.Add(row);
+            _statusDisplayRows.Children.Add(new TextBlock
+            {
+                Text = network ? "网速小岛" : "系统状态小岛", Style = (Style)FindResource("W11RowHint"),
+                FontWeight = FontWeights.SemiBold, Margin = new Thickness(14, 14, 14, 4)
+            });
+            string[] group = _statusDisplayOrder.Where(key => IsNetworkStatusItem(key) == network).ToArray();
+            for (int i = 0; i < group.Length; i++)
+            {
+                var row = _statusDisplayControls[group[i]];
+                var controls = (StackPanel)row.Children[1];
+                ((Button)controls.Children[1]).IsEnabled = i > 0;
+                ((Button)controls.Children[2]).IsEnabled = i < group.Length - 1;
+                _statusDisplayRows.Children.Add(row);
+            }
         }
     }
 }

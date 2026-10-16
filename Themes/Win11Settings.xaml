@@ -1,20 +1,20 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:icons="clr-namespace:AlphaIsland.PluginSdk;assembly=AlphaIsland.PluginSdk"
                     xmlns:motion="clr-namespace:alpha_island.Animation">
+    <icons:GlyphContentConverter x:Key="GlyphContentConverter"/>
 
     <!-- ============================================================
          Windows 11 深色主题（设置界面专用）
-         配色取自用户给的 Win11 设置截图实测：
-           页面底色 #1D1D1D / 导航面板 #242424 / 卡片 #2A2A2A
-           强调色 #4DB1FF（截图里开关轨道实测 77,177,255）
+         页面与导航使用 #202020，卡片使用 #2A2A2A，强调色为 #4DB1FF。
            Win11 深色主题下开关打开 = 强调色轨道 + 黑色圆钮
          与 Themes/LiquidGlass.xaml（灵动岛本体主题）完全独立。
          ============================================================ -->
 
     <Color x:Key="W11AccentColor">#FF4DB1FF</Color>
 
-    <SolidColorBrush x:Key="W11WindowBrush" Color="#1D1D1D"/>
-    <SolidColorBrush x:Key="W11NavBrush" Color="#242424"/>
+    <SolidColorBrush x:Key="W11WindowBrush" Color="#202020"/>
+    <SolidColorBrush x:Key="W11WindowBorderBrush" Color="#28FFFFFF"/>
+    <SolidColorBrush x:Key="W11NavBrush" Color="#202020"/>
     <SolidColorBrush x:Key="W11CardBrush" Color="#2A2A2A"/>
     <SolidColorBrush x:Key="W11CardBorderBrush" Color="#0FFFFFFF"/>
     <SolidColorBrush x:Key="W11DividerBrush" Color="#12FFFFFF"/>
@@ -86,7 +86,7 @@
         <Setter Property="Background" Value="{StaticResource W11CardBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource W11CardBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="CornerRadius" Value="8"/>
     </Style>
 
     <!-- 同一张卡片内的行分隔线：左侧从图标之后起，Win11 就是这么缩进的 -->
@@ -110,7 +110,7 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <Style x:Key="W11IconGlyph" TargetType="TextBlock">
+    <Style x:Key="W11IconGlyph" TargetType="icons:GlyphIcon">
         <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="Foreground" Value="{StaticResource W11TextSecondary}"/>
@@ -132,12 +132,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid>
-                        <Border Background="Transparent" CornerRadius="4" x:Name="Bg"/>
-                        <!-- 选中指示条：必须显式 HorizontalAlignment=Left。
-                             只设 Width 而让它 Stretch，WPF 会把定宽元素居中 —— 之前就是因此跑到条目正中间去了。 -->
-                        <Border Background="{StaticResource W11AccentBrush}" CornerRadius="1.5"
-                                Height="14" HorizontalAlignment="Left" Margin="0,0,0,0" VerticalAlignment="Center"
-                                Visibility="Collapsed" Width="3" x:Name="AccentBar"/>
+                        <Border Background="Transparent" CornerRadius="6" x:Name="Bg"/>
                         <ContentPresenter Margin="16,0,10,0" VerticalAlignment="Center" x:Name="Presenter"/>
                     </Grid>
                     <ControlTemplate.Triggers>
@@ -147,7 +142,6 @@
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Bg" Property="Background" Value="{StaticResource W11ControlFill}"/>
-                            <Setter TargetName="AccentBar" Property="Visibility" Value="Visible"/>
                             <Setter Property="Foreground" Value="{StaticResource W11TextPrimary}"/>
                             <Setter Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
@@ -202,7 +196,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RepeatButton">
-                    <Border Background="{StaticResource W11AccentBrush}" CornerRadius="2" Height="4"/>
+                    <Border Background="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Slider}}}" CornerRadius="2" Height="4"/>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -229,7 +223,7 @@
                 <ControlTemplate TargetType="Thumb">
                     <Grid Background="Transparent">
                         <Ellipse Fill="#FFFFFFFF" x:Name="Ring"/>
-                        <Ellipse Fill="{StaticResource W11AccentBrush}" Height="12" Width="12" x:Name="Core"/>
+                        <Ellipse Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Slider}}}" Height="12" Width="12" x:Name="Core"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -247,6 +241,8 @@
     </Style>
 
     <Style x:Key="W11Slider" TargetType="Slider">
+        <Setter Property="Foreground" Value="{StaticResource W11AccentBrush}"/>
+        <Setter Property="Background" Value="{StaticResource W11TrackBrush}"/>
         <Setter Property="Height" Value="24"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="IsMoveToPointEnabled" Value="True"/>
@@ -254,7 +250,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
                     <Grid Background="Transparent" VerticalAlignment="Center">
-                        <Border Background="{StaticResource W11TrackBrush}" CornerRadius="2" Height="4"/>
+                        <Border Background="{TemplateBinding Background}" CornerRadius="2" Height="4"/>
                         <Track VerticalAlignment="Center" x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="Slider.DecreaseLarge" Style="{StaticResource W11SliderTrackFill}"/>
@@ -287,8 +283,8 @@
                 <ControlTemplate TargetType="Button">
                     <Border Background="{StaticResource W11ControlFill}"
                             BorderBrush="{StaticResource W11ControlBorder}" BorderThickness="1"
-                            CornerRadius="4" x:Name="Bg">
-                        <ContentPresenter HorizontalAlignment="Center" Margin="{TemplateBinding Padding}"
+                            CornerRadius="6" x:Name="Bg">
+                        <ContentPresenter Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GlyphContentConverter}}" HorizontalAlignment="Center" Margin="{TemplateBinding Padding}"
                                           VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -318,8 +314,8 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="Transparent" x:Name="Bg">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Border Background="Transparent" CornerRadius="4" Margin="0,4,2,4" x:Name="Bg">
+                        <ContentPresenter Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GlyphContentConverter}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -335,7 +331,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="Transparent" x:Name="Bg">
+                    <Border Background="Transparent" CornerRadius="4" Margin="0,4,4,4" x:Name="Bg">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -376,7 +372,7 @@
                 <ControlTemplate TargetType="Button">
                     <Grid>
                         <Border Background="Transparent" CornerRadius="4" x:Name="Bg"/>
-                        <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="14" Text="&#xE700;"
+                        <icons:GlyphIcon FontFamily="Segoe MDL2 Assets" FontSize="14" Text="&#xE700;"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                     <ControlTemplate.Triggers>

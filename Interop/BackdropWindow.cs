@@ -22,7 +22,7 @@ namespace alpha_island.Interop
     ///   1. 创建时就要带 <c>WS_EX_NOREDIRECTIONBITMAP</c>（事后 SetWindowLong 静默失败）；
     ///   2. 先 <c>CreateDispatcherQueueController</c> 再 <c>new Compositor()</c>（否则 0x80070005）；
     ///   3. <c>ICompositorDesktopInterop.CreateDesktopWindowTarget</c> + HostBackdropBrush + 圆角裁剪；
-    ///   4. <c>DwmSetWindowAttribute(hwnd, 38, 3)</c> —— 少了这句窗口就是**全黑**。
+    ///   4. 启用 <c>DWMWA_USE_HOSTBACKDROPBRUSH</c>，让背景取样由圆角精灵提供。
     ///
     /// 已知限制：多显示器混合 DPI 场景未覆盖（本机 100%，DIP == 像素）。
     /// </summary>
@@ -36,7 +36,6 @@ namespace alpha_island.Interop
         private const int WS_EX_TRANSPARENT = 0x00000020;
         private const int WS_EX_NOACTIVATE = 0x08000000;
         private const int WS_POPUP = unchecked((int)0x80000000);
-        private const int WS_VISIBLE = 0x10000000;
 
         private const uint SWP_NOSIZE = 0x0001;
         private const uint SWP_NOMOVE = 0x0002;
@@ -110,6 +109,7 @@ namespace alpha_island.Interop
         {
             const uint WM_ERASEBKGND = 0x0014;
             const uint WM_PAINT = 0x000F;
+            if (uMsg == 0x0084) return new IntPtr(-1); // HTTRANSPARENT: the material never owns mouse input.
             if (uMsg == WM_ERASEBKGND)
             {
                 // 彻底拦截系统背景擦除，绝不让 GDI 绘制白色或黑色色块！
@@ -217,6 +217,12 @@ namespace alpha_island.Interop
         private Windows.UI.Composition.ContainerVisual? _root;
         private Windows.UI.Composition.SpriteVisual? _sprite;
         private Windows.UI.Composition.CompositionRoundedRectangleGeometry? _geometry;
+        private Windows.UI.Composition.CompositionPathGeometry? _contour;
+        private CompositionContour? _contourFactory;
+        private bool _usesContour;
+        private bool _outlineRegionVisible;
+        internal int BoundsUpdates { get; private set; }
+        internal int ContourUpdates { get; private set; }
 
         /// <summary>四步全部成功（否则界面应该退回纯渐变玻璃）。</summary>
         public bool IsAvailable { get; private set; }
@@ -226,12 +232,15 @@ namespace alpha_island.Interop
 
         public IntPtr Handle => _hwnd;
 
-        private bool _visible = true;
+        private bool _visible;
 
         public static BackdropWindow? TryCreate()
         {
             var b = new BackdropWindow();
-            return b.TryCreateCore() ? b : null;
+            if (b.TryCreateCore()) return b;
+            Log("Backdrop unavailable: " + b.Failure);
+            b.Dispose();
+            return null;
         }
 
         /// <summary>
@@ -274,7 +283,7 @@ namespace alpha_island.Interop
                     WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
                     WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
                     BackdropClassName, "AlphaIslandBackdrop",
-                    WS_POPUP | WS_VISIBLE,
+                    WS_POPUP,
                     0, 0, 10, 10, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
 
                 if (_hwnd == IntPtr.Zero)
@@ -338,17 +347,19 @@ namespace alpha_island.Interop
                     int darkMode = 1; // DWMWA_USE_IMMERSIVE_DARK_MODE (强制深色模式，绝不允许 DWM 渲染亮色发白亚克力)
                     DwmSetWindowAttribute(_hwnd, 20, ref darkMode, sizeof(int));
 
-                    int transient = 3; // DWMSBT_TRANSIENTWINDOW
-                    int hrDwm = DwmSetWindowAttribute(_hwnd, 38, ref transient, sizeof(int));
+                    // A system backdrop (attribute 38) paints the entire HWND rectangle,
+                    // bypassing the sprite clip. Enable only the host backdrop brush instead.
+                    int useHostBackdrop = 1; // DWMWA_USE_HOSTBACKDROPBRUSH
+                    int hrDwm = DwmSetWindowAttribute(_hwnd, 17, ref useHostBackdrop, sizeof(int));
                     if (hrDwm != 0)
                     {
-                        Failure = "DwmSetWindowAttribute(38,3) hr=0x" + hrDwm.ToString("X8") + "（模糊会全黑）";
+                        Failure = "DwmSetWindowAttribute(17,1) hr=0x" + hrDwm.ToString("X8");
                         return false;
                     }
                 }
                 else
                 {
-                    Log("noDwm: 跳过 DwmSetWindowAttribute(38,3)");
+                    Log("noDwm: 跳过 DWMWA_USE_HOSTBACKDROPBRUSH");
                 }
 
                 IsAvailable = true;
@@ -383,6 +394,7 @@ namespace alpha_island.Interop
             if (_hwnd == IntPtr.Zero) return;
             if (x == _x && y == _y && w == _w && h == _h) return;
             _x = x; _y = y; _w = w; _h = h;
+            BoundsUpdates++;
             if (Has("abs"))
             {
                 var size = new Vector2(w, h);
@@ -404,6 +416,8 @@ namespace alpha_island.Interop
             var g = _geometry;
             if (g == null || w < 1 || h < 1) return;
             if (Has("smallclip")) return;   // 诊断：几何钉死，忽略真实岛体
+            if (_usesContour && _sprite != null && _compositor != null)
+            { _sprite.Clip = _compositor.CreateGeometricClip(g); _usesContour = false; }
 
             float r = (float)Math.Max(0, Math.Min(cornerRadius, Math.Min(w, h) / 2.0));
             g.Offset = new Vector2((float)x, (float)y);
@@ -442,6 +456,32 @@ namespace alpha_island.Interop
 
         private bool _loggedIsland;
 
+        /// <summary>Exact liquid and satellite mask. The HWND stays still during a morph.</summary>
+        public bool SetOutline(System.Windows.Media.Geometry outline)
+        {
+            if (_compositor == null || _sprite == null || Has("smallclip")) return false;
+            try
+            {
+                _contourFactory ??= new CompositionContour();
+                _contour ??= _compositor.CreatePathGeometry();
+                _contour.Path = _contourFactory.Create(outline);
+                if (!_usesContour)
+                {
+                    _sprite.Clip = _compositor.CreateGeometricClip(_contour);
+                    // The vector clip owns all transparency; no per-frame GDI region rebuilding.
+                    _usesContour = true;
+                }
+                if (!_outlineRegionVisible) { SetWindowRgn(_hwnd, IntPtr.Zero, false); _outlineRegionVisible = true; }
+                ContourUpdates++;
+                return true;
+            }
+            catch (Exception error)
+            {
+                if (Failure == null) { Failure = "Liquid contour: " + error.GetType().Name + ": " + error.Message; Log(Failure); }
+                return false;
+            }
+        }
+
         public void SetVisible(bool visible)
         {
             if (_hwnd == IntPtr.Zero || visible == _visible) return;
@@ -452,6 +492,7 @@ namespace alpha_island.Interop
                 IntPtr empty = CreateRectRgn(0, 0, 0, 0);
                 if (empty != IntPtr.Zero) SetWindowRgn(_hwnd, empty, false);
                 _lastRgnW = -999;
+                _outlineRegionVisible = false;
             }
             ShowWindow(_hwnd, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
         }
@@ -463,6 +504,9 @@ namespace alpha_island.Interop
                 DestroyWindow(_hwnd);
                 _hwnd = IntPtr.Zero;
             }
+            try { _contour?.Dispose(); } catch { }
+            _contour = null;
+            _contourFactory?.Dispose(); _contourFactory = null;
             try { _compositor?.Dispose(); } catch { }
             _compositor = null;
             _target = null;

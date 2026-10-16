@@ -14,6 +14,10 @@ internal static class NotificationAppLauncher
     }
     public static bool TryOpen(string appId)
     {
+        if (string.IsNullOrWhiteSpace(appId)) return false;
+        foreach (var client in Enum.GetValues<alpha_island.Core.MessengerClient>())
+            if (appId.Equals(alpha_island.Core.MessengerIdentity.AppId(client), StringComparison.OrdinalIgnoreCase))
+                return MessengerWindowReader.TryOpen(client);
         if (string.IsNullOrWhiteSpace(appId) || appId.IndexOfAny(new[] { '\r', '\n', '"', '\\', '/' }) >= 0) return false;
         object? manager = null;
         try

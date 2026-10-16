@@ -16,10 +16,10 @@ using Button = System.Windows.Controls.Button;
 
 internal static partial class Program
 {
-    private static T AgentField<T>(alpha_island.MainWindow window, string name)
-        => (T)typeof(alpha_island.MainWindow).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
-    private static void SetAgentField(alpha_island.MainWindow window, string name, object? value)
-        => typeof(alpha_island.MainWindow).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, value);
+    private static T AgentField<T>(object window, string name)
+        => (T)ReadWindowMember(window, name)!;
+    private static void SetAgentField(object window, string name, object? value)
+        => WriteWindowMember(window, name, value);
 
     private static void AgentApprovalInteractionChecks(alpha_island.MainWindow window, Grid root)
     {
@@ -30,6 +30,8 @@ internal static partial class Program
         int port = ((IPEndPoint)portProbe.LocalEndpoint).Port; portProbe.Stop();
         SettingsRegistry.Write(options, "AgentBridgePort", port);
         SettingsRegistry.Write(options, "AgentApprovalNotifyEnabled", true);
+        // Foreground visibility has its own native-window fixture; this checks approvals and status HTTP.
+        SettingsRegistry.Write(options, "MediaWindowHandoffEnabled", false);
         using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = TimeSpan.FromSeconds(20) };
         Task<HttpResponseMessage> Submit(string id) => http.PostAsync("approval", new StringContent(
             JsonSerializer.Serialize(new { id, tool = "connection_probe", args = new { operation = "none" }, reason = "隔离交互测试，不执行操作", timeoutSec = 15 }), Encoding.UTF8, "application/json"));

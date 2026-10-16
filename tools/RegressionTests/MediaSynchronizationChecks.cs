@@ -28,7 +28,7 @@ internal static partial class Program
                 using var memory = new System.IO.MemoryStream();
                 await input.CopyToAsync(memory).WaitAsync(TimeSpan.FromSeconds(3)); bytes = memory.Length;
             }
-            System.Console.WriteLine($"Source={source}, Reported={playback?.PlaybackStatus}, Play={playback?.Controls.IsPlayEnabled}, Pause={playback?.Controls.IsPauseEnabled}, Toggle={playback?.Controls.IsPlayPauseToggleEnabled}, PropertiesMs={propertiesMs:F1}, CoverMs={sw.Elapsed.TotalMilliseconds:F1}, CoverBytes={bytes}");
+            System.Console.WriteLine($"Source={source}, Reported={playback?.PlaybackStatus}, Play={playback?.Controls.IsPlayEnabled}, Pause={playback?.Controls.IsPauseEnabled}, Toggle={playback?.Controls.IsPlayPauseToggleEnabled}, ShuffleEnabled={playback?.Controls.IsShuffleEnabled}, RepeatEnabled={playback?.Controls.IsRepeatEnabled}, Shuffle={playback?.IsShuffleActive}, Repeat={playback?.AutoRepeatMode}, PropertiesMs={propertiesMs:F1}, CoverMs={sw.Elapsed.TotalMilliseconds:F1}, CoverBytes={bytes}");
             for (int i = 0; i < 4; i++)
             {
                 await Task.Delay(250);
@@ -53,7 +53,82 @@ internal static partial class Program
         });
     }
 
-    private static Task MediaSynchronizationChecks() => OnMediaDispatcher(MediaSynchronizationCore);
+    private static Task MediaSynchronizationChecks() => OnMediaDispatcher(async dispatcher =>
+    {
+        await MediaPlaybackEventOrderingChecks(dispatcher);
+        await MediaTimelineFallbackChecks(dispatcher);
+        await MediaSynchronizationCore(dispatcher);
+    });
+
+    private static async Task MediaTimelineFallbackChecks(Dispatcher dispatcher)
+    {
+        using var service = new SmtcService(dispatcher) { AudioProbeEnabled = true };
+        PrivateCall(service, "ObserveReportedState", PlaybackState.Playing);
+        service.UpdateTrack(new NowPlayingInfo { Title = "播放进度证据", SourceApp = "cloudmusic.exe", SessionId = "timeline-player",
+            ContentKind = alpha_island.Core.MediaContentKind.Music, State = PlaybackState.Playing,
+            Position = TimeSpan.FromSeconds(10), Duration = TimeSpan.FromMinutes(3) }, "timeline-track", null);
+        service.ReportAudioEvidence(0, 0, false, 2, true);
+        Check(service.Current?.State == PlaybackState.Paused, "自身音频会话缺失时复现端点旧静音留下的暂停纠正");
+        service.ObserveTimelineEvidence(TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow);
+        await Task.Delay(250);
+        service.ObserveTimelineEvidence(TimeSpan.FromSeconds(10.25), DateTimeOffset.UtcNow);
+        PrivateCall(service, "PublishResolvedState");
+        Check(service.Current?.IsPlaying == true, "播放器原始进度持续前进时，缺失音频会话不会让旧暂停锁存一直保留");
+        service.ReportAudioEvidence(0, 0, false, 2, true);
+        Check(service.Current?.IsPlaying == true, "新鲜自身进度确认播放后，残留端点静音不再次闪成暂停");
+        PrivateCall(service, "ObservePlaybackEvent", PlaybackState.Paused); PrivateCall(service, "PublishResolvedState");
+        Check(service.Current?.State == PlaybackState.Paused, "真实新的暂停事件立即清除旧进度证据");
+        PrivateCall(service, "ObserveReportedState", PlaybackState.Playing);
+        service.ReportAudioEvidence(0, 0, false, 2, true);
+        service.ObserveTimelineEvidence(TimeSpan.FromSeconds(11), DateTimeOffset.UtcNow);
+        await Task.Delay(200);
+        service.ObserveTimelineEvidence(TimeSpan.FromSeconds(60), DateTimeOffset.UtcNow);
+        PrivateCall(service, "PublishResolvedState");
+        Check(service.Current?.State == PlaybackState.Paused, "单次拖动跳转进度不冒充连续播放证据");
+    }
+
+    private static async Task MediaPlaybackEventOrderingChecks(Dispatcher dispatcher)
+    {
+        using var service = new SmtcService(dispatcher) { AudioProbeEnabled = true };
+        var paused = new NowPlayingInfo { Title = "事件排序回归", SourceApp = "cloudmusic.exe", SessionId = "ordering-player",
+            ContentKind = alpha_island.Core.MediaContentKind.Music, State = PlaybackState.Paused,
+            Position = TimeSpan.FromSeconds(10), Duration = TimeSpan.FromMinutes(3) };
+        PrivateCall(service, "ObserveReportedState", PlaybackState.Paused);
+        service.UpdateTrack(paused, "ordering-track", null);
+        service.ObserveTimelineEvidence(TimeSpan.FromSeconds(11), DateTimeOffset.UtcNow);
+        service.ReportAudioEvidence(0, .6, true, 0, true);
+        Check(service.Current?.IsPlaying == true, "重复媒体事件回归准备：当前播放器自身声音与新进度共同确认播放");
+        var transitions = new List<PlaybackState>();
+        service.NowPlayingChanged += (_, info) => { if (info != null) transitions.Add(info.State); };
+        long epoch = service.AudioEvidenceEpoch;
+        for (int i = 0; i < 8; i++)
+        {
+            PrivateCall(service, "ObservePlaybackEvent", PlaybackState.Paused);
+            PrivateCall(service, "PublishResolvedState");
+        }
+        Check(service.Current?.IsPlaying == true && transitions.Count == 0 && service.AudioEvidenceEpoch == epoch,
+            "播放已由自身音频和进度确认时，重复旧 Paused 事件不先显示暂停、不清空音频证据");
+        service.ReportAudioEvidence(.35, 0, true, 0, true);
+        Check(service.Current?.State == PlaybackState.Paused, "重复事件去抖后，真实新静音仍能确认暂停");
+        epoch = service.AudioEvidenceEpoch;
+        PrivateCall(service, "ObservePlaybackEvent", PlaybackState.Playing);
+        PrivateCall(service, "PublishResolvedState");
+        Check(service.Current?.IsPlaying == true && service.AudioEvidenceEpoch > epoch,
+            "新的真实 Playing 事件重新累计音频证据，旧暂停静音不能马上推翻播放");
+        // A native playback callback can arrive before WinRT finishes the button request.
+        // It must not flash the opposite state just because an old meter correction cleared.
+        service.ReportAudioEvidence(2, 0, true, 0, true);
+        Check(service.Current?.State == PlaybackState.Paused, "等待命令回归准备：旧 Playing 上报已被真实连续静音纠正");
+        var acceptance = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pendingPause = service.ExecutePlaybackCommandAsync("ordering-player", PlaybackState.Paused, () => acceptance.Task);
+        transitions.Clear();
+        PrivateCall(service, "ObservePlaybackEvent", PlaybackState.Playing);
+        PrivateCall(service, "PublishResolvedState");
+        Check(service.Current?.State == PlaybackState.Paused && transitions.Count == 0,
+            "暂停请求尚待接受时，旧 Playing 回调不能先闪正在播放");
+        acceptance.SetResult(true); await pendingPause;
+        Check(service.Current?.State == PlaybackState.Paused, "暂停请求接受后保持正确暂停状态");
+    }
 
     private static async Task OnMediaDispatcher(Func<Dispatcher, Task> work)
     {
@@ -202,9 +277,18 @@ internal static partial class Program
         PrivateCall(service, "Detach"); Track(first, "late-thumbnail");
         var lateThumbnail = Cover();
         Track(first, "late-thumbnail", _ => lateThumbnail.Task);
-        lateThumbnail.SetResult(art);
-        await dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
-        await dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+        var artworkReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void ArtworkUpdated(object? sender, NowPlayingInfo? info)
+        {
+            if (info?.Artwork == art) artworkReady.TrySetResult();
+        }
+        service.NowPlayingChanged += ArtworkUpdated;
+        try
+        {
+            lateThumbnail.SetResult(art);
+            await artworkReady.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally { service.NowPlayingChanged -= ArtworkUpdated; }
         Check(service.Current?.Artwork == art, "同一曲目的缩略图迟到时也能补齐封面");
         var disposedCover = Cover(); PrivateCall(service, "Detach"); Track(first, "disposing", _ => disposedCover.Task);
         int events = 0; service.NowPlayingChanged += (_, _) => events++;

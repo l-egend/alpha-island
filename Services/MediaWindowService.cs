@@ -18,24 +18,41 @@ internal sealed record MediaWindowState(IntPtr Handle, MediaWindowKind Kind, Rec
 internal sealed class MediaWindowService : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly DispatcherTimer _timer;
+    private readonly IslandTimer _timer;
     private readonly NativeMethods.WinEventProc _callback;
+    private readonly int _captureIntervalMilliseconds;
     private GCHandle _callbackRoot;
     private IntPtr _foregroundHook, _minimizeHook;
     private string _process = "";
     private MediaWindowKind _kind;
     private long _epoch, _nextResolve, _nextCapture, _captureEpoch;
     private bool _snapshotCaptureSuspended;
+    private bool _automaticSnapshotCaptureEnabled = true;
+    internal bool RequireSnapshotForTransitions { get; set; }
+    internal bool AutomaticSnapshotCaptureEnabled
+    {
+        get => _automaticSnapshotCaptureEnabled;
+        set
+        {
+            if (_automaticSnapshotCaptureEnabled == value) return;
+            _automaticSnapshotCaptureEnabled = value; _captureEpoch++;
+        }
+    }
     private bool _resolving, _capturing, _disposed, _minimizeSignaled;
     private IntPtr _window;
+    private IntPtr _explicitWindow;
+    private uint _explicitProcess;
     private Rect _bounds;
     private DwmTransitionLease? _transitions;
     private IntPtr _transitionFailure;
     internal bool TransitionsSuppressed => _transitions?.Applied == true;
     internal bool ForegroundNow => !_disposed && _window != IntPtr.Zero && !NativeMethods.IsIconic(_window)
-        && ProcessMatches(NativeMethods.GetForegroundWindow(), _process);
+        && IsSourceForeground();
     internal bool IsRestoredVisible(IntPtr window) => !_disposed && window != IntPtr.Zero && window == _window
-        && NativeMethods.IsWindow(window) && NativeMethods.IsWindowVisible(window) && !NativeMethods.IsIconic(window);
+        && NativeMethods.IsWindow(window) && (_explicitWindow == IntPtr.Zero || MatchesTrackedWindow(window))
+        && NativeMethods.IsWindowVisible(window) && !NativeMethods.IsIconic(window);
+    internal bool IsTrackedWindowValid(IntPtr window) => !_disposed && window != IntPtr.Zero && window == _window
+        && MatchesTrackedWindow(window);
     internal MediaWindowState Current { get; private set; } = new(IntPtr.Zero, MediaWindowKind.None, Rect.Empty, false, false);
     internal BitmapSource? Snapshot { get; private set; }
     internal bool SnapshotCaptureSuspended
@@ -50,17 +67,19 @@ internal sealed class MediaWindowService : IDisposable
     }
     internal event Action<MediaWindowState>? Changed;
     internal event Action<MediaWindowState>? Minimizing;
+    internal event Action? WindowActivityChanged;
 
-    internal MediaWindowService(Dispatcher dispatcher)
+    internal MediaWindowService(Dispatcher dispatcher, int captureIntervalMilliseconds = 500, int refreshIntervalMilliseconds = 200)
     {
         _dispatcher = dispatcher;
+        _captureIntervalMilliseconds = Math.Clamp(captureIntervalMilliseconds, 500, 10_000);
         _callback = OnWinEvent;
         _callbackRoot = GCHandle.Alloc(_callback);
         _foregroundHook = NativeMethods.SetWinEventHook(3, 3, IntPtr.Zero, _callback, 0, 0, 0);
         _minimizeHook = NativeMethods.SetWinEventHook(0x16, 0x17, IntPtr.Zero, _callback, 0, 0, 0);
         if (_foregroundHook == IntPtr.Zero || _minimizeHook == IntPtr.Zero)
             IslandLog.Warn("MediaWindow", "窗口事件监听不可用，使用状态采样");
-        _timer = new DispatcherTimer(DispatcherPriority.Background, dispatcher) { Interval = TimeSpan.FromMilliseconds(200) };
+        _timer = new IslandTimer(dispatcher, "media-window") { Interval = TimeSpan.FromMilliseconds(Math.Clamp(refreshIntervalMilliseconds, 200, 2000)) };
         _timer.Tick += (_, _) => Refresh();
         _timer.Start();
     }
@@ -68,23 +87,53 @@ internal sealed class MediaWindowService : IDisposable
     internal void SetSource(string? source)
     {
         var profile = MediaHandoffPolicy.Source(source ?? "");
-        if (_kind == profile.Kind && _process == profile.Process) return;
+        if (_kind == profile.Kind && _process == profile.Process && _explicitWindow == IntPtr.Zero) return;
+        _explicitWindow = IntPtr.Zero; _explicitProcess = 0;
         ReleaseTransitions();
         _kind = profile.Kind; _process = profile.Process; _epoch++;
         _window = IntPtr.Zero; _bounds = Rect.Empty; Snapshot = null; _nextResolve = 0; _minimizeSignaled = false;
         Publish(); Refresh();
     }
 
+    // External assistants share the transition/capture machinery but track one exact
+    // existing conversation window. Another window in the same process must not hide its island.
+    internal void SetTrackedWindow(AgentAppWindow target)
+    {
+        if (_disposed || !NativeMethods.IsWindow(target.Handle)) return;
+        NativeMethods.GetWindowThreadProcessId(target.Handle, out uint process);
+        if (target.ProcessId != 0 && target.ProcessId != process) return;
+        if (_explicitWindow == target.Handle && _explicitProcess == process) return;
+        ReleaseTransitions(); _epoch++; _captureEpoch++;
+        _explicitWindow = target.Handle; _explicitProcess = process;
+        _process = target.Process; _kind = MediaWindowKind.DesktopPlayer;
+        _window = target.Handle; _bounds = ReadBounds(target.Handle);
+        Snapshot = null; _minimizeSignaled = false; _nextResolve = 0; _nextCapture = 0;
+        SuppressTransitions(); Publish(); Refresh();
+    }
+
+    private bool MatchesTrackedWindow(IntPtr window)
+    {
+        if (_explicitWindow == IntPtr.Zero) return ProcessMatches(window, _process);
+        if (window != _explicitWindow || !NativeMethods.IsWindow(window)) return false;
+        NativeMethods.GetWindowThreadProcessId(window, out uint process);
+        return process == _explicitProcess;
+    }
+
+    private bool IsSourceForeground()
+        => _explicitWindow == IntPtr.Zero ? ProcessMatches(NativeMethods.GetForegroundWindow(), _process)
+            : NativeMethods.GetForegroundWindow() == _window && MatchesTrackedWindow(_window);
+
     private void OnWinEvent(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint thread, uint time)
     {
         if (_disposed || _dispatcher.HasShutdownStarted) return;
-        _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        _dispatcher.BeginInvoke(DispatcherPriority.DataBind, new Action(() =>
         {
             if (_disposed) return;
             // MINIMIZESTART can precede the native minimized state. Sample that state
             // before notifying the island, otherwise a still-foreground sample cancels its animation.
             if (eventType == NativeMethods.EVENT_SYSTEM_MINIMIZEEND && window == _window) _minimizeSignaled = false;
             Refresh();
+            WindowActivityChanged?.Invoke();
         }));
     }
 
@@ -108,6 +157,7 @@ internal sealed class MediaWindowService : IDisposable
         {
             var found = await Task.Run(() =>
             {
+                if (_explicitWindow != IntPtr.Zero) return MatchesTrackedWindow(_explicitWindow) ? _explicitWindow : IntPtr.Zero;
                 IntPtr best = IntPtr.Zero; double bestArea = 0;
                 NativeMethods.EnumWindows((window, _) =>
                 {
@@ -155,11 +205,12 @@ internal sealed class MediaWindowService : IDisposable
         if (_disposed || _kind == MediaWindowKind.None) return;
         long now = Environment.TickCount64;
         if (now >= _nextResolve) { _nextResolve = now + 1500; Resolve(); }
-        if (_window != IntPtr.Zero && !NativeMethods.IsWindow(_window))
+        if (_window != IntPtr.Zero && (!NativeMethods.IsWindow(_window)
+            || _explicitWindow != IntPtr.Zero && !MatchesTrackedWindow(_window)))
         { ReleaseTransitions(); _window = IntPtr.Zero; _bounds = Rect.Empty; Snapshot = null; _minimizeSignaled = false; _nextResolve = 0; }
         Publish();
-        if (_kind == MediaWindowKind.DesktopPlayer && Current.Foreground && !Current.Minimized && now >= _nextCapture)
-        { _nextCapture = now + 500; Capture(); }
+        if (AutomaticSnapshotCaptureEnabled && _kind == MediaWindowKind.DesktopPlayer && Current.Foreground && !Current.Minimized && now >= _nextCapture)
+        { _nextCapture = now + _captureIntervalMilliseconds; Capture(); }
     }
 
     private void Publish()
@@ -167,7 +218,7 @@ internal sealed class MediaWindowService : IDisposable
         bool minimized = _window != IntPtr.Zero && NativeMethods.IsIconic(_window);
         if (_window != IntPtr.Zero && (!minimized || _bounds.IsEmpty)) _bounds = ReadBounds(_window);
         bool foreground = _kind != MediaWindowKind.None && (_kind == MediaWindowKind.Browser || !minimized)
-            && ProcessMatches(NativeMethods.GetForegroundWindow(), _process);
+            && IsSourceForeground();
         var next = new MediaWindowState(_window, _kind, _bounds, foreground, minimized);
         var previous = Current; Current = next;
         // Claim the transition before the general background callback can show the island.
@@ -212,27 +263,49 @@ internal sealed class MediaWindowService : IDisposable
     private void PublishSnapshot(long epoch, long captureEpoch, IntPtr window, BitmapSource? frame)
     {
         if (!_disposed && !SnapshotCaptureSuspended && epoch == _epoch && captureEpoch == _captureEpoch
-            && window == _window && frame != null) Snapshot = frame;
+            && window == _window && (_explicitWindow == IntPtr.Zero || MatchesTrackedWindow(window)) && frame != null)
+        {
+            Snapshot = frame;
+            if (RequireSnapshotForTransitions) SuppressTransitions();
+        }
     }
 
     internal void RefreshSnapshot()
     {
-        if (_disposed || _kind != MediaWindowKind.DesktopPlayer || !Current.Foreground || Current.Minimized) return;
-        _nextCapture = Environment.TickCount64 + 500;
+        if (_disposed || !AutomaticSnapshotCaptureEnabled || _kind != MediaWindowKind.DesktopPlayer || !Current.Foreground || Current.Minimized) return;
+        _nextCapture = Environment.TickCount64 + _captureIntervalMilliseconds;
         Capture();
+    }
+
+    internal async Task<BitmapSource?> CaptureWindowSnapshotAsync()
+    {
+        if (_disposed || SnapshotCaptureSuspended || !IsTrackedWindowValid(_window) || _bounds.IsEmpty) return Snapshot;
+        long epoch = _epoch, captureEpoch = _captureEpoch;
+        IntPtr window = _window; Rect bounds = _bounds;
+        try
+        {
+            var frame = await WindowSnapshotCapture.CaptureAsync(window, bounds);
+            PublishSnapshot(epoch, captureEpoch, window, frame);
+        }
+        catch (Exception ex) when (ex is TimeoutException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        { IslandLog.Debug("MediaWindow", "按需窗口快照降级: " + ex.GetType().Name); }
+        return Snapshot;
     }
 
     internal bool Restore(IntPtr window)
     {
-        if (_disposed || window == IntPtr.Zero || window != _window || !NativeMethods.IsWindow(window) || !ProcessMatches(window, _process)) return false;
+        if (_disposed || window == IntPtr.Zero || window != _window || !NativeMethods.IsWindow(window) || !MatchesTrackedWindow(window)) return false;
         if (NativeMethods.IsIconic(window) || !NativeMethods.IsWindowVisible(window)) NativeMethods.ShowWindowAsync(window, NativeMethods.SW_RESTORE);
         NativeMethods.SetForegroundWindow(window);
         _minimizeSignaled = false;
         return true;
     }
 
+    internal void AllowNativeTransitions() => ReleaseTransitions();
+
     private void SuppressTransitions()
     {
+        if (RequireSnapshotForTransitions && Snapshot == null) return;
         if (_kind != MediaWindowKind.DesktopPlayer || _window == IntPtr.Zero || _transitions != null) return;
         _transitions = DwmTransitionLease.TryAcquire(_window);
         if (_transitions != null)
@@ -253,10 +326,10 @@ internal sealed class MediaWindowService : IDisposable
     {
         if (_disposed) return; _disposed = true; _epoch++;
         ReleaseTransitions();
-        _timer.Stop();
+        _timer.Dispose();
         if (_foregroundHook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_foregroundHook);
         if (_minimizeHook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_minimizeHook);
         if (_callbackRoot.IsAllocated) _callbackRoot.Free();
-        Snapshot = null; Changed = null; Minimizing = null;
+        Snapshot = null; Changed = null; Minimizing = null; WindowActivityChanged = null;
     }
 }

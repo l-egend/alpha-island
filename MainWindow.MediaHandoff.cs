@@ -34,7 +34,7 @@ public partial class MainWindow
         }
         if (_runtimeEnabled && _mediaWindows == null)
         {
-            _mediaWindows = new MediaWindowService(Dispatcher);
+            _mediaWindows = new MediaWindowService(Dispatcher) { RequireSnapshotForTransitions = true };
             _mediaWindows.Changed += OnMediaWindowChanged;
             _mediaWindows.Minimizing += OnMediaWindowMinimizing;
             _mediaWindows.SetSource(_smtc?.Current?.SourceApp);
@@ -44,6 +44,7 @@ public partial class MainWindow
 
     private void StopMediaWindowHandoff()
     {
+        StopAgentWindowTracking();
         CancelMediaHandoff();
         _mediaWindows?.Dispose(); _mediaWindows = null;
         _mediaSourceForeground = false; _mediaOpenPointer = null;
@@ -133,7 +134,7 @@ public partial class MainWindow
 
     private async void OnMediaWindowMinimizing(MediaWindowState state)
     {
-        if (_exiting || _mediaHandoffInFlight || !MediaWindowHandoffEnabled || state.Kind != MediaWindowKind.DesktopPlayer
+        if (_exiting || GameDoNotDisturbActive || _mediaHandoffInFlight || !MediaWindowHandoffEnabled || state.Kind != MediaWindowKind.DesktopPlayer
             || !MusicIslandHasMedia || _approvalCurrent != null || _sessionLocked) return;
         _mediaSourceForeground = false;
         if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave || state.Bounds.IsEmpty || _mediaWindows?.TransitionsSuppressed != true)
@@ -194,8 +195,8 @@ public partial class MainWindow
         if (_mediaHandoffInFlight || _mediaWindows?.Current is not { Kind: MediaWindowKind.DesktopPlayer } state
             || state.Handle == IntPtr.Zero) return;
         var service = _mediaWindows;
-        if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave || state.Bounds.IsEmpty || !service.TransitionsSuppressed)
-        { service.Restore(state.Handle); return; }
+        if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave || state.Bounds.IsEmpty || service.Snapshot == null || !service.TransitionsSuppressed)
+        { service.AllowNativeTransitions(); service.Restore(state.Handle); return; }
         int epoch = ++_mediaHandoffEpoch;
         var info = _smtc?.Current;
         bool restored = false;

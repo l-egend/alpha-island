@@ -52,29 +52,30 @@ namespace alpha_island.Settings
         public bool ForceClose { get; set; }
 
         private readonly bool _persistSettings;
-        private readonly string? _aiSecretsFile;
-        private int _foregroundSequence;
+
         public SettingsWindow() : this(true) { }
-        internal SettingsWindow(bool persistSettings, string? aiSecretsFile = null, ChatService? connectionService = null)
+        internal SettingsWindow(bool persistSettings, string? aiSecretsFile = null, ChatService? connectionService = null, StartupRegistrationService? startupRegistration = null, Func<Task>? authorizeBootLog = null)
         {
             _persistSettings = persistSettings;
-            _aiSecretsFile = aiSecretsFile ?? (persistSettings ? AppPaths.AiSecretsFile : null);
-            _aiConnectionService = connectionService ?? new ChatService();
+            _startupRegistration = startupRegistration ?? (persistSettings ? new StartupRegistrationService() : null);
+            _authorizeBootLog = authorizeBootLog ?? (persistSettings ? BootLogAccess.EnsureReadAccessAsync : () => Task.CompletedTask);
             InitializeComponent();
-            IsVisibleChanged += (_, e) =>
-            {
-                if (e.NewValue is false) { _foregroundSequence++; Topmost = false; CancelAiConnection(); }
-            };
-            StateChanged += (_, _) => Topmost = IsVisible && WindowState != WindowState.Minimized;
             PreviewKeyDown += (_, e) =>
             {
-                if (e.Key != Key.Escape || e.Handled) return;
+                if (e.Key != Key.Escape || e.Handled || _recordingShortcut) return;
                 Close(); e.Handled = true;
             };
             InitializeSettingsMotion();
+            InitializeSettingsFrame();
             AddNotificationSettings();
             AddStatusDisplaySettings();
             AddPomodoroSettings();
+            AddWeatherSettings();
+            AddLaunchSettings();
+            AddWorkspaceSettings();
+            AddExternalTranslationSettings();
+            AddAgentIntegrationSettings();
+            AddFirstUseSettings();
 
             _saveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
             {
@@ -355,10 +356,6 @@ namespace alpha_island.Settings
             {
                 BatteryNotifyToggle.IsChecked = _options.BatteryNotifyEnabled;
             }
-            if (BatteryRippleToggle != null)
-            {
-                BatteryRippleToggle.IsChecked = _options.BatteryRippleEnabled;
-            }
             if (ClipboardNotifyToggle != null)
             {
                 ClipboardNotifyToggle.IsChecked = _options.ClipboardNotifyEnabled;
@@ -392,9 +389,8 @@ namespace alpha_island.Settings
             // 注册表驱动的项（含新功能的 Extras）统一回填；必须在 _suppress 复位之前，
             // 否则回填过程会触发 Setting_Changed/Slider_Changed 把值又写回去。
             LoadRegistryControls();
+            LoadStartupRegistrationState();
             LoadStatusDisplayRows();
-            RefreshAiKeyState();
-            RefreshAiModelConnection();
 
             _suppress = false;
             UpdateEnabledStates();
@@ -590,10 +586,6 @@ namespace alpha_island.Settings
             {
                 _options.BatteryNotifyEnabled = BatteryNotifyToggle.IsChecked == true;
             }
-            if (BatteryRippleToggle != null)
-            {
-                _options.BatteryRippleEnabled = BatteryRippleToggle.IsChecked == true;
-            }
             if (ClipboardNotifyToggle != null)
             {
                 _options.ClipboardNotifyEnabled = ClipboardNotifyToggle.IsChecked == true;
@@ -621,7 +613,6 @@ namespace alpha_island.Settings
 
             // 注册表驱动的项统一回写（放在手写块之后：两边写的是同一个属性，值一致，幂等）。
             ApplyRegistryControls();
-            SettingsRegistry.SetExtra(_options, "AiApiKey", string.Empty);
 
             UpdateEnabledStates();
             _saveDebounceTimer.Stop();
@@ -632,7 +623,6 @@ namespace alpha_island.Settings
         private void TextBox_Changed(object sender, TextChangedEventArgs e)
         {
             if (_suppress) return;
-            if (ReferenceEquals(sender, AiBaseUrlBox)) ResetAiModelConnection();
             ApplyChanges();
         }
 
@@ -657,10 +647,6 @@ namespace alpha_island.Settings
             if (BluetoothNotifySlider != null)
             {
                 BluetoothNotifySlider.IsEnabled = BluetoothNotifyToggle?.IsChecked == true;
-            }
-            if (BatteryRippleToggle != null)
-            {
-                BatteryRippleToggle.IsEnabled = BatteryNotifyToggle?.IsChecked == true;
             }
             if (ClipboardRightClickPasteToggle != null)
             {
@@ -745,6 +731,7 @@ namespace alpha_island.Settings
             if (target == null) return;
 
             TransitionSettingsPage(target, pages);
+            UpdateNavigationSelection(sender as RadioButton, animate: true);
 
             // 「关于」页每次切进来都重读一遍：版本/能力/服务/日志都是只读的即时信息。
             if (tag == SettingsPageIds.About) RefreshDiagnostics();
@@ -889,38 +876,16 @@ namespace alpha_island.Settings
             }
         }
 
-        private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ButtonState == MouseButtonState.Pressed)
-            {
-                try
-                {
-                    DragMove();
-                }
-                catch
-                {
-                }
-            }
-        }
-
-        /// <summary>用户主动打开设置时，提升到置顶层并恢复键盘操作；隐藏后释放置顶。</summary>
+        /// <summary>主动打开时恢复并前移普通窗口；不保留置顶，也不排队反复抢回焦点。</summary>
         internal void ShowInForeground(bool requestFocus = true)
         {
-            int sequence = ++_foregroundSequence;
+            Topmost = false;
             Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-            RaiseToFront();
-            if (!requestFocus) return;
-            FocusWindow();
-            // 托盘菜单关闭后系统可能把焦点交回原全屏窗口，排队补一次主动打开操作。
-            Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
-            {
-                if (sequence != _foregroundSequence || !IsVisible || WindowState == WindowState.Minimized) return;
-                RaiseToFront(); FocusWindow();
-            }));
+            alpha_island.Interop.NativeMethods.SetWindowPos(new System.Windows.Interop.WindowInteropHelper(this).Handle,
+                IntPtr.Zero, 0, 0, 0, 0, 0x0013); // HWND_TOP, NOMOVE | NOSIZE | NOACTIVATE
+            if (requestFocus) FocusWindow();
         }
-
-        private void RaiseToFront() { Topmost = false; Topmost = true; }
         private void FocusWindow()
         {
             Activate();
@@ -933,6 +898,12 @@ namespace alpha_island.Settings
         private void MinimizeButton_Click(object sender, RoutedEventArgs e)
         {
             WindowState = WindowState.Minimized;
+        }
+
+        private void MaximizeButton_Click(object sender, RoutedEventArgs e)
+        {
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            UpdateSettingsFrame();
         }
 
         /// <summary>顶部三横线按钮：展开 / 收起左侧导航栏。</summary>
@@ -998,9 +969,9 @@ namespace alpha_island.Settings
 
             double target = expanded ? NavWidthExpanded : NavWidthCollapsed;
             int version = ++_navMotionVersion;
-            if (!animate || !AnimateSettings)
+            if (!animate || !AnimateSettings || !NavPane.IsVisible)
             {
-                NavPane.BeginAnimation(WidthProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(NavPane,WidthProperty, null);
                 NavPane.Width = target;
                 return;
             }
@@ -1016,10 +987,10 @@ namespace alpha_island.Settings
             anim.Completed += (_, __) =>
             {
                 if (version != _navMotionVersion) return;
-                NavPane.BeginAnimation(WidthProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(NavPane,WidthProperty, null);
                 NavPane.Width = target;
             };
-            NavPane.BeginAnimation(WidthProperty, anim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(NavPane,WidthProperty, anim);
         }
 
         /// <summary>Win11 风格导航搜索框：按 Uid/Tag 过滤左侧导航项，只影响可见性，不改当前页。</summary>
@@ -1047,6 +1018,8 @@ namespace alpha_island.Settings
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }
+            NavPanel.UpdateLayout();
+            UpdateNavigationSelection(_selectedNavItem, animate: false);
         }
 
         private void ResetDefaultsButton_Click(object sender, RoutedEventArgs e)
@@ -1082,7 +1055,6 @@ namespace alpha_island.Settings
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
-            CancelAiConnection();
             _saveDebounceTimer.Stop();
             SaveOptions();
             if (ForceClose) return;
@@ -1125,7 +1097,7 @@ namespace alpha_island.Settings
         {
             foreach (var descriptor in SettingsRegistry.All)
             {
-                if (descriptor.IsSecret || string.IsNullOrEmpty(descriptor.ControlName))
+                if (descriptor.IsSecret || descriptor.Key == "StartupEnabled" || string.IsNullOrEmpty(descriptor.ControlName))
                 {
                     continue;
                 }
@@ -1135,7 +1107,6 @@ namespace alpha_island.Settings
                     continue;
                 }
 
-                if (descriptor.Key == "AiModel" && AiModelBox.SelectedItem is not string) continue;
                 SettingsRegistry.Write(_options, descriptor.Key, ReadControlValue(control));
             }
         }
@@ -1198,71 +1169,6 @@ namespace alpha_island.Settings
         /// API Key 的专用收尾（B 组①）：密码框里的明文只走 DPAPI 加密文件，
         /// 顺手把 Extras 里的 <c>AiApiKey</c> 清空 —— 密钥永远不进 options.json。
         /// </summary>
-        private void ApplyAiSecret()
-        {
-            if (FindName("AiApiKeyBox") is not PasswordBox box)
-            {
-                return;
-            }
-
-            string typed = box.Password?.Trim() ?? "";
-            if (typed.Length > 0 && _aiSecretsFile != null)
-            {
-                bool ok = AiSecretStore.TrySave(_aiSecretsFile, typed);
-                if (ok)
-                {
-                    bool wasSuppressed = _suppress;
-                    _suppress = true;
-                    box.Password = string.Empty;   // 收进加密文件后立刻清掉界面明文
-                    _suppress = wasSuppressed;
-                    OptionsChanged?.Invoke(this, _options);
-                }
-                else
-                {
-                    IslandLog.Warn("Settings", "API Key 保存失败（详见日志）");
-                    RefreshAiKeyState();
-                    AiApiKeyState.Text = "保存失败，输入已保留（检查配置目录权限）";
-                    return;
-                }
-            }
-
-            SettingsRegistry.SetExtra(_options, "AiApiKey", string.Empty);
-            RefreshAiKeyState();
-        }
-
-        /// <summary>刷新"密钥已保存/未保存"那行小字。</summary>
-        private void RefreshAiKeyState()
-        {
-            if (FindName("AiApiKeyState") is TextBlock state)
-            {
-                state.Text = _aiSecretsFile != null && File.Exists(_aiSecretsFile)
-                    ? "已加密保存（更换后点击保存）"
-                    : "尚未保存（本地模型可留空）";
-            }
-            if (SaveAiKeyButton != null) SaveAiKeyButton.IsEnabled = _aiSecretsFile != null && !string.IsNullOrWhiteSpace(AiApiKeyBox?.Password);
-            if (ClearAiKeyButton != null) ClearAiKeyButton.IsEnabled = _aiSecretsFile != null && File.Exists(_aiSecretsFile);
-        }
-
-        private void PasswordBox_Changed(object sender, RoutedEventArgs e)
-        {
-            if (_suppress) return;
-            RefreshAiModelConnection();
-            RefreshAiKeyState();
-            if (AiApiKeyState != null && !string.IsNullOrWhiteSpace(AiApiKeyBox.Password)) AiApiKeyState.Text = "尚未保存，请点击保存密钥";
-        }
-
-        private void SaveAiKeyButton_Click(object sender, RoutedEventArgs e) => ApplyAiSecret();
-
-        private void ClearAiKeyButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_aiSecretsFile == null || !AiSecretStore.Clear(_aiSecretsFile)) return;
-            AiApiKeyBox.Password = "";
-            SettingsRegistry.SetExtra(_options, "AiApiKey", string.Empty);
-            RefreshAiKeyState();
-            RefreshAiModelConnection();
-            OptionsChanged?.Invoke(this, _options);
-        }
-
         private void OpenConfigFolderButton_Click(object sender, RoutedEventArgs e)
         {
             try

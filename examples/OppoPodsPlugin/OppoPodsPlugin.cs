@@ -13,6 +13,8 @@ public sealed class OppoPodsPlugin : IIslandPlugin
     private readonly Func<Action<string>, EarbudController> _factory;
     private bool _active;
     private int _renderQueued;
+    private string? _batteryDeviceName;
+    private EarbudSnapshot? _lastBatteryReport;
     public OppoPodsPlugin() : this(log => new EarbudController(log)) { }
     internal OppoPodsPlugin(Func<Action<string>, EarbudController> factory) => _factory = factory;
 
@@ -27,7 +29,7 @@ public sealed class OppoPodsPlugin : IIslandPlugin
             "填写耳机在 Windows 中的名称；留空时只自动选择唯一在线的支持型号"));
         context.RegisterSetting(new("model", "耳机型号", PluginSettingKind.Choice, "自动识别",
             "识别错误时指定准确型号；不会自动改变耳机设置",
-            Choices: new[] { "自动识别" }.Concat(DeviceCapabilities.GetModelNames().Distinct().OrderBy(n => n)).ToArray()));
+            Choices: new[] { "自动识别" }.Concat(MultiBrandSupport.ModelNames()).ToArray()));
         _controller = _factory(context.Log);
         _controller.Changed += QueueRender;
         context.RegisterPage(new("earbuds", "耳机", CreateView, Glyph: "\uE7F6", Height: 320, Order: 120,
@@ -58,8 +60,31 @@ public sealed class OppoPodsPlugin : IIslandPlugin
         context.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
             Interlocked.Exchange(ref _renderQueued, 0);
-            if (_context == context && !context.Lifetime.IsCancellationRequested && _active && _view?.IsVisible == true) Render();
+            if (_context != context || context.Lifetime.IsCancellationRequested) return;
+            ReportBatteries();
+            if (_active && _view?.IsVisible == true) Render();
         }));
+    }
+    private void ReportBatteries()
+    {
+        if (_context == null || _controller == null) return;
+        var snapshot = _controller.Snapshot;
+        if (_lastBatteryReport is { } last && last.Connected == snapshot.Connected && last.DeviceName == snapshot.DeviceName
+            && last.LeftPower == snapshot.LeftPower && last.RightPower == snapshot.RightPower && last.CasePower == snapshot.CasePower) return;
+        _lastBatteryReport = snapshot;
+        if (_batteryDeviceName != null && (!snapshot.Connected || _batteryDeviceName != snapshot.DeviceName))
+            foreach (var report in BatteryReports(new EarbudSnapshot { DeviceName = _batteryDeviceName }))
+                _context.ReportBluetoothBattery(report);
+        _batteryDeviceName = snapshot.Connected ? snapshot.DeviceName : null;
+        if (snapshot.Connected)
+            foreach (var report in BatteryReports(snapshot)) _context.ReportBluetoothBattery(report);
+    }
+    internal static PluginBluetoothBattery[] BatteryReports(EarbudSnapshot snapshot)
+    {
+        var parts = new[] { ("left", snapshot.SingleBattery ? "耳机电量" : "左耳", snapshot.LeftPower), ("right", "右耳", snapshot.RightPower), ("case", "耳机盒", snapshot.CasePower) };
+        return parts.Select(part => new PluginBluetoothBattery(
+            snapshot.DeviceName + "/" + part.Item1, snapshot.DeviceName + " · " + part.Item2,
+            part.Item3.Percent, snapshot.Connected && part.Item3.Percent.HasValue, part.Item3.Charging)).ToArray();
     }
     private void Render() { if (_view != null && _controller != null) _view.Update(_controller.Snapshot, _controller.Devices); }
     public void OnSettingsChanged() => _controller?.SetOptions(ReadOptions());

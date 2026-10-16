@@ -1,4 +1,4 @@
-# Alpha Island 图标生成器（C 组①）
+﻿# Alpha Island 图标生成器（C 组①）
 #
 # 生成 Assets\alpha-island.ico：内置一套默认图标，用户可以直接换文件（或换 %LOCALAPPDATA%\alpha-island\config\icon.ico）。
 #   尺寸：16 / 24 / 32 / 48 / 64 / 256
@@ -11,7 +11,8 @@
 
 param(
     [string]$Output = "$PSScriptRoot\..\Assets\alpha-island.ico",
-    [string]$Preview = "$PSScriptRoot\..\Assets\alpha-island-256.png"
+    [string]$Preview = "$PSScriptRoot\..\Assets\alpha-island-256.png",
+    [string]$Source = "$PSScriptRoot\..\Assets\alpha-island-source.png"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,6 +28,7 @@ using System.IO;
 
 public static class AlphaIslandIcon
 {
+    public static string SourcePath;
     static GraphicsPath RoundRect(RectangleF r, float radius)
     {
         float d = Math.Max(0.5f, radius * 2f);
@@ -53,6 +55,13 @@ public static class AlphaIslandIcon
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.Clear(Color.Transparent);
+
+            if (!string.IsNullOrEmpty(SourcePath) && File.Exists(SourcePath))
+            {
+                using (var original = Image.FromFile(SourcePath))
+                    g.DrawImage(original, new Rectangle(0, 0, size, size));
+                return bmp;
+            }
 
             float s = size;
             float capsuleH = s * 0.44f;
@@ -127,8 +136,13 @@ public static class AlphaIslandIcon
         }
         finally { bmp.UnlockBits(data); }
 
-        var zeros = new byte[andStride * h]; // AND 掩码全 0：透明度交给 alpha 通道
-        bw.Write(zeros);
+        // Mirror fully transparent pixels in the legacy AND mask as well as BGRA alpha.
+        var mask = new byte[andStride * h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (bmp.GetPixel(x, h - 1 - y).A == 0)
+                    mask[y * andStride + x / 8] |= (byte)(0x80 >> (x % 8));
+        bw.Write(mask);
         bw.Flush();
         return ms.ToArray();
     }
@@ -181,6 +195,7 @@ public static class AlphaIslandIcon
 }
 '@
 
+[AlphaIslandIcon]::SourcePath = $Source
 [AlphaIslandIcon]::Build($Output, $Preview)
 
 $full = [System.IO.Path]::GetFullPath($Output)

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using alpha_island.Core;
+using alpha_island.Controls;
 using alpha_island.Plugins;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using Orientation = System.Windows.Controls.Orientation;
@@ -12,9 +13,10 @@ namespace alpha_island;
 
 public partial class MainWindow
 {
-    private sealed record CardPinView(string PageId, Grid Root, TextBlock Title, TextBlock Detail, TextBlock Icon, TextBlock? Value)
+    private sealed record CardPinView(string PageId, Grid Root, TextBlock Title, TextBlock Detail, SemanticIcon Icon, TextBlock? Value)
     {
         internal string NoticeTitle = "", NoticeDetail = "";
+        internal string MotionDetail = "";
         internal DateTime NoticeUntilUtc;
     }
     private readonly Dictionary<string, CardPinView> _cardPinViews = new(StringComparer.Ordinal);
@@ -30,7 +32,8 @@ public partial class MainWindow
             var root = new Grid { Width = 328, Height = 32, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             root.ColumnDefinitions.Add(new ColumnDefinition());
-            var glyph = new TextBlock { FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 21, Foreground = ResolveAccentBrush(), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+            var glyph = new SemanticIcon { Width = 28, Height = 28, FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 21, Foreground = ResolveAccentBrush(), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+            alpha_island.Animation.ActionIconMotion.SetKind(glyph, alpha_island.Animation.ActionIconAnimation.Pulse);
             root.Children.Add(glyph);
             var text = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center };
             var title = new TextBlock { FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = System.Windows.Media.Brushes.White, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -58,7 +61,7 @@ public partial class MainWindow
     }
     private string CardPinGlyph(string pageId) => pageId switch
     {
-        "focus" => "\uE916", "weather" => "\uE9BD", "screen-tools" => "\uE722",
+        "focus" => "\uE916", "weather" => "\uE9BD", "screen-tools" => AlphaIsland.PluginSdk.GlyphArtwork.ScreenToolsGlyph,
         _ => (_pages.Pages.FirstOrDefault(p => p.Id == pageId) as PluginIslandPage)?.Glyph ?? "\uE700"
     };
     private string? CardPinDisplayName(string key) => _cardPinViews.TryGetValue(key, out var view) ? view.Title.Text : null;
@@ -66,8 +69,25 @@ public partial class MainWindow
     {
         if (!_cardPinViews.TryGetValue("card/" + pageId, out var view)) return;
         view.Title.Text = _pages.Pages.FirstOrDefault(p => p.Id == pageId)?.Title ?? view.Title.Text;
+        int? weatherCode = pageId == "weather" ? _weatherSnapshot?.Code : null;
+        bool weatherChanged = pageId == "weather" && view.Icon.WeatherCode != weatherCode;
         view.Icon.Text = CardPinGlyph(pageId);
-        view.Detail.Text = pageId switch
+        view.Icon.Shape = pageId switch
+        {
+            "focus" => IconShape.Timer,
+            "weather" => IconShape.Weather,
+            _ => IconShape.Auto,
+        };
+        view.Icon.Active = pageId != "focus" || _pomodoro.Running;
+        view.Icon.WeatherCode = weatherCode;
+        if (weatherChanged)
+        {
+            alpha_island.Animation.ActionIconMotion.Stop(view.Icon);
+            alpha_island.Animation.ActionIconMotion.Play(view.Icon);
+            if (_satelliteOrbViews.TryGetValue("card/weather", out var weatherOrb))
+                UpdateSatelliteOrbVisual("card/weather", weatherOrb);
+        }
+        string detail = pageId switch
         {
             "focus" => (_pomodoro.CycleFinished ? "循环完成" : _pomodoro.IsLongBreak ? "长休息" : _pomodoro.IsBreak ? "短休息" : "专注")
                 + (_pomodoro.Running ? "" : " · 已暂停"),
@@ -75,6 +95,22 @@ public partial class MainWindow
             "screen-tools" => "翻译 · 字幕 · 扫码",
             _ => (_pages.Pages.FirstOrDefault(p => p.Id == pageId) as PluginIslandPage)?.ReadSummary() ?? "点击打开卡片"
         };
+        if (view.MotionDetail != detail && pageId == "focus")
+        {
+            alpha_island.Animation.ActionIconMotion.Stop(view.Icon);
+            alpha_island.Animation.ActionIconMotion.Play(view.Icon);
+            if (_satelliteOrbViews.TryGetValue("card/focus", out var focusOrb) && focusOrb.Child is Grid focusGrid)
+            {
+                var focusIcon = focusGrid.Children.OfType<SemanticIcon>().FirstOrDefault(t => t.Name == "OrbGlyph");
+                if (focusIcon != null)
+                {
+                    focusIcon.Active = _pomodoro.Running;
+                    alpha_island.Animation.ActionIconMotion.Play(focusIcon);
+                }
+            }
+        }
+        view.MotionDetail = detail;
+        view.Detail.Text = detail;
         if (view.Value != null)
         {
             view.Value.Text = _pomodoro.DisplayRemaining();

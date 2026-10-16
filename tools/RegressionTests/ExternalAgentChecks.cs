@@ -57,6 +57,11 @@ internal static partial class Program
         Check(invalid.StatusCode == HttpStatusCode.BadRequest, "HTTP 拒绝非法状态");
         using var malformed = await http.PostAsync("status", new StringContent("[]"));
         Check(malformed.StatusCode == HttpStatusCode.BadRequest, "HTTP 拒绝非对象状态请求");
+        using var invalidConnection = await http.PostAsync("status", new StringContent(JsonSerializer.Serialize(new
+        { source = "codex", session = "invalid-connect", state = "thinking", connectOnly = true })));
+        using var invalidConnectBody = JsonDocument.Parse(await invalidConnection.Content.ReadAsStringAsync());
+        Check(invalidConnection.StatusCode == HttpStatusCode.BadRequest && invalidConnectBody.RootElement.GetProperty("error").GetString()!.Contains("连接登记"),
+            "连接登记标记不能同时修改工作状态");
         var approvalTask = http.PostAsync("approval", new StringContent("{\"id\":\"cancel-probe\",\"tool\":\"read-only.probe\",\"timeoutSec\":5}"));
         await offered.Task.WaitAsync(TimeSpan.FromSeconds(3));
         using var cancel = await http.DeleteAsync("approval/cancel-probe");

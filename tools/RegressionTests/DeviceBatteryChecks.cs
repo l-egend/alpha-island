@@ -16,9 +16,9 @@ internal static partial class Program
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         bool reduce = MotionPolicy.ReduceMotion, powerSave = MotionPolicy.PowerSave; int tier = MotionPolicy.RenderTier;
-        var layers = (IslandLayerHost)typeof(alpha_island.MainWindow).GetField("_layers", flags)!.GetValue(window)!;
-        var state = typeof(alpha_island.MainWindow).GetField("_state", flags)!.GetValue(window);
-        var pages = (IslandPageHost)typeof(alpha_island.MainWindow).GetField("_pages", flags)!.GetValue(window)!;
+        var layers = (IslandLayerHost)ReadWindowMember(window, "_layers")!;
+        var state = ReadWindowMember(window, "_state");
+        var pages = (IslandPageHost)ReadWindowMember(window, "_pages")!;
         string previousPage = pages.ActiveId;
         var gallery = new Border { Width = 470, Height = 185, Background = Brushes.Transparent };
         var samples = new StackPanel { Margin = new Thickness(16) }; gallery.Child = samples;

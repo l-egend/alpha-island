@@ -37,14 +37,14 @@ namespace alpha_island
 
         /// <summary>调试钩子（ALPHA_ISLAND_FAKE_MEDIA=1）：用合成「正在播放」顶替真实 SMTC 会话。</summary>
         private bool _fakeMediaForDebug;
-        private string _lastMediaIdentity = "";
-        private bool _mediaHiddenWhenPaused;
+        
+        
 
         private void SyncPausedMediaVisibility()
         {
-            bool hidden = ShouldHidePausedMedia || ShouldHideForegroundMedia;
-            bool wasHidden = _mediaHiddenWhenPaused;
-            _mediaHiddenWhenPaused = hidden;
+            bool hidden = ShouldHidePausedMedia || ShouldHideForegroundMedia || GameDoNotDisturbActive && !_isPinned;
+            bool wasHidden = _workspace.Media.Hidden;
+            _workspace.Media.Hidden = hidden;
             if (hidden)
             {
                 _upNextTimer?.Stop();
@@ -102,6 +102,9 @@ namespace alpha_island
                 return;
             }
 
+            ApplyPowerSavePacing();
+            if (_runtimeEnabled && info?.HasMedia == true) StartAudioSpectrum();
+
             if (info == null || !info.HasMedia || info.State is PlaybackState.Closed or PlaybackState.Stopped)
             {
                 // SMTC 在换曲瞬间会短暂报"无会话"，立刻清空会闪；延迟 1.2s 再确认。
@@ -115,6 +118,8 @@ namespace alpha_island
 
         private void ApplyMedia(NowPlayingInfo info)
         {
+            var transition = _workspace.Media.Preview(info);
+            bool playbackChanged = transition.PlaybackChanged;
             _mediaWindows?.SetSource(info.SourceApp);
             TitleText.Text = info.DisplayTitle;
             ArtistText.Text = string.IsNullOrWhiteSpace(info.Artist) && (info.ContentKind != MediaContentKind.Music || MediaSourceNames.IsBrowser(info.SourceApp))
@@ -131,9 +136,14 @@ namespace alpha_island
             CardMediaPlaceholder.Visibility = art == null ? Visibility.Visible : Visibility.Collapsed;
             CardMediaPlaceholder.Text = info.ContentKind == MediaContentKind.Video ? "\uE714" : "\uE8D6";
 
+            PlayPauseGlyph.Shape = IconShape.PlayPause;
+            PlayPauseGlyph.Active = info.IsPlaying;
             PlayPauseGlyph.Text = info.IsPlaying ? "\uE769" : "\uE768";
             PrevButton.IsEnabled = info.CanPrevious;
             NextButton.IsEnabled = info.CanNext;
+            PlaybackOrderButton.Visibility = MediaPlaybackOrders.Supported(info).Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PlaybackOrderButton.Content = MediaPlaybackOrders.Glyph(info.PlaybackOrder);
+            PlaybackOrderButton.ToolTip = info.PlaybackOrderKnown ? MediaPlaybackOrders.Name(info.PlaybackOrder) + "（点击切换）" : "切换播放模式";
             ProgressTrack.Cursor = info.CanSeek ? Cursors.Hand : Cursors.Arrow;
             ProgressTrack.Opacity = info.CanSeek ? 1.0 : 0.6;
 
@@ -147,7 +157,6 @@ namespace alpha_island
                 PillSpectrum.Clear();
                 CardWave.Clear();
                 StopKaraoke();
-                _lyricWipe.Rect = Rect.Empty;
             }
             else
             {
@@ -156,17 +165,11 @@ namespace alpha_island
 
             if (_lyricsDoc == null) SetPillLyric(info.DisplayTitle);
 
-            string title = info.Title ?? "";
-            string artist = info.Artist ?? "";
-            string identity = info.SourceApp + "|" + info.SessionId + "|" + info.ContentKind;
-            bool trackChanged = title != _lastTitle || artist != _lastArtist || _lastMediaIdentity != identity;
+            bool trackChanged = transition.TrackChanged;
             if (trackChanged || _lastIsPlaying != info.IsPlaying) _mediaWindows?.RefreshSnapshot();
 
             if (trackChanged)
             {
-                _lastTitle = title;
-                _lastArtist = artist;
-                _lastMediaIdentity = identity;
                 _lyricsCts?.Cancel(); ApplyLyrics(null);
                 _lastFetchDuration = info.Duration;
                 StartLyricsFetch(info);
@@ -175,10 +178,9 @@ namespace alpha_island
                 // _sawMedia 保证只有"真的换了一首"才弹，开机第一首不弹。
                 if (info.IsPlaying && _sawMedia) BeginUpNext(info);
             }
-            else if (!trackChanged && _lyricsDoc == null && info.IsPlaying && info.Duration > TimeSpan.Zero && _lastFetchDuration == TimeSpan.Zero)
+            else if (_options.LyricsEnabled && info.SupportsLyrics && LyricsIdentity(info) != _lyricsKey)
             {
-                // 当刚切歌时 SMTC 报过来的 Duration 为 0，可能搜索/匹配因此受影响或失败；
-                // 一旦后续真实的歌曲时长更新（Duration > 0 且此前为 0），补抓一次歌词！
+                // Corrected duration/album invalidates an earlier request or cached version.
                 _lastFetchDuration = info.Duration;
                 StartLyricsFetch(info);
             }
@@ -198,24 +200,28 @@ namespace alpha_island
                 BeginPlayPrompt(info);
             }
 
-            _lastIsPlaying = info.IsPlaying;
-            _sawMedia = true;
+            _workspace.Media.Commit(info);
             SyncPausedMediaVisibility();
             SyncVisualizers();
+            // A visible card does not reload its icon when only playback state changes.
+            // Timeline / metadata refreshes keep the same state and must not replay this cue.
+            if (playbackChanged) ActionIconMotion.Play(PlayPauseGlyph);
         }
 
         private void ApplyNoMedia()
         {
+            PlaybackOrderButton.Visibility = Visibility.Collapsed;
+            if (_runtimeEnabled)
+            {
+                // This path runs only after the existing 1.2s loss confirmation, not between tracks.
+                StopSpectrumService();
+                _services.MarkStopped(IslandServiceIds.Spectrum);
+            }
             _mediaWindows?.SetSource(null);
-            _mediaHiddenWhenPaused = false;
-            _lastTitle = "";
-            _lastMediaIdentity = "";
-            _lastArtist = "";
+            _workspace.Media.Reset();
             _lyricsKey = "";
             _lyricsFetchingKey = "";
             _lastFetchDuration = TimeSpan.Zero;
-            _lastIsPlaying = null;
-            _sawMedia = false;
             ApplyLyrics(null);
 
             TitleText.Text = "未在播放";
@@ -230,6 +236,8 @@ namespace alpha_island
             _upNextShowing = false;
             SetPillLyric("Alpha Island");
             SyncUpNextContent();
+            PlayPauseGlyph.Shape = IconShape.PlayPause;
+            PlayPauseGlyph.Active = false;
             PlayPauseGlyph.Text = "\uE768";
             PlayPauseButton.IsEnabled = false;
             PrevButton.IsEnabled = false;
@@ -296,9 +304,9 @@ namespace alpha_island
         // ================= 频谱 =================
 
         /// <summary>采集线程回调：PushFrame 内部加锁拷贝，可以安全跨线程。</summary>
-        private void OnSpectrumUpdated(object? sender, float[] bands)
+        private void OnSpectrumUpdated(ReadOnlySpan<float> bands)
         {
-            if (bands == null || bands.Length == 0 || _exiting) return;
+            if (bands.IsEmpty || _exiting) return;
 
             // 无论当前是 Pill 还是 Card，都直接推入最新频谱帧
             // SpectrumVisualizer 内部由 UI 线程的 IsActive 控制渲染循环，未激活时不消耗任何 CPU
@@ -308,7 +316,7 @@ namespace alpha_island
 
         // ================= 进度 =================
 
-        private void ProgressTimer_Tick(object? sender, EventArgs e)
+        private void UpdateMediaAudioEvidence()
         {
             var media = _smtc;
             if (media != null)
@@ -323,7 +331,8 @@ namespace alpha_island
                 // 所以把回调静默也当作静音证据。两个量反相关（回调活着且安静时 SinceCallbackMs
                 // 只有几十毫秒），因此绝不能取两者最小值，只能二选一。
                 var audio = _audio;
-                media.AudioProbeEnabled = audio != null;
+                // Own-app session evidence also works while Bluetooth loopback capture rebuilds.
+                media.AudioProbeEnabled = audio != null || _volumeService != null;
                 {
                     // 证据①（首选）：**播放器自己那个音频会话**的电平。暂停时那个会话还在，
                     // 但输出的是数字静音 → 峰值≈0；按了播放而播放器没上报时，峰值又会立刻起来。
@@ -342,6 +351,7 @@ namespace alpha_island
                     float appPeak = mediaApp != null && _volumeService != null
                         ? _volumeService.GetPlayerSessionPeak(mediaApp)
                         : -1f;
+                    appPeak = media.ReadPlayerSessionPeak(appPeak);
                     long nowMs = Environment.TickCount64;
                     bool playerEvidence = appPeak >= 0f;
                     double playerSilentSeconds = 0.0;
@@ -388,7 +398,7 @@ namespace alpha_island
                                               endpointSilentSeconds, endpointUsable);
 
                     long nowDbg = Environment.TickCount64;
-                    if (_smtcDebugEnabled && nowDbg - _dbgLastMs >= 1000)
+                    if (_smtcDebugEnabled && IslandLog.IsEnabled(IslandLogLevel.Debug) && nowDbg - _dbgLastMs >= 1000)
                     {
                         _dbgLastMs = nowDbg;
                         var cur = media.Current;
@@ -401,13 +411,12 @@ namespace alpha_island
                     }
                 }
 
-                // 翻页动画期间跳过这一拍的同步 WinRT 调用，杜绝跨进程 IPC 钉住 UI 线程造成掉帧
-                if (!_cardAnimating && !_mediaHandoffInFlight)
-                {
-                    media.CheckFastPlaybackState();
-                }
             }
+        }
 
+        private void ProgressTimer_Tick(object? sender, EventArgs e)
+        {
+            var media = _smtc;
             var info = media?.Current;
             if (media == null || info == null || !info.HasMedia) return;
 
@@ -458,6 +467,17 @@ namespace alpha_island
         private async void NextButton_Click(object sender, RoutedEventArgs e)
         {
             if (_smtc != null) await _smtc.NextAsync();
+        }
+        private async void PlaybackOrderButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_smtc == null || !PlaybackOrderButton.IsEnabled) return;
+            PlaybackOrderButton.IsEnabled = false;
+            try
+            {
+                if (!await _smtc.CyclePlaybackOrderAsync())
+                    PlaybackOrderButton.ToolTip = "播放器未接受模式切换，请在播放器中确认是否支持";
+            }
+            finally { PlaybackOrderButton.IsEnabled = true; }
         }
 
     }

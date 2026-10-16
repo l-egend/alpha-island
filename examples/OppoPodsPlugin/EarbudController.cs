@@ -9,6 +9,7 @@ internal sealed class EarbudController : IDisposable
     private readonly Func<IReadOnlyList<EarbudDevice>> _discover;
     private readonly Func<EarbudDevice, EarbudOptions, IEarbudSession> _factory;
     private readonly Action<string> _log;
+    private readonly MultiBrandDiscovery? _multiDiscovery;
     private readonly object _lifecycle = new();
     private readonly Channel<Request> _queue = Channel.CreateBounded<Request>(new BoundedChannelOptions(64) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     private CancellationTokenSource? _cancellation;
@@ -31,8 +32,9 @@ internal sealed class EarbudController : IDisposable
         Func<EarbudDevice, EarbudOptions, IEarbudSession>? factory = null)
     {
         _log = log;
-        _discover = discover ?? DiscoverWindows;
-        _factory = factory ?? ((device, options) => new ProtocolSession(device, options));
+        _multiDiscovery = discover == null ? new MultiBrandDiscovery() : null;
+        _discover = discover ?? (() => _multiDiscovery!.Discover());
+        _factory = factory ?? ((device, options) => MultiBrandSupport.Create(device, options, _multiDiscovery!));
     }
     private static IReadOnlyList<EarbudDevice> DiscoverWindows()
     {
@@ -207,6 +209,7 @@ internal sealed class EarbudController : IDisposable
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
         lock (_lifecycle) _cancellation?.Cancel();
+        _multiDiscovery?.Dispose();
         // Close transport immediately, including a connection attempt still in progress.
         Release();
     }

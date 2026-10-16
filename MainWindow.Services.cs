@@ -22,26 +22,46 @@ namespace alpha_island
     {
         // ================= 服务宿主（阶段 3.3） =================
 
-        private IslandServiceHost _services = null!;
+        private readonly IslandServiceHost _services = new();
 
         /// <summary>注册全部服务并把自己的状态区块挂进「关于」页。只应在构造函数里调一次。</summary>
         private void BuildServiceHost()
         {
-            _services = new IslandServiceHost();
+            _services.Register(new DelegateIslandService(IslandServiceIds.GameActivity, IslandServiceIds.DisplayName(IslandServiceIds.GameActivity),
+                options => SettingsRegistry.GetBool(options, "NotificationGameQuietEnabled", true) || SettingsRegistry.GetBool(options, "ProductivityEnabled", true),
+                StartGameActivity, StopGameActivity, _ => OnGameActivityOptionsChanged(), autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.Cpu, IslandServiceIds.DisplayName(IslandServiceIds.Cpu),
                 options => SettingsRegistry.GetBool(options, "CpuMonitorEnabled", true), StartCpuService, StopCpuService, autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.DesktopNotifications, IslandServiceIds.DisplayName(IslandServiceIds.DesktopNotifications),
                 options => SettingsRegistry.GetBool(options, "SystemToastEnabled", true), StartSystemToastService, StopSystemToastService, autoStart: true));
+            _services.Register(new DelegateIslandService(IslandServiceIds.MessengerNotifications, IslandServiceIds.DisplayName(IslandServiceIds.MessengerNotifications),
+                options => SettingsRegistry.GetBool(options, "NotificationQQEnabled", true) || SettingsRegistry.GetBool(options, "NotificationWeChatEnabled", true),
+                StartMessengerNotifications, StopMessengerNotifications, _ => OnMessengerOptionsChanged(), autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.SessionEvents, IslandServiceIds.DisplayName(IslandServiceIds.SessionEvents),
                 options => SettingsRegistry.GetBool(options, "SessionEventNotifyEnabled", true), StartSessionEvents, StopSessionEvents, autoStart: true));
             // 低频采样的统一节拍（阶段 3.6）。网速/内存/功率/飞行模式/隐私灯都往这里挂订阅，
             // 不再各写一个 DispatcherTimer；没有活跃订阅时它自己会把定时器停掉。
-            _ticker = new IslandTicker(Dispatcher);
+            _resourceMonitor.Changed += () =>
+            {
+                if (_exiting) return;
+                UpdateResourceSnapshot(_resourceMonitor.Values.Snapshot);
+                _settingsWindow?.UpdateHardwarePowerState(_resourceMonitor.Power
+                    ?? new(null, null, "硬件功耗监测未开启"));
+            };
+            _resourceMonitor.MemorySampled += OnMemorySampled;
+            BindResourceState();
+            IsVisibleChanged += (_, _) => SyncResourceSampling();
+            StateChanged += (_, _) => SyncResourceSampling();
+            DiagnosticsReport.RegisterSection("采样调度", () => _ticker.Report());
             _services.Register(new DelegateIslandService(IslandServiceIds.HardwarePower, IslandServiceIds.DisplayName(IslandServiceIds.HardwarePower),
                 options => SettingsRegistry.GetBool(options, "StatusShowPower", true), StartHardwarePowerService, StopHardwarePowerService, autoStart: true));
 
             // 「关于」页的服务状态区块：直接读宿主，切到那页时现取。
             DiagnosticsReport.RegisterSection("服务状态", () => _services.Report());
+            DiagnosticsReport.RegisterSection("助手接入", () => AgentIntegrationService.DiagnosticsText()
+                + "\n" + (_bridge?.StatusDiagnostics ?? "状态桥接未运行"));
+            DiagnosticsReport.RegisterSection("游戏免打扰", () => _gameActivity == null ? "检测未开启"
+                : $"前台事件监听={_gameActivity.EventsRunning}；自动静默={GameDoNotDisturbActive}；游戏数={_gameActivity.Current.Count}；来源={_gameActivity.Current.Source}");
 
             // ── 常驻基础设施：Required，永远不停；创建时机由启动序列决定 ──
             _services.Register(new DelegateIslandService(
@@ -79,15 +99,14 @@ namespace alpha_island
 
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.Battery, IslandServiceIds.DisplayName(IslandServiceIds.Battery),
-                options => options.BatteryNotifyEnabled
-                           || SettingsRegistry.GetBool(options, "PowerNotifyEnabled", false),
+                options => true, // Charging presence needs fresh battery data even when popups are disabled.
                 StartBatteryService, StopBatteryService,
                 _ => OnPowerOptionsChanged(),
                 autoStart: true));
 
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.Bluetooth, IslandServiceIds.DisplayName(IslandServiceIds.Bluetooth),
-                options => options.BluetoothNotifyEnabled,
+                options => options.BluetoothNotifyEnabled || SettingsRegistry.GetBool(options, "BluetoothLowBatteryEnabled", true),
                 StartBluetoothService, StopBluetoothService,
                 autoStart: true));
 
@@ -99,9 +118,9 @@ namespace alpha_island
                 _ => OnNetSpeedOptionsChanged(),
                 autoStart: true));
 
-            // ── A 组②：内存占用采样 + 一键整理（只回收本进程，免提权）──
+            // ── 物理内存占用采样 ──
             _services.Register(new DelegateIslandService(
-                IslandServiceIds.MemoryTrim, IslandServiceIds.DisplayName(IslandServiceIds.MemoryTrim),
+                IslandServiceIds.MemoryMonitor, IslandServiceIds.DisplayName(IslandServiceIds.MemoryMonitor),
                 options => SettingsRegistry.GetBool(options, "MemoryMonitorEnabled", false),
                 StartMemoryService, StopMemoryService,
                 _ => OnMemoryOptionsChanged(),
@@ -269,9 +288,11 @@ namespace alpha_island
         {
             if (_audio != null) return;
 
-            var audio = new AudioSpectrumService { Sensitivity = (float)_options.Sensitivity };
-            audio.SpectrumUpdated += OnSpectrumUpdated;
+            var audio = new AudioSpectrumService { Sensitivity = (float)_options.Sensitivity,
+                VisualizationEnabled = (PillSpectrum.IsActive && PillSpectrum.IsVisible) || (CardWave.IsActive && CardWave.IsVisible) };
+            audio.FrameReady += OnSpectrumUpdated;
             _audio = audio;
+            _audioDeviceSuppressUntil = DateTime.UtcNow.AddSeconds(3);
 
             // Start() 内部自建采集线程，但仍然放到后台，避免任何意外的 COM 绑定占住 UI 线程。
             StartInBackground(audio.Start, "Audio");
@@ -302,6 +323,7 @@ namespace alpha_island
 
         private void StopVolumeService()
         {
+            StopVolumeFlyoutTakeover();
             if (_volumeService == null) return;
 
             _volumeService.VolumeChanged -= OnVolumeChanged;

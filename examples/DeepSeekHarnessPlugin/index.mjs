@@ -39,7 +39,7 @@ export function apply(ctx, config = {}) {
   }
   function schedule(session, state, detail) {
     if (disposed) return;
-    pending.set(session, { source, session, state, detail, ttlSec: state === 'idle' && session !== processSession ? 5 : 30 });
+    pending.set(session, { source, session, state, detail, ttlSec: state === 'idle' && session !== processSession ? 5 : 30, processId: process.pid });
     if (worker) return;
     worker = (async () => {
       while (pending.size) {
@@ -63,7 +63,7 @@ export function apply(ctx, config = {}) {
     status === 'running' ? 'thinking' : 'idle', status === 'running' ? 'DeepSeek Harness · 思考中' : ''));
   ctx.on('agent/disposed', ({ agent }) => set(agent, 'idle', ''));
   ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-    if (frame.type === 'chunk' && active.get(sessionId(agent))?.state === 'thinking')
+    if (frame.type === 'chunk' && ['thinking', 'working'].includes(active.get(sessionId(agent))?.state))
       set(agent, 'streaming', 'DeepSeek Harness · 输出中');
   });
   ctx.on('session/event', (session, event) => {
@@ -72,9 +72,9 @@ export function apply(ctx, config = {}) {
     if (event.type === 'tool/call') {
       if (calls.size >= 128) calls.delete(calls.keys().next().value);
       calls.set(`${session.id}/${event.data.callId}`, event.data.arguments);
-      set(agent, 'thinking', 'DeepSeek Harness · 执行工具');
+      set(agent, 'working', 'DeepSeek Harness · 执行工具');
     }
-    if (event.type === 'tool/result') calls.delete(`${session.id}/${event.data.callId}`);
+    if (event.type === 'tool/result') { calls.delete(`${session.id}/${event.data.callId}`); set(agent, 'thinking', 'DeepSeek Harness · 思考中'); }
     if (event.type === 'turn/end') set(agent, 'idle', '');
   });
   ctx.on('approval/request', async (req, next) => {
@@ -95,21 +95,22 @@ export function apply(ctx, config = {}) {
     req.signal?.addEventListener('abort', cancel, { once: true });
     if (req.signal?.aborted) cancel();
     set(req.agent, 'tool-wait', `DeepSeek Harness · 等待授权：${req.toolName}`);
-    let args = calls.get(`${req.agent.id}/${req.callId}`) || { callId: req.callId || '' };
+    let allowed = false; let args = calls.get(`${req.agent.id}/${req.callId}`) || { callId: req.callId || '' };
     try { if (typeof args === 'string') args = JSON.parse(args); } catch { /* Keep malformed model arguments visible. */ }
     try {
-      const result = await request('/approval', { id, tool: req.toolName,
+      const result = await request('/approval', { id, source, session: sessionId(req.agent), tool: 'DeepSeek Harness · ' + req.toolName,
         args: redact(args), reason: redact(req.reason || 'DeepSeek Harness 工具授权'), timeoutSec },
       controller.signal, (timeoutSec + 3) * 1000);
       if (req.signal?.aborted || disposed) return 'cancelled';
-      return result.approved === true && result.timedOut !== true && ['mouse', 'key'].includes(result.decidedBy) ? 'allowed-once' : 'rejected';
+      allowed = result.id === id && result.approved === true && result.timedOut === false && ['mouse', 'key'].includes(result.decidedBy);
+      return allowed ? 'allowed-once' : 'rejected';
     } catch {
       cancel();
       return req.signal?.aborted || disposed ? 'cancelled' : 'unavailable';
     } finally {
       approvals.delete(id);
       req.signal?.removeEventListener('abort', cancel);
-      if (!disposed) set(req.agent, req.agent.status === 'idle' ? 'idle' : 'thinking', 'DeepSeek Harness · 思考中');
+      if (!disposed) set(req.agent, req.agent.status === 'idle' ? 'idle' : allowed ? 'working' : 'thinking', allowed ? 'DeepSeek Harness · 执行工具' : 'DeepSeek Harness · 思考中');
     }
   }, true);
   for (const agent of ctx.agents.list())

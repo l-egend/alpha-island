@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
+using System.Runtime.CompilerServices;
 
 namespace alpha_island.Animation
 {
@@ -17,6 +18,9 @@ namespace alpha_island.Animation
     /// </summary>
     public static class AnimationReset
     {
+        /// <summary>Set the final base value and remove the finite property clock on completion.</summary>
+        public static void Once(IAnimatable target, DependencyProperty property, AnimationTimeline animation, object finalValue)
+            => AlphaIsland.PluginSdk.AnimationClockLifetime.Once(target, property, animation, finalValue);
         /// <summary>
         /// 摘掉某个属性上的动画时钟（<paramref name="target"/> 为空时安全忽略）。
         /// 参数类型是 <see cref="IAnimatable"/>（BeginAnimation 就在它上面）：
@@ -24,7 +28,7 @@ namespace alpha_island.Animation
         /// </summary>
         public static void Clear(IAnimatable? target, DependencyProperty property)
         {
-            target?.BeginAnimation(property, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(target,property, null);
         }
 
         public static void Opacity(UIElement? element) => Clear(element, UIElement.OpacityProperty);

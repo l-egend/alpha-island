@@ -53,8 +53,9 @@ namespace alpha_island
             get
             {
                 // 歌词只撑高音乐卡片；其他详情页由各自 PreferredHeight 决定。
-                double baseHeight = _pages.ActiveId == IslandPageIds.Music && LyricsAreaVisible
-                    ? IslandMetrics.MusicCardHeightLyrics : IslandMetrics.CardHeight;
+                double baseHeight = _pages.ActiveId == IslandPageIds.Music
+                    ? (LyricsAreaVisible ? IslandMetrics.MusicCardHeightLyrics : IslandMetrics.MusicCardHeight)
+                    : IslandMetrics.CardHeight;
                 var page = _pages.ActivePage;
                 double h = page != null ? Math.Max(baseHeight, page.PreferredHeight) : baseHeight;
                 // 音量卡抽屉展开时整卡要长高，见 SetCardDrawerExtra：岛体可见带 ≈ 身高 − 22，
@@ -83,8 +84,11 @@ namespace alpha_island
         /// </summary>
         private void SetState(IslandState next, bool force = false, string? preferredPage = null)
         {
+            // Game quiet blocks automatic empty-pill transitions from media/assistant handoffs.
+            if (GameDoNotDisturbActive && next == IslandState.Pill && !HasActiveNotification && !HasVisibleMusicPin)
+                next = IslandState.Bar;
             // 审批操作位于胶囊：不能被普通点击或选页入口切到没有审批按钮的卡片。
-            if (_approvalCurrent != null && next == IslandState.Card) next = IslandState.Pill;
+            if (_approvalCurrent != null && !GameDoNotDisturbActive && next == IslandState.Card) next = IslandState.Pill;
             // 暂停隐藏只撤下音乐内容；所有自动降级/再展开入口也必须跳过没有载荷的胶囊。
             if (next == IslandState.Pill && (ShouldHidePausedMedia || ShouldHideForegroundMedia) && _approvalCurrent == null
                 && !_clipboardLocked && !HasActiveNotification)
@@ -101,6 +105,7 @@ namespace alpha_island
             CloseComponentSwitcher();
 
             IslandState prev = _state;
+            if (next != IslandState.Card) RememberOpenCardPage();
             if (next != prev) EndVolumeDrag();
             if (next != IslandState.Card) _componentCardAwaitingPointer = false;
             _state = next;
@@ -226,7 +231,7 @@ namespace alpha_island
                         }
                         else
                         {
-                            CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
+                            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(CardCarouselHost,UIElement.OpacityProperty, null);
                             CardCarouselHost.Opacity = 0;
                             CardCarouselHost.IsHitTestVisible = false;
                         }
@@ -260,7 +265,7 @@ namespace alpha_island
                 _layers.CancelPrimaryAnimation();
                 if (PillLayerTranslate != null)
                 {
-                    PillLayerTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLayerTranslate,TranslateTransform.XProperty, null);
                     PillLayerTranslate.X = 0;
                 }
                 SyncMusicPillContent();
@@ -277,7 +282,7 @@ namespace alpha_island
 
             if (next != IslandState.Card && prev != IslandState.Card)
             {
-                CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(CardCarouselHost,UIElement.OpacityProperty, null);
                 CardCarouselHost.Opacity = 0;
                 Keyboard.ClearFocus();
             }
@@ -357,7 +362,7 @@ namespace alpha_island
                     }
                     else
                     {
-                        // 耳机 3D 旋转模型在圆球中以经典微光耳机图标呈现
+                        // 音频设备的收缩过渡使用通用耳机轮廓
                         OrbIcon.Text = "\uE7F6";
                         OrbIcon.Foreground = new SolidColorBrush(Colors.White);
                     }
@@ -448,13 +453,13 @@ namespace alpha_island
         /// <summary>把"收回动画中间态那颗球"复位：停掉两条动画并把不可见状态写实。</summary>
         private void CancelSiriOrb()
         {
-            SiriOrb.BeginAnimation(OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SiriOrb,OpacityProperty, null);
             SiriOrb.Opacity = 0;
             OrbIconContainer.Opacity = 0;
             OrbCover.Opacity = 0;
             OrbCoverRing.Opacity = 0;
             OrbGradient.Opacity = 0;
-            SiriOrbTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SiriOrbTranslate,TranslateTransform.XProperty, null);
             SiriOrbTranslate.X = -40;
         }
 

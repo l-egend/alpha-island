@@ -18,18 +18,41 @@ public partial class MainWindow
             page =>
             {
                 RemoveCardPinLayer(page.Id);
-                page.View.BeginAnimation(UIElement.OpacityProperty, null);
-                if (page.View.RenderTransform is TranslateTransform transform) transform.BeginAnimation(TranslateTransform.YProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(page.View,UIElement.OpacityProperty, null);
+                if (page.View.RenderTransform is TranslateTransform transform) AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(transform,TranslateTransform.YProperty, null);
                 _pages.Unregister(page.Id); CardViewport.Children.Remove(page.View);
             }, SelectComponent);
         _plugins.PageNotificationRequested += ShowPluginPageNotification;
-        _plugins.Changed += () =>
+        _plugins.DeviceBatteryReported += report => OnBluetoothBatteryUpdated(_plugins,
+            new Services.BluetoothDeviceInfo(report.Id, report.Name, Services.BluetoothDeviceCategory.Audio,
+                report.Charging ? null : report.Percent, report.Connected));
+        _plugins.ConfigurationChanged += () =>
         {
+            _settingsWindow?.SynchronizePluginConfiguration(_options);
+            if (_runtimeEnabled) _options.Save(allowRecovery: true);
+        };
+        _plugins.AvailabilityChanged += () =>
+        {
+            _pages.Sync(_options);
+            foreach (string id in _cardPinViews.Values.Where(v => _pages.IndexOf(v.PageId) < 0).Select(v => v.PageId).ToArray()) RemoveCardPinLayer(id);
             SwitchCardPage(Math.Max(0, _pages.ActiveIndex), animated: false);
             SyncCardPageVisuals();
+            _tray?.SetPluginActions(_plugins.AvailableActions);
+        };
+        _plugins.SettingsRequested += () => { ShowSettings(); _settingsWindow?.OpenPluginSettings(); };
+        _plugins.Changed += () =>
+        {
+            _pages.Sync(_options);
+            SwitchCardPage(Math.Max(0, _pages.ActiveIndex), animated: false);
+            SyncCardPageVisuals();
+            _tray?.SetPluginActions(_plugins.AvailableActions);
         };
         if (_runtimeEnabled) _plugins.Discover();
     }
+
+    private void OpenAiConversation() => _plugins?.InvokeAction("api-chat-open");
+    private void OpenAiHistory() => _plugins?.InvokeAction("api-chat-history");
+    private string AgentActivityPage => AgentPage(IsAgentIslandKey(_activeMainIslandKey) ? _activeMainIslandKey : AgentTickerKey);
 
     private void ShowPluginPageNotification(string pageId, string title, string detail, double seconds)
     {

@@ -25,7 +25,9 @@ internal static partial class Program
         bool Active() => (bool)typeof(alpha_island.MainWindow).GetMethod("IsIslandActive", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object[] { "music" })!;
         try
         {
+            // 此组验证播放器的暂停隐藏；先实际进入播放器，避免前面其他页面测试留下的记忆。
             SetAgentField(window, "_smtc", smtc); layers.HideAll();
+            PrivateCall(window, "SetState", IslandState.Card, true, IslandPageIds.Music);
             options.PauseNotifyEnabled = false;
             Check(!SettingsRegistry.GetBool(options, "MediaHideWhenPaused", false), "暂停隐藏默认关闭，旧配置保持可见");
             Apply(paused); PrivateCall(window, "SetMusicPinned", true, true); PrivateCall(window, "SetState", IslandState.Pill);

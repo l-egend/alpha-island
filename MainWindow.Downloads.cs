@@ -28,17 +28,8 @@ namespace alpha_island
         private const int DownloadCardRows = 3;
 
         private DownloadMonitorService? _downloads;
-        private readonly Dictionary<string, (long Bytes, DateTime When)> _dlPrev = new();
-        private readonly Dictionary<string, double> _dlSpeed = new();
-        private string? _dlLastPromptKey;
-        private DownloadState? _dlLastPromptState;
-        private readonly HashSet<string> _dlSeenCompleted = new();
-        private readonly Queue<string> _dlCompletedOrder = new();
         /// <summary>后台采样进行中（重入闸）：上一拍没读完就跳过这一拍，保证 UI 线程永远不等它。</summary>
         private bool _dlSampling;
-        // 刚下完的提示要排队：完成那一拍可能还有别的任务在跑（细条图层被进度占着），
-        // 若这一拍直接丢掉，下一拍那条完成行已经进过 _dlSeenCompleted，提示就永远不会弹了。
-        private string? _dlPendingFinish;
         private bool _dlFake;
         private int _dlFakeTicks;
         private string? _dlProfileOverride;
@@ -56,14 +47,10 @@ namespace alpha_island
 
         internal void StopDownloadService()
         {
-            // 退出时 _ticker 先被 Dispose 并置空（MainWindow.xaml.cs:612），StopAll 在后（:623）→ 必须空判。
-            _ticker?.Unregister("downloads");
+            // 退出时共享调度器可能已经释放；注销操作可安全重复执行。
+            _ticker.Unregister("downloads");
             _downloads = null;
-            _dlPrev.Clear();
-            _dlSpeed.Clear();
-            _dlLastPromptKey = null;
-            _dlLastPromptState = null;
-            _dlPendingFinish = null;
+            _workspace.Downloads.Reset();
             _layers.Hide("download");
             if (IsDownloadCardVisible) SyncDownloadCard();
         }
@@ -74,11 +61,7 @@ namespace alpha_island
             if (_options == null) return;
             if (!SettingsRegistry.GetBool(_options, "DownloadMonitorEnabled", true))
             {
-                _dlPrev.Clear();
-                _dlSpeed.Clear();
-                _dlLastPromptKey = null;
-                _dlLastPromptState = null;
-                _dlPendingFinish = null;
+                _workspace.Downloads.Reset();
                 _layers.Hide("download");
             }
 
@@ -181,103 +164,12 @@ namespace alpha_island
         /// </summary>
         private void ApplyDownloadSample(List<DownloadTask> tasks, DateTime now)
         {
-            // ---- 速度：按任务 Key 差分（缺失的一拍不算，避免"重启后第一拍速度爆炸"） ----
-            var liveKeys = new HashSet<string>(tasks.Select(t => t.Key), StringComparer.Ordinal);
-            foreach (DownloadTask task in tasks)
-            {
-                if (!task.CanMeasureSpeed)
-                {
-                    _dlPrev.Remove(task.Key);
-                    _dlSpeed.Remove(task.Key);
-                    continue;
-                }
-                if (_dlPrev.TryGetValue(task.Key, out (long Bytes, DateTime When) prev))
-                {
-                    double seconds = (now - prev.When).TotalSeconds;
-                    if (seconds > 0.2 && task.ReceivedBytes >= prev.Bytes)
-                    {
-                        double instant = (task.ReceivedBytes - prev.Bytes) / seconds;
-                        _dlSpeed[task.Key] = _dlSpeed.TryGetValue(task.Key, out double smoothed)
-                            ? smoothed * 0.55 + instant * 0.45
-                            : instant;
-                    }
-                    else if (task.ReceivedBytes < prev.Bytes) _dlSpeed.Remove(task.Key);
-                }
-
-                _dlPrev[task.Key] = (task.ReceivedBytes, now);
-            }
-
-            foreach (string stale in _dlPrev.Keys.Where(k => !liveKeys.Contains(k)).ToList())
-            {
-                _dlPrev.Remove(stale);
-                _dlSpeed.Remove(stale);
-            }
-
-            // ---- 日志（每拍一条，是验证脚本的判据） ----
-            var active = tasks.Where(t => t.IsRunning).ToList();
-            if (tasks.Count == 0)
-            {
-                IslandLog.Debug("Download", "下载进度：没有任务（浏览器 downloads 表 + Steam downloading 清单都空）");
-            }
-            else
-            {
-                foreach (DownloadTask task in tasks.Take(DownloadCardRows))
-                {
-                    IslandLog.Debug("Download", DescribeTask(task));
-                }
-            }
-
-            // 只有来源明确确认完成才通知；暂停、排队、任务消失都不算完成。
-            string? justFinished = null;
-
-            foreach (DownloadTask task in tasks.Where(t => t.IsCompleted))
-            {
-                // 同一条下载要按「目标路径 + 开始时间」区分：同一个文件重下一次（很常见）目标路径一模一样，
-                // 只按路径去重的话第二次下完就不会报"完成"了。
-                string id = task.Key + "|" + task.StartLocal.Ticks.ToString(CultureInfo.InvariantCulture);
-                if (!_dlSeenCompleted.Add(id)) continue;
-                _dlCompletedOrder.Enqueue(id);
-                while (_dlCompletedOrder.Count > 512) _dlSeenCompleted.Remove(_dlCompletedOrder.Dequeue());
-                justFinished = task.Name;
-            }
-
-
-            // ---- 出口①：细条图层 ----
-            if (justFinished is { Length: > 0 }) _dlPendingFinish = justFinished;
-
-            if (active.Count > 0)
-            {
-                DownloadTask head = active[0];
-                ShowDownloadNotify(head, _dlSpeed.TryGetValue(head.Key, out double speed) ? speed : 0d);
-                _dlLastPromptKey = head.Key;
-                _dlLastPromptState = head.Status;
-            }
-            else if (_dlPendingFinish is { Length: > 0 })
-            {
-                ShowDownloadFinished(_dlPendingFinish);
-                _dlPendingFinish = null;
-                _dlLastPromptKey = null;
-                _dlLastPromptState = null;
-            }
-            else if (tasks.Any(t => !t.IsCompleted))
-            {
-                DownloadTask pending = tasks.First(t => !t.IsCompleted);
-                // 暂停只弹一次，不每两秒重新置顶；保留在下载卡中供查看。
-                if (_dlLastPromptKey != pending.Key || _dlLastPromptState != pending.Status)
-                    ShowDownloadNotify(pending, 0, refreshing: false);
-                _dlLastPromptKey = pending.Key;
-                _dlLastPromptState = pending.Status;
-            }
-            else
-            {
-                _dlLastPromptKey = null;
-                _dlLastPromptState = null;
-            }
-
-            // ---- 出口②：卡片页 ----
+            var presentation = _workspace.Downloads.Update(tasks, now);
+            foreach (var task in tasks.Take(DownloadCardRows)) IslandLog.Debug("Download", DescribeTask(task));
+            if (presentation.Task is { } item) ShowDownloadNotify(item, presentation.Speed, presentation.Refreshing);
+            else if (presentation.Finished is { } finished) ShowDownloadFinished(finished);
             if (IsDownloadCardVisible) SyncDownloadCard();
         }
-
         private static string DescribeTask(DownloadTask task)
         {
             string state = task.StatusText;
@@ -297,7 +189,8 @@ namespace alpha_island
 
             if (!task.HasReliableProgress)
             {
-                DownloadNotifyDetail.Text = task.Name;
+                DownloadNotifyDetail.Text = task.Name + (task.Kind == DownloadSourceKind.Browser
+                    ? $"｜已下载 {MemoryService.FormatSize(task.ReceivedBytes)}" : "");
                 DownloadNotifyValue.Text = string.Empty;
                 // 细条上真正显示了什么，日志里要能核对（每个任务只在第一次显示时打一条）。
                 _downloads?.DebugOnce("notify:" + task.Key + ":" + task.Status,
@@ -310,7 +203,7 @@ namespace alpha_island
             DownloadNotifyDetail.Text = task.Name
                                         + $"｜总大小 {MemoryService.FormatSize(task.TotalBytes)}"
                                         + (displaySpeed > 0 ? $"｜{NetworkSpeedService.FormatSpeedFull(displaySpeed)}" : "｜速度未知");
-            DownloadNotifyValue.Text = string.Empty;
+            DownloadNotifyValue.Text = task.Percent + "%";
             // 细条上真正显示了什么，日志里要能核对。按「有没有速度」各记一条（同一任务的两种口径都留证据）。
             _downloads?.DebugOnce("notify:" + task.Key + (displaySpeed > 0 ? ":speed" : ":nospeed"),
                 $"下载提示：{DownloadNotifyTitle.Text}｜{DownloadNotifyDetail.Text}");
@@ -413,10 +306,11 @@ namespace alpha_island
 
                 DownloadTask task = rows[i];
                 name.Text = task.Source + " · " + task.Name;
-                double speed = task.CanMeasureSpeed && _dlSpeed.TryGetValue(task.Key, out double s) ? s : 0d;
+                double speed = _workspace.Downloads.Speed(task);
                 if (!task.HasReliableProgress)
                 {
-                    meta.Text = task.StatusText;
+                    meta.Text = task.StatusText + (task.Kind == DownloadSourceKind.Browser
+                        ? $" · 已下载 {MemoryService.FormatSize(task.ReceivedBytes)}" + (speed > 0 ? $" · {NetworkSpeedService.FormatSpeedFull(speed)}" : "") : "");
                 }
                 else
                 {

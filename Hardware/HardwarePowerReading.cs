@@ -4,11 +4,11 @@ public sealed record HardwarePowerReading(double? CpuWatts, double? GpuWatts, st
 {
     public static readonly TimeSpan MaximumAge = TimeSpan.FromSeconds(10);
     public DateTime SampledUtc { get; init; } = DateTime.UtcNow;
-    public string Source { get; init; } = "LibreHardwareMonitor";
+    public string Source { get; init; } = "Windows EMI + NVIDIA NVML";
     public bool IsFresh(DateTime now) => SampledUtc.Kind == DateTimeKind.Utc &&
         SampledUtc <= now.AddSeconds(1) && now - SampledUtc <= MaximumAge;
     public HardwarePowerReading FreshAt(DateTime now) => IsFresh(now) ? this :
-        new(null, null, "功耗采样已过期，正在等待新读数");
+        new(null, null, "功耗采样已过期，正在等待新读数") { Source = Source };
     // Package includes integrated graphics; only discrete GPU board power is added.
     public double? TotalWatts => HardwarePowerPolicy.ValidWatts(CpuWatts) is double cpu && cpu > 0 &&
         HardwarePowerPolicy.ValidWatts(GpuWatts) is double gpu ? cpu + gpu : null;

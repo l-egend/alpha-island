@@ -15,7 +15,7 @@ namespace alpha_island.Controls;
 
 internal sealed class ComponentRadialMenu : Canvas
 {
-    private readonly List<(string Id, string Title, Border Circle, TextBlock Icon)> _items = new();
+    private readonly List<(string Id, string Title, Border Circle, AlphaIsland.PluginSdk.GlyphIcon Icon)> _items = new();
     private readonly TextBlock _caption = new()
     { FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap, MaxWidth = 104 };
     private readonly Border _label;
@@ -40,7 +40,7 @@ internal sealed class ComponentRadialMenu : Canvas
         Children.Clear(); _items.Clear(); _activeId = activeId; _layoutInitialized = false;
         foreach (var page in pages)
         {
-            var icon = new TextBlock { Text = page is Plugins.PluginIslandPage plugin ? plugin.Glyph : Glyph(page.Id), FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 17,
+            var icon = new AlphaIsland.PluginSdk.GlyphIcon { Text = page is Plugins.PluginIslandPage plugin ? plugin.Glyph : Glyph(page.Id), FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = page.Id == "screen-tools" ? 32 : page.Id == IslandPageIds.NetSpeed ? 20 : 17,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
             var circle = new Border { Width = ComponentMenuLayout.Diameter, Height = ComponentMenuLayout.Diameter,
                 CornerRadius = new CornerRadius(ComponentMenuLayout.Diameter / 2), Background = background,
@@ -97,7 +97,7 @@ internal sealed class ComponentRadialMenu : Canvas
         for (int i = 0; i < _items.Count; i++)
         {
             var circle = _items[i].Circle;
-            circle.BeginAnimation(OpacityProperty, null); circle.Opacity = 1;
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(circle,OpacityProperty, null); circle.Opacity = 1;
             var scale = new ScaleTransform(1, 1);
             var translate = new TranslateTransform();
             var transform = new TransformGroup(); transform.Children.Add(scale); transform.Children.Add(translate);
@@ -113,14 +113,14 @@ internal sealed class ComponentRadialMenu : Canvas
                 { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
                 return animation;
             }
-            circle.BeginAnimation(OpacityProperty, Tween(0, 1));
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, Tween(.65, 1));
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, Tween(.65, 1));
-            translate.BeginAnimation(TranslateTransform.XProperty, Tween((Layout.Anchor.X - Layout.Centers[i].X) * .45, 0));
-            translate.BeginAnimation(TranslateTransform.YProperty, Tween((Layout.Anchor.Y - Layout.Centers[i].Y) * .45, 0));
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(circle,OpacityProperty, Tween(0, 1));
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(scale,ScaleTransform.ScaleXProperty, Tween(.65, 1));
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(scale,ScaleTransform.ScaleYProperty, Tween(.65, 1));
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate,TranslateTransform.XProperty, Tween((Layout.Anchor.X - Layout.Centers[i].X) * .45, 0));
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate,TranslateTransform.YProperty, Tween((Layout.Anchor.Y - Layout.Centers[i].Y) * .45, 0));
         }
-        _label.BeginAnimation(OpacityProperty, null); _label.Opacity = 1;
-        if (animate) _label.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)) { FillBehavior = FillBehavior.Stop });
+        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_label,OpacityProperty, null); _label.Opacity = 1;
+        if (animate) AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_label,OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)) { FillBehavior = FillBehavior.Stop });
     }
 
     internal void Highlight(string? id)
@@ -138,8 +138,9 @@ internal sealed class ComponentRadialMenu : Canvas
     private static string Glyph(string id) => id switch
     {
         IslandPageIds.Music => "\uE8D6", IslandPageIds.Clipboard => "\uE8C8", IslandPageIds.Volume => "\uE767",
+        IslandPageIds.NetSpeed => AlphaIsland.PluginSdk.GlyphArtwork.NetworkTransferGlyph,
         IslandPageIds.Ai => "\uE99A", IslandPageIds.System => "\uE9D9", IslandPageIds.Download => "\uE896",
         IslandPageIds.Notifications => "\uE7E7", "weather" => "\uE706",
-        "focus" => "\uE916", "screen-tools" => "\uE8A7", _ => "\uE80F"
+        "focus" => "\uE916", "screen-tools" => AlphaIsland.PluginSdk.GlyphArtwork.ScreenToolsGlyph, _ => "\uE80F"
     };
 }

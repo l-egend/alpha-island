@@ -38,17 +38,28 @@ internal sealed class MediaHandoffOverlay : Window
     private readonly Action? _reveal;
     private readonly Action? _sourceCovered;
     private readonly Func<bool>? _destinationReady;
+    private readonly CancellationTokenSource _deadline = new();
     private readonly TaskCompletionSource<bool> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private IntPtr _handle;
     private long _started, _arrivedAt, _transferStarted;
-    private bool _arrived, _finished, _sourceHandedOver;
+    private bool _arrived, _finished, _sourceHandedOver, _playStarted;
     private Task? _sourceCommit, _destinationCommit;
+    private static readonly object PresentationGate = new();
+    private static Task? _presentation;
+    private static Task PresentAsync()
+    {
+        lock (PresentationGate)
+        {
+            if (_presentation == null || _presentation.IsCompleted) _presentation = Task.Run(() => NativeMethods.DwmFlush());
+            return _presentation;
+        }
+    }
     private TimeSpan _lastRenderingTime = TimeSpan.MinValue;
     internal double Progress { get; private set; }
 
     internal MediaHandoffOverlay(Rect from, Rect to, ImageSource? snapshot, ImageSource? artwork,
         string title, bool opening, ImageSource? islandPreview = null, Action? reveal = null, Func<bool>? destinationReady = null,
-        Action? sourceCovered = null)
+        Action? sourceCovered = null, string fallbackSubtitle = "网易云音乐")
     {
         _from = from; _to = to; _opening = opening; _reveal = reveal; _destinationReady = destinationReady; _sourceCovered = sourceCovered;
         _extent = Rect.Union(from, to); _extent.Inflate(24, 24);
@@ -70,13 +81,14 @@ internal sealed class MediaHandoffOverlay : Window
             pill.Children.Add(cover);
             var text = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = title, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = System.Windows.Media.Brushes.White, TextTrimming = TextTrimming.CharacterEllipsis });
-            text.Children.Add(new TextBlock { Text = "网易云音乐", FontSize = 10, Foreground = System.Windows.Media.Brushes.White, Opacity = .7 });
+            text.Children.Add(new TextBlock { Text = fallbackSubtitle, FontSize = 10, Foreground = System.Windows.Media.Brushes.White, Opacity = .7 });
             Grid.SetColumn(text, 1); pill.Children.Add(text);
             _fallbackIsland = new Border { Child = pill };
             _islandContent = new Viewbox { Stretch = Stretch.Fill, Child = _fallbackIsland };
         }
         layers.Children.Add(_islandContent);
-        _body = new Border { Background = new SolidColorBrush(Color.FromRgb(25, 28, 39)), Child = layers, Clip = _clip };
+        _body = new Border { Background = snapshot == null && islandPreview != null ? System.Windows.Media.Brushes.Transparent
+            : new SolidColorBrush(Color.FromRgb(25, 28, 39)), Child = layers, Clip = _clip };
         _texture = new VisualBrush(_body) { Stretch = Stretch.Fill, AutoLayoutContent = false,
             ViewboxUnits = BrushMappingMode.Absolute };
         var material = new DiffuseMaterial(_texture);
@@ -113,6 +125,9 @@ internal sealed class MediaHandoffOverlay : Window
 
     internal Task<bool> PlayAsync()
     {
+        Dispatcher.VerifyAccess();
+        if (_playStarted || _finished) return _completion.Task;
+        _playStarted = true;
         // Create and position the hidden HWND first. Showing an empty window and
         // subsequently resizing/texturing it can expose an uninitialised first frame.
         new WindowInteropHelper(this).EnsureHandle();
@@ -122,6 +137,7 @@ internal sealed class MediaHandoffOverlay : Window
         ApplyFrame(0);
         Show();
         CompositionTarget.Rendering += Render;
+        _ = WatchDeadlineAsync(_deadline.Token);
         return _completion.Task;
     }
 
@@ -182,12 +198,25 @@ internal sealed class MediaHandoffOverlay : Window
     {
         try
         {
-            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
-            await Task.Run(() => NativeMethods.DwmFlush()).WaitAsync(TimeSpan.FromMilliseconds(100));
+            // Render has higher priority than Loaded. Yield past this frame's render
+            // work without waiting for unrelated input/background work to become idle.
+            var rendered = Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Loaded);
+            try { await rendered.Task.WaitAsync(TimeSpan.FromMilliseconds(40)); }
+            catch (TimeoutException) { rendered.Abort(); }
+            await PresentAsync().WaitAsync(TimeSpan.FromMilliseconds(40));
         }
         catch (Exception ex) { IslandLog.Debug("MediaWindow", "合成交接等待降级: " + ex.GetType().Name); }
     }
 
+    private async Task WatchDeadlineAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(DurationMilliseconds + 900), token).ConfigureAwait(false);
+            if (!Dispatcher.HasShutdownStarted) await Dispatcher.InvokeAsync(() => Finish(false), DispatcherPriority.Send);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or InvalidOperationException) { }
+    }
     private void PrepareTexture()
     {
         Rect window = _opening ? _to : _from;
@@ -245,7 +274,7 @@ internal sealed class MediaHandoffOverlay : Window
 
     private void Finish(bool completed)
     {
-        if (_finished) return; _finished = true;
+        if (_finished) return; _finished = true; _deadline.Cancel(); _deadline.Dispose();
         CompositionTarget.Rendering -= Render;
         _completion.TrySetResult(completed);
     }

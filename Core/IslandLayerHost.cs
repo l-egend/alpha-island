@@ -21,7 +21,7 @@ namespace alpha_island.Core
     /// 同屏仲裁优先级：数值大的赢。所有通知图层都是同一个 328x32 居中 Grid，
     /// 同时可见就是字叠字，所以 <see cref="NotificationHub.ComputePlan"/> 每拍只放行优先级最高的那一层。
     /// 约定（见 MainWindow 构造函数里的注册表）：
-    /// 欢迎 100 &gt; 审批 90 &gt; 音量 80 &gt; 蓝牙 76 &gt; 电池 72 &gt; 网速告警 70 &gt; 系统告警 68 &gt; 下载 66 &gt; 网速 64 &gt; 剪切板 56 &gt; agent 状态 48。
+    /// 欢迎 100 &gt; 审批 90 &gt; 音量 80 &gt; 蓝牙 76 &gt; 电池 72 &gt; 系统告警 68 &gt; 下载 66 &gt; 网速 64 &gt; 剪切板 56 &gt; agent 状态 48。
     /// 排序依据："必须回应的用户动作/提醒"压过"持续性的背景状态"。
     /// </param>
     public sealed record IslandLayerSpec(
@@ -247,8 +247,22 @@ namespace alpha_island.Core
 
         public bool IsActive(string key) => _hub.IsActive(key);
 
+        internal bool IsPresentationSuppressed(string key) => _hub.IsPresentationSuppressed(key);
+
+        internal void SetPresentationSuppressed(string key, bool suppressed)
+        {
+            if (!_hub.SetPresentationSuppressed(key, suppressed)) return;
+            if (suppressed)
+            {
+                _fadingKeys?.Remove(key);
+                _appliedVisible.Remove(key);
+                Apply(key, false);
+            }
+            RequestSync();
+        }
+
         /// <summary>
-        /// 上一次 Sync() 算出的"这一层此刻真的画在屏幕上"，供需要跟着图层显隐走的附属动画查（如 3D 设备模型旋转）。
+        /// 上一次 Sync() 算出的"这一层此刻真的画在屏幕上"，供需要跟着图层显隐走的附属内容查。
         /// 与 IsShowing 的区别：IsShowing 不看当前岛体形态/页签，本属性看（ScopeAllows）。
         /// </summary>
         public bool IsVisible(string key) => _hub.IsVisible(key);

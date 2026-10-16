@@ -62,8 +62,7 @@ namespace alpha_island.Animation
         /// 探测渲染层级。只探一次（层级在进程生命周期内基本不变），
         /// 必须在有 Dispatcher 的线程上调用。
         ///
-        /// "只探一次"是硬要求：帧预算看门狗会把层级改写成 0（见 <see cref="MarkSoftwareRendering"/>），
-        /// 若每次应用设置都重新探测，那个运行时判定会被系统层级覆盖掉，形变又开始逐帧积分 —— 越跑越卡。
+        /// 加载服务造成的短暂慢帧只结束当前形变，不改写系统报告的渲染层级。
         /// </summary>
         public static void ProbeRenderTier()
         {
@@ -84,17 +83,6 @@ namespace alpha_island.Animation
         }
 
         /// <summary>
-        /// 运行时确认整机只能软件渲染（帧预算看门狗连续掉帧时调用）。
-        /// 一旦标记，<see cref="InstantMorph"/> 之后恒为真，形变不再尝试逐帧积分。
-        /// </summary>
-        public static void MarkSoftwareRendering()
-        {
-            if (RenderTier <= 0) return;
-            RenderTier = 0;
-            NotifyChanged();
-        }
-
-        /// <summary>
         /// 调试钩子专用（<c>ALPHA_ISLAND_FAKE_RENDER_TIER=0|1|2</c>）：在首次探测之前把层级写死，
         /// 用来在硬件机器上验证「Tier 门槛」那条拒绝分支（3D 封面、形变降级）。
         /// 写死的同时把 <c>_probed</c> 置真，避免紧随其后的 <see cref="ProbeRenderTier"/> 用真实层级覆盖它。
@@ -106,7 +94,11 @@ namespace alpha_island.Animation
             NotifyChanged();
         }
 
-        private static void SyncBatteryAnimations() => AlphaIsland.PluginSdk.DeviceBatteryIndicator.ConfigureAnimations(!InstantMorph && !PowerSave);
+        private static void SyncBatteryAnimations()
+        {
+            AlphaIsland.PluginSdk.DeviceBatteryIndicator.ConfigureAnimations(!InstantMorph && !PowerSave);
+            AlphaIsland.PluginSdk.GlyphIcon.ConfigureInteractionAnimations(!InstantMorph && !PowerSave);
+        }
         private static void NotifyChanged()
         { SyncBatteryAnimations(); Changed?.Invoke(); }
 

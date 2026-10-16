@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "AlphaIsland": {
+      "commandName": "Project",
+      "hotReloadEnabled": true,
+      "environmentVariables": {
+        "ALPHA_ISLAND_LOG_LEVEL": "Debug"
+      }
+    }
+  }
+}

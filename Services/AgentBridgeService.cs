@@ -89,6 +89,10 @@ namespace alpha_island.Services
         private Task? _acceptTask;
         private System.Threading.Timer? _statusTimer;
         private readonly ExternalAgentRegistry _externalAgents = new();
+        private readonly CodexTurnHistory _codexTurns = new();
+        private readonly CodexStatusJournal _codexStatusJournal;
+        private int _sweepRunning;
+        internal string StatusDiagnostics => _externalAgents.DiagnosticsText();
 
         /// <param name="port">回环端口（调用方已经 clamp 过）。</param>
         /// <param name="onRequest">
@@ -97,10 +101,14 @@ namespace alpha_island.Services
         /// 该回调可能被网络线程调用，实现方自己切 UI 线程。
         /// </param>
         public AgentBridgeService(int port, Func<ApprovalRequest, bool> onRequest, bool allowApiDecisions = false)
+            : this(port, onRequest, allowApiDecisions, null) { }
+
+        internal AgentBridgeService(int port, Func<ApprovalRequest, bool> onRequest, bool allowApiDecisions, CodexStatusJournal? journal)
         {
             _port = port;
             _onRequest = onRequest;
             _allowApiDecisions = allowApiDecisions;
+            _codexStatusJournal = journal ?? new(Endpoint);
         }
 
         public int Port => _port;
@@ -129,11 +137,17 @@ namespace alpha_island.Services
             var token = _cts.Token;
             _externalAgents.Open();
             _acceptTask = Task.Run(() => AcceptLoopAsync(listener, token));
-            _statusTimer = new System.Threading.Timer(_ => _externalAgents.Sweep(DateTime.UtcNow), null, 1000, 1000);
+            _statusTimer = new System.Threading.Timer(_ => SweepAgentStatus(), null, 1000, 1000);
 
             IslandLog.Info("AgentBridge", $"桥接已监听 {Endpoint}（仅回环；等待工具权限审批请求）");
         }
 
+        private void SweepAgentStatus()
+        {
+            if (Interlocked.CompareExchange(ref _sweepRunning, 1, 0) != 0) return;
+            try { var now = DateTime.UtcNow; _codexStatusJournal.Drain(_externalAgents, now); _codexTurns.Reconcile(_externalAgents, now); _externalAgents.Sweep(now); }
+            finally { Volatile.Write(ref _sweepRunning, 0); }
+        }
         /// <summary>停掉监听；所有还在等待的请求立刻按"拒绝：桥接已关闭"回传。</summary>
         public void Stop()
         {
@@ -466,9 +480,32 @@ namespace alpha_island.Services
                     if (string.IsNullOrEmpty(session)) session = "default";
                     int ttl = 30;
                     if (root.TryGetProperty("ttlSec", out var t) && t.TryGetInt32(out var parsed)) ttl = parsed;
-                    if (!_externalAgents.Update(ReadString(root, "source"), session, ReadString(root, "state"),
-                        ReadString(root, "detail"), ttl, DateTime.UtcNow, out var error))
-                        return (400, Json(new { error }));
+                    string source = ReadString(root, "source");
+                    int? processId = null;
+                    if (root.TryGetProperty("processId", out var process))
+                    {
+                        if (!process.TryGetInt32(out int pid) || pid <= 0) return (400, Json(new { error = "processId 必须为正整数" }));
+                        processId = pid;
+                    }
+                    else if (root.TryGetProperty("reporterPid", out var reporter))
+                    {
+                        if (!reporter.TryGetInt32(out int pid) || pid <= 0) return (400, Json(new { error = "reporterPid 必须为正整数" }));
+                        processId = AgentHostProcessMonitor.Resolve(source, pid);
+                    }
+                    bool connectOnly = root.TryGetProperty("connectOnly", out var connection) && connection.ValueKind == JsonValueKind.True;
+                    string state = ReadString(root, "state");
+                    if (connectOnly && state != "idle") return (400, Json(new { error = "连接登记不能同时修改任务状态" }));
+                    string? family = ReadString(root, "artworkFamily"), parent = ReadString(root, "parentSession"), alias = ReadString(root, "sessionAlias");
+                    string error = "";
+                    bool ApplyStatus() => connectOnly
+                        ? _externalAgents.Connect(source, session, ttl, DateTime.UtcNow, out error, processId, family, parent, alias)
+                        : _externalAgents.Update(source, session, state, ReadString(root, "detail"), ttl, DateTime.UtcNow,
+                            out error, processId, family, parent, alias, root.TryGetProperty("beginsActivity", out var begins) && begins.ValueKind == JsonValueKind.True,
+                            ReadString(root, "nativeThreadId"), ReadString(root, "nativeTurnId"));
+                    // Recover an earlier missed start before accepting this turn's tool update.
+                    if (source == "codex" && !connectOnly) _codexStatusJournal.Drain(_externalAgents, DateTime.UtcNow);
+                    bool accepted = _codexStatusJournal.Deliver(root, DateTime.UtcNow, ApplyStatus);
+                    if (!accepted) return (400, Json(new { error }));
                     return (200, Json(new { ok = true }));
                 }
                 catch (Exception) { return (400, Json(new { error = "状态请求必须为合法 JSON 对象" })); }

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using alpha_island.Core;
 using NAudio.CoreAudioApi;
 using NAudio.Dsp;
 using NAudio.Wave;
@@ -69,6 +70,9 @@ namespace alpha_island.Services
 
         private readonly object _gate = new();
         private readonly object _lifecycle = new();
+        // 串行发布：借用帧回调结束前，另一发布线程不能覆盖缓冲。
+        private readonly object _publishGate = new();
+        private readonly float[] _publishBuffer = new float[BandCount];
 
         private readonly float[] _acc = new float[AccCapacity];
         private int _accCount;
@@ -91,6 +95,24 @@ namespace alpha_island.Services
         private int _sampleRate = 48000;
         private bool _isFloat = true;
         private long _lastPublishTicks;
+        private long _lastAnalysisTicks;
+        private volatile bool _visualizationEnabled = true;
+        private int _analysisCount;
+
+        internal bool VisualizationEnabled
+        {
+            get => _visualizationEnabled;
+            set
+            {
+                lock (_gate)
+                {
+                    if (_visualizationEnabled == value) return;
+                    _visualizationEnabled = value;
+                    _lastAnalysisTicks = 0; // The next audio packet immediately reflects either edge.
+                }
+            }
+        }
+        internal int AnalysisCount => Volatile.Read(ref _analysisCount);
 
         // 仅由 _lifecycle 保护
         private string? _deviceId;
@@ -109,11 +131,18 @@ namespace alpha_island.Services
         private volatile string? _deviceName;
         private volatile string? _lastError;
         private volatile bool _disposed;
+        private volatile bool _requested;
+        private int _watchdogBusy;
+        private int _watchdogInterval = Timeout.Infinite;
 
         private readonly System.Threading.Timer _watchdog;
 
         /// <summary>参数为长度 BandCount 的 float[]（0..1 的新数组，可安全持有）。</summary>
         public event EventHandler<float[]>? SpectrumUpdated;
+
+        internal delegate void SpectrumFrameHandler(ReadOnlySpan<float> frame);
+        /// <summary>仅在回调期间有效，订阅方同步复制到自己的缓冲。</summary>
+        internal event SpectrumFrameHandler? FrameReady;
 
         /// <summary>灵敏度倍数，1.0 为默认。</summary>
         public float Sensitivity { get; set; } = 1.0f;
@@ -176,7 +205,7 @@ namespace alpha_island.Services
             BuildBandMap(_sampleRate);
 
             _lastSignalTicks = Stopwatch.GetTimestamp();
-            _watchdog = new System.Threading.Timer(WatchdogTick, null, 800, 400);
+            _watchdog = new System.Threading.Timer(WatchdogTick, null, Timeout.Infinite, Timeout.Infinite);
         }
 
         // ---------------- 频段映射（必须在 _gate 内调用） ----------------
@@ -215,13 +244,24 @@ namespace alpha_island.Services
             // 只在外部显式启停时重置"静音计时"的观察窗口；
             // 看门狗内部的会话重建（StartCoreLocked）绝不能重置它，否则静音时长永远涨不过阈值。
             Interlocked.Exchange(ref _lastSignalTicks, Stopwatch.GetTimestamp());
-            lock (_lifecycle) StartCoreLocked();
+            lock (_lifecycle)
+            {
+                if (_disposed) return;
+                _requested = true;
+                StartCoreLocked();
+                SetWatchdogIntervalLocked(400);
+            }
         }
 
         public void Stop()
         {
             Interlocked.Exchange(ref _lastSignalTicks, Stopwatch.GetTimestamp());
-            lock (_lifecycle) StopCoreLocked();
+            lock (_lifecycle)
+            {
+                _requested = false;
+                SetWatchdogIntervalLocked(Timeout.Infinite);
+                StopCoreLocked();
+            }
             lock (_gate)
             {
                 _accCount = 0;
@@ -356,7 +396,6 @@ namespace alpha_island.Services
             Interlocked.Exchange(ref _lastDataTicks, Stopwatch.GetTimestamp());
             Volatile.Write(ref _rebindBackoffMs, SilentRebindBaseMs);   // 真的拿到数据了，退避重置
 
-            float[]? frame = null;
             try
             {
                 lock (_gate)
@@ -364,12 +403,19 @@ namespace alpha_island.Services
                     AppendMono(e.Buffer, e.BytesRecorded);
                     while (_accCount >= FftSize)
                     {
-                        AnalyzeLocked();
+                        long now = Stopwatch.GetTimestamp();
+                        // Hidden visuals need only the same signal evidence consumed every 250ms.
+                        // Keep the original FFT-based silence threshold and device recovery intact.
+                        if (_visualizationEnabled || _lastAnalysisTicks == 0
+                            || (now - _lastAnalysisTicks) * 1000.0 / Stopwatch.Frequency >= 200)
+                        {
+                            AnalyzeLocked();
+                            _lastAnalysisTicks = now;
+                        }
                         int remain = _accCount - HopSize;
                         if (remain > 0) Array.Copy(_acc, HopSize, _acc, 0, remain);
                         _accCount = remain;
                     }
-                    frame = SnapshotIfDueLocked();
                 }
             }
             catch (Exception ex)
@@ -378,8 +424,8 @@ namespace alpha_island.Services
                 return;
             }
 
-            // 事件在锁外触发：订阅方再慢也不会拖住采集线程
-            if (frame != null) SpectrumUpdated?.Invoke(this, frame);
+            // 不持有音频数据锁调用订阅方。
+            PublishFrameIfDue(Stopwatch.GetTimestamp());
         }
 
         private void OnRecordingStopped(object? sender, StoppedEventArgs e)
@@ -434,6 +480,7 @@ namespace alpha_island.Services
         /// <summary>对缓冲里最新的一帧做 FFT 并更新 _smoothed。必须在 _gate 内调用。</summary>
         private void AnalyzeLocked()
         {
+            _analysisCount++;
             for (int i = 0; i < FftSize; i++)
             {
                 _fftData[i].X = _acc[i] * _window[i];
@@ -512,24 +559,38 @@ namespace alpha_island.Services
             return m0 + (m1 - m0) * frac;
         }
 
-        /// <summary>按节流间隔取一份可发布的快照；未到时间返回 null。必须在 _gate 内调用。</summary>
-        private float[]? SnapshotIfDueLocked()
+        /// <summary>节流后串行发布；公开事件仍提供可安全持有的新数组。</summary>
+        internal void PublishFrameIfDue(long now)
         {
-            long now = Stopwatch.GetTimestamp();
-            double sinceMs = (now - _lastPublishTicks) * 1000.0 / Stopwatch.Frequency;
-            if (sinceMs < PublishIntervalMs) return null;
-            _lastPublishTicks = now;
-
-            var snapshot = new float[BandCount];
-            Array.Copy(_smoothed, snapshot, BandCount);
-            return snapshot;
+            if (!_visualizationEnabled) return;
+            lock (_publishGate)
+            {
+                lock (_gate)
+                {
+                    double sinceMs = (now - _lastPublishTicks) * 1000.0 / Stopwatch.Frequency;
+                    if (sinceMs < PublishIntervalMs) return;
+                    _lastPublishTicks = now;
+                    Array.Copy(_smoothed, _publishBuffer, BandCount);
+                }
+                FrameReady?.Invoke(_publishBuffer);
+                if (SpectrumUpdated is { } listeners)
+                    listeners.Invoke(this, (float[])_publishBuffer.Clone());
+            }
         }
 
         // ---------------- 看门狗：静音衰减 / 设备切换恢复 ----------------
 
+        private void SetWatchdogIntervalLocked(int milliseconds)
+        {
+            if (_watchdogInterval == milliseconds) return;
+            _watchdogInterval = milliseconds;
+            try { _watchdog.Change(milliseconds, milliseconds); }
+            catch (ObjectDisposedException) { }
+        }
+
         private void WatchdogTick(object? state)
         {
-            if (_disposed) return;
+            if (_disposed || !_requested || Interlocked.Exchange(ref _watchdogBusy, 1) != 0) return;
             try
             {
                 long now = Stopwatch.GetTimestamp();
@@ -544,6 +605,10 @@ namespace alpha_island.Services
                 bool silentRebind = false;
                 lock (_lifecycle)
                 {
+                    if (_disposed || !_requested) return;
+                    // 回调仍健康时才降低静音巡检频率，异常设备继续保持快速恢复。
+                    SetWatchdogIntervalLocked(MediaWorkPacing.WatchdogInterval(
+                        SilentSeconds, _running && callbackIdleMs < SilentProbeMs));
                     if (!_running)
                     {
                         double sinceStart = (now - _lastStartAttemptTicks) * 1000.0 / Stopwatch.Frequency;
@@ -591,23 +656,25 @@ namespace alpha_island.Services
                     {
                         Debug.WriteLine("[Audio] 播放设备改变，立即重启采集");
                     }
-                    lock (_lifecycle) StartCoreLocked();
+                    lock (_lifecycle)
+                    {
+                        if (_requested && !_disposed) StartCoreLocked();
+                    }
                     return;
                 }
 
                 if (idleMs > 900)
                 {
                     // 没声音了：让柱子自然落下去
-                    float[]? frame;
                     lock (_gate)
                     {
                         for (int i = 0; i < BandCount; i++) _smoothed[i] *= 0.80f;
-                        frame = SnapshotIfDueLocked();
                     }
-                    if (frame != null) SpectrumUpdated?.Invoke(this, frame);
+                    PublishFrameIfDue(Stopwatch.GetTimestamp());
                 }
             }
             catch (Exception ex) { Debug.WriteLine("[Audio] watchdog: " + ex.Message); }
+            finally { Volatile.Write(ref _watchdogBusy, 0); }
         }
 
         /// <summary>

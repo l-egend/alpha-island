@@ -155,6 +155,39 @@ internal static partial class Program
                     "紧凑音乐封面同样采用圆角矩形");
             }
             finally { root.Children.Remove(window.PillCoverHost); parent.Children.Insert(index, window.PillCoverHost); }
+
+            // Compact media moved to SemanticIcon.Source; the card/pill borders do not
+            // clip this independent cover path. Drive the real compact-island wiring.
+            var oldService = AgentField<alpha_island.Services.SmtcService?>(window, "_smtc");
+            using var compactService = new alpha_island.Services.SmtcService(window.Dispatcher);
+            var iconParent = (Panel)VisualTreeHelper.GetParent(window.SideBubbleIcon);
+            int iconIndex = iconParent.Children.IndexOf(window.SideBubbleIcon);
+            var oldSource = window.SideBubbleIcon.Source;
+            var oldShape = window.SideBubbleIcon.Shape;
+            try
+            {
+                SetAgentField(window, "_smtc", compactService);
+                compactService.SetDebugNowPlaying(new alpha_island.Services.NowPlayingInfo
+                {
+                    Title = "圆角媒体缩略图回归", SourceApp = "cloudmusic.exe", SessionId = "rounded-compact",
+                    State = alpha_island.Services.PlaybackState.Playing, Artwork = art
+                });
+                PrivateCall(window, "UpdateCompactIslandContent", "music");
+                PrivateCall(window, "ShowSideBubbleHint", "\uE769", "媒体播放器", "music");
+                iconParent.Children.Remove(window.SideBubbleIcon); root.Children.Add(window.SideBubbleIcon); PumpAnimations(30);
+                var compactPixels = Pixels(window.SideBubbleIcon, 24);
+                Check(compactPixels[3] == 0
+                    && compactPixels[(12 * 24 + 12) * 4 + 3] > 200,
+                    "真实旁侧媒体封面也裁切为圆角矩形，不因公共动态图标路径再次变成直角");
+                SaveThemePreview(window.SideBubbleIcon, "docs/screens/rounded-cover-compact.png");
+            }
+            finally
+            {
+                root.Children.Remove(window.SideBubbleIcon); iconParent.Children.Insert(iconIndex, window.SideBubbleIcon);
+                PrivateCall(window, "HideSideBubbleHint", true);
+                window.SideBubbleIcon.Source = oldSource; window.SideBubbleIcon.Shape = oldShape;
+                SetAgentField(window, "_smtc", oldService);
+            }
         }
         finally
         {

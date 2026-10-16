@@ -1,0 +1,405 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Net;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using alpha_island.Animation;
+using alpha_island.Controls;
+using Application = System.Windows.Application;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
+using FontFamily = System.Windows.Media.FontFamily;
+using Image = System.Windows.Controls.Image;
+
+internal static class Program
+{
+    private const int Tile = 96;
+    private static readonly SolidColorBrush Cyan = new(Color.FromRgb(0x57, 0xDE, 0xFF));
+    private sealed record Entry(string Category, string Id, string Title, string Note, string StaticPath,
+        string? AnimationPath = null, string? FramesPath = null, string[]? Sources = null, bool? HasVisualMotion = null);
+    private sealed record Spec(string Category, string Id, string Title, IconShape Shape, string Text,
+        bool Active = true, double Level = .85, int? Weather = null, string? Device = null);
+    private static readonly List<Entry> Entries = new();
+    private static string Root = "", Out = "";
+
+    [STAThread]
+    private static int Main(string[] args)
+    {
+        try
+        {
+            Root = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+            if (!File.Exists(Path.Combine(Root, "alpha-island.csproj"))) throw new InvalidDataException("The project directory is required.");
+            Out = Path.Combine(Root, "bin", "IconReview-2026-10-11-v" + typeof(SemanticIcon).Assembly.GetName().Version!.ToString(3));
+            Directory.CreateDirectory(Out);
+            _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
+            ExportOriginalAssets();
+            ExportSemanticIcons();
+            ExportFontGlyphs();
+            ExportSources();
+            WriteIndex();
+            WriteOverview();
+            WriteMotionSequence();
+            var counts = Entries.GroupBy(e => e.Category).Select(g => new { Category = g.Key, Icons = g.Count(), Animated = g.Count(e => e.AnimationPath != null), Changing = g.Count(e => e.HasVisualMotion == true) }).ToArray();
+            File.WriteAllText(Path.Combine(Out, "manifest.json"), JsonSerializer.Serialize(new
+            {
+                FormatVersion = 1, Version = typeof(SemanticIcon).Assembly.GetName().Version?.ToString(),
+                ExportedAt = DateTimeOffset.Now.ToString("O"), Render = "Actual production WPF SemanticIcon and ActionIconMotion, captured at 40 ms intervals",
+                Entries, Counts = counts, Files = Directory.EnumerateFiles(Out, "*", SearchOption.AllDirectories)
+                    .Count(file => !string.Equals(file, Path.Combine(Out, "manifest.json"), StringComparison.OrdinalIgnoreCase)) + 1
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            foreach (var count in counts) Console.WriteLine($"{count.Category}: {count.Icons} icons, {count.Animated} GIFs");
+            Console.WriteLine($"TOTAL {Entries.Count} icons, {Entries.Count(e => e.AnimationPath != null)} GIFs, {Directory.EnumerateFiles(Out, "*", SearchOption.AllDirectories).Count()} files");
+            Console.WriteLine(Out);
+            return 0;
+        }
+        catch (Exception e) { Console.Error.WriteLine($"Icon export failed: {e.GetType().Name}: {e.Message}"); return 1; }
+    }
+
+    private static void ExportOriginalAssets()
+    {
+        string brand = "01-应用品牌";
+        foreach (string asset in new[] { "alpha-island.ico", "alpha-island-256.png", "alpha-island-source.png" })
+            Copy("Assets/" + asset, brand + "/原始文件/" + asset);
+        Entries.Add(new(brand, "alpha-island", "Alpha Island 应用图标", "项目当前内置品牌；原始 PNG / 多尺寸 ICO 均保留。", brand + "/原始文件/alpha-island-256.png", Sources: new[] { "Assets/alpha-island-256.png", "Assets/alpha-island.ico" }));
+        foreach (string asset in new[] { "earbuds.svg", "earclip.svg", "headphones.svg", "speaker.svg", "SOURCES.md", "LICENSE.bootstrap-icons.txt" })
+            Copy("Assets/Bluetooth/" + asset, "03-蓝牙设备/原始SVG/" + asset);
+    }
+
+    private static List<Spec> Specs() => new()
+    {
+        new("02-系统与媒体", "wifi", "Wi-Fi 开启 / 关闭", IconShape.Wifi, "\uE701"),
+        new("02-系统与媒体", "bluetooth", "蓝牙开启 / 关闭", IconShape.Bluetooth, "\uE702"),
+        new("02-系统与媒体", "play-pause", "媒体播放 / 暂停", IconShape.PlayPause, ""),
+        new("02-系统与媒体", "volume", "音量 / 静音过渡", IconShape.Volume, ""),
+        new("02-系统与媒体", "battery", "电池 / 充电", IconShape.Battery, "\uE83F"),
+        new("02-系统与媒体", "volume-low", "音量低档 · 一条声波", IconShape.Volume, "", true, .2),
+        new("02-系统与媒体", "volume-medium", "音量中档 · 两条声波", IconShape.Volume, "", true, .5),
+        new("02-系统与媒体", "volume-high", "音量高档 · 三条声波", IconShape.Volume, "", true, .9),
+        new("02-系统与媒体", "battery-low", "电量 15%", IconShape.Battery, "\uE83F", false, .15),
+        new("02-系统与媒体", "battery-full", "电量 100%", IconShape.Battery, "\uE83F", false, 1),
+        new("02-系统与媒体", "system-monitor", "系统状态", IconShape.Generic, "\uE950"),
+        new("02-系统与媒体", "system-locked", "锁屏", IconShape.Generic, "\uE72E"),
+        new("02-系统与媒体", "system-unlocked", "解锁", IconShape.Generic, "\uE785"),
+        new("03-蓝牙设备", "in-ear", "入耳式耳机", IconShape.Bluetooth, "\uE702", Device: "TWS earbuds"),
+        new("03-蓝牙设备", "ear-clip", "耳夹式耳机", IconShape.Bluetooth, "\uE702", Device: "Enco Clip"),
+        new("03-蓝牙设备", "headphones", "头戴式耳机", IconShape.Bluetooth, "\uE702", Device: "Headphones"),
+        new("03-蓝牙设备", "speaker", "蓝牙音箱", IconShape.Bluetooth, "\uE702", Device: "Speaker"),
+        new("03-蓝牙设备", "open-ear", "开放式 / 骨传导耳机", IconShape.Bluetooth, "\uE702", Device: "OpenEar"),
+        new("03-蓝牙设备", "generic", "未识别类型 · 通用音频", IconShape.Bluetooth, "\uE702", Device: "Unknown device"),
+        new("03-蓝牙设备", "keyboard", "蓝牙键盘", IconShape.Generic, "\uE765"),
+        new("03-蓝牙设备", "mouse", "蓝牙鼠标", IconShape.Generic, "\uE962"),
+        new("03-蓝牙设备", "gamepad", "蓝牙游戏手柄", IconShape.Generic, "\uE7FC"),
+        new("03-蓝牙设备", "input-device", "蓝牙其他输入设备", IconShape.Generic, "\uE92C"),
+        new("04-助手与审批", "agent-thinking", "助手思考中", IconShape.Agent, "\uE99A"),
+        new("04-助手与审批", "agent-completed", "助手完成", IconShape.Agent, "\uE73E"),
+        new("04-助手与审批", "agent-error", "助手错误", IconShape.Agent, "\uE783"),
+        new("04-助手与审批", "agent-idle", "助手空闲", IconShape.Agent, "\uE99A", false),
+        new("04-助手与审批", "approval", "审批请求", IconShape.Approval, "\uE73E"),
+        new("05-通知剪切板与工具", "notification", "通知信封", IconShape.Notification, "\uE8F2"),
+        new("05-通知剪切板与工具", "clipboard", "剪切板", IconShape.Clipboard, "\uE8C8"),
+        new("05-通知剪切板与工具", "download", "下载中", IconShape.Download, "\uE896"),
+        new("05-通知剪切板与工具", "download-paused", "下载暂停", IconShape.Download, "\uE769"),
+        new("05-通知剪切板与工具", "download-done", "下载完成", IconShape.Download, "\uE73E"),
+        new("05-通知剪切板与工具", "timer", "番茄钟运行", IconShape.Timer, "\uE916"),
+        new("05-通知剪切板与工具", "timer-paused", "番茄钟暂停", IconShape.Timer, "\uE916", false),
+        new("06-天气", "sunny", "晴", IconShape.Weather, "", Weather: 0),
+        new("06-天气", "partly-cloudy", "多云", IconShape.Weather, "", Weather: 2),
+        new("06-天气", "cloudy", "阴", IconShape.Weather, "", Weather: 3),
+        new("06-天气", "fog", "雾", IconShape.Weather, "", Weather: 45),
+        new("06-天气", "drizzle", "毛毛雨", IconShape.Weather, "", Weather: 51),
+        new("06-天气", "rain", "雨", IconShape.Weather, "", Weather: 61),
+        new("06-天气", "freezing-rain", "冻雨", IconShape.Weather, "", Weather: 66),
+        new("06-天气", "snow", "雪", IconShape.Weather, "", Weather: 71),
+        new("06-天气", "thunderstorm", "雷雨", IconShape.Weather, "", Weather: 95),
+        new("06-天气", "unknown", "未知天气 · 通用云", IconShape.Weather, "", Weather: null)
+    };
+
+    private static void ExportSemanticIcons()
+    {
+        var specs = Specs();
+        int columns = 8, rows = (int)Math.Ceiling(specs.Count / (double)columns);
+        int width = columns * Tile, height = rows * Tile;
+        var canvas = new Canvas { Width = width, Height = height, Background = Brushes.Transparent };
+        var icons = new List<SemanticIcon>();
+        var rectangles = new List<Int32Rect>();
+        foreach (var spec in specs)
+        {
+            int n = icons.Count, x = n % columns * Tile, y = n / columns * Tile;
+            var icon = new SemanticIcon { Width = Tile, Height = Tile, Shape = spec.Shape, Text = spec.Text,
+                Active = spec.Active, Level = spec.Level, WeatherCode = spec.Weather,
+                Foreground = Cyan, FontFamily = new FontFamily("Segoe MDL2 Assets") };
+            if (spec.Device != null)
+            {
+                var artwork = typeof(SemanticIcon).Assembly.GetType("alpha_island.Controls.BluetoothDeviceArtwork")!;
+                icon.Source = (ImageSource?)artwork.GetMethod("For", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, new object?[] { spec.Device });
+            }
+            Canvas.SetLeft(icon, x); Canvas.SetTop(icon, y); canvas.Children.Add(icon);
+            icons.Add(icon); rectangles.Add(new(x, y, Tile, Tile));
+        }
+        using var source = new HwndSource(new HwndSourceParameters("Alpha Island icon export")
+        { Width = width, Height = height, PositionX = -32000, PositionY = -32000, WindowStyle = unchecked((int)0x80000000) });
+        source.RootVisual = canvas; canvas.UpdateLayout(); Pump(40);
+        var frames = new List<BitmapSource>[icons.Count];
+        var staticFrame = Render(canvas, width, height);
+        for (int n = 0; n < icons.Count; n++)
+        {
+            var spec = specs[n]; string path = $"{spec.Category}/{spec.Id}";
+            SavePng(new CroppedBitmap(staticFrame, rectangles[n]), path + "/静态.png");
+            frames[n] = new() { new CroppedBitmap(staticFrame, rectangles[n]) };
+        }
+        // Capture the real finite ActionIconMotion clocks. No hand-coded drawing or interpolation.
+        foreach (bool target in new[] { false, true })
+        {
+            for (int n = 0; n < icons.Count; n++)
+            {
+                icons[n].Active = target;
+                icons[n].Level = target ? specs[n].Level : specs[n].Shape == IconShape.Volume ? 0 : .2;
+                ActionIconMotion.Play(icons[n], target ? ActionIconAnimation.Connect : ActionIconAnimation.Disconnect);
+            }
+            for (int step = 0; step < 40; step++)
+            {
+                Pump(40); canvas.UpdateLayout(); var shot = Render(canvas, width, height);
+                for (int n = 0; n < icons.Count; n++) frames[n].Add(new CroppedBitmap(shot, rectangles[n]));
+            }
+        }
+        for (int n = 0; n < icons.Count; n++)
+        {
+            var spec = specs[n]; string path = $"{spec.Category}/{spec.Id}";
+            // Keep transparent full-resolution frames for redesign; GIF gets theme background.
+            for (int frame = 0; frame < frames[n].Count; frame++) SavePng(frames[n][frame], path + $"/PNG帧/frame-{frame:D3}.png");
+            SaveGif(frames[n].Select(ThemeFrame).ToArray(), path + "/状态过渡.gif");
+            string note = "实际程序语义控件与动画；GIF 含关闭和开启动作。仅预览循环，程序里动画仅播放一次。";
+            bool changes = frames[n].Select(FrameDigest).Distinct().Take(2).Count() > 1;
+            if (!changes) note += " 当前生产状态的内部图形保持不变，GIF 如实保留静态状态，没有人为增加动画。";
+            if (spec.Shape == IconShape.Volume) note += " 音量变化 180 ms；静音切换 320 ms；档位声波逐条变化。";
+            if (spec.Shape == IconShape.Agent && spec.Text != "\uE99A") note += " 该状态图形按当前 Text 保留。";
+            Entries.Add(new(spec.Category, spec.Id, spec.Title, note, path + "/静态.png", path + "/状态过渡.gif", path + "/PNG帧", new[] { "Controls/SemanticIcon.cs", spec.Shape == IconShape.Weather ? "Controls/SemanticIcon.Weather.cs" : "Animation/ActionIconMotion.cs" }, changes));
+            ActionIconMotion.Stop(icons[n]);
+        }
+        source.RootVisual = null;
+    }
+
+    private static void ExportFontGlyphs()
+    {
+        string[] dirs = { "Animation", "Controls", "Core", "Interop", "Services", "Settings", "Themes", "Plugins", "ConversationCore", "examples" };
+        var files = new List<string>();
+        files.AddRange(Directory.GetFiles(Root, "MainWindow*.cs"));
+        files.AddRange(new[] { "MainWindow.xaml", "App.xaml" }.Select(f => Path.Combine(Root, f)));
+        foreach (string dir in dirs)
+            if (Directory.Exists(Path.Combine(Root, dir))) files.AddRange(Directory.EnumerateFiles(Path.Combine(Root, dir), "*", SearchOption.AllDirectories)
+                .Where(f => (f.EndsWith(".cs") || f.EndsWith(".xaml")) && !f.Contains("\\bin\\") && !f.Contains("\\obj\\") && !f.Contains("\\upstream\\")));
+        var glyphs = new SortedDictionary<int, HashSet<string>>();
+        var pattern = new Regex(@"(?:\\u|&#x)([EeFf][0-9a-fA-F]{3})", RegexOptions.CultureInvariant);
+        foreach (string file in files.Distinct())
+        {
+            string relative = Path.GetRelativePath(Root, file).Replace('\\', '/');
+            string[] lines = File.ReadAllLines(file);
+            for (int line = 0; line < lines.Length; line++)
+                foreach (Match match in pattern.Matches(lines[line]))
+                {
+                    int code = int.Parse(match.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+                    if (code > 0xF8FF) continue; // Full-width punctuation and replacement markers are not icon glyphs.
+                    if (!glyphs.TryGetValue(code, out var locations)) glyphs.Add(code, locations = new());
+                    locations.Add(relative + ":" + (line + 1));
+                }
+        }
+        var typeface = new Typeface(new FontFamily("Segoe MDL2 Assets"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        if (!typeface.TryGetGlyphTypeface(out var glyphTypeface)) throw new InvalidDataException("Segoe MDL2 Assets cannot be resolved.");
+        var unavailable = new List<string>();
+        foreach (var (code, sources) in glyphs)
+        {
+            string glyph = char.ConvertFromUtf32(code);
+            bool vector = AlphaIsland.PluginSdk.GlyphArtwork.Titles.TryGetValue(glyph, out var title);
+            if (!vector && !glyphTypeface.CharacterToGlyphMap.ContainsKey(code))
+            {
+                unavailable.Add("U-" + code.ToString("X4") + "：本机字体没有该码点；可能是校验范围、旧码点或由语义控件替代。来源：" + string.Join("；", sources));
+                foreach (string staleCategory in new[] { "07-设置字体图标", "08-插件与对话字体图标", "09-通用控件字体图标" })
+                {
+                    string stale = Path.Combine(Out, staleCategory, "U-" + code.ToString("X4") + ".png");
+                    if (File.Exists(stale)) File.Delete(stale); // Only this exporter's named PNG, never directories.
+                }
+                continue;
+            }
+            string category = GlyphCategory(sources);
+            string id = "U-" + code.ToString("X4");
+            var text = new AlphaIsland.PluginSdk.GlyphIcon { Text = glyph, Width = Tile, Height = Tile,
+                FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 66, Foreground = Cyan,
+                TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var panel = new Grid { Width = Tile, Height = Tile, Background = Brushes.Transparent };
+            panel.Children.Add(text); panel.Measure(new(Tile, Tile)); panel.Arrange(new(0, 0, Tile, Tile)); panel.UpdateLayout();
+            SavePng(Render(panel, Tile, Tile), category + "/" + id + ".png");
+            if (vector) File.WriteAllText(Path.Combine(Out, category, id + ".svg"), AlphaIsland.PluginSdk.GlyphArtwork.ExportSvg(glyph), new UTF8Encoding(false));
+            Entries.Add(new(category, id, title ?? id, vector ? "原创圆角矢量图标；保留原 glyph ID 兼容插件，主程序和插件使用同一绘制目录。" : "第三方/备用字体字形。", category + "/" + id + ".png", Sources: sources.Order().ToArray()));
+        }
+        File.WriteAllLines(Path.Combine(Out, "非字体字形说明.txt"), unavailable, new UTF8Encoding(false));
+    }
+
+    private static string GlyphCategory(IEnumerable<string> sources)
+    {
+        string combined = string.Join(" ", sources);
+        if (combined.Contains("Settings/") || combined.Contains("Win11Settings")) return "07-设置图标";
+        if (combined.Contains("examples/") || combined.Contains("Plugins/") || combined.Contains("ConversationCore/")) return "08-插件与对话图标";
+        return "09-通用控件图标";
+    }
+
+    private static void ExportSources()
+    {
+        foreach (string file in new[] { "Controls/SemanticIcon.cs", "Controls/SemanticIcon.Weather.cs", "Controls/SemanticIcon.SystemShapes.cs", "PluginSdk/GlyphIcon.cs", "PluginSdk/GlyphArtwork.cs", "PluginSdk/GlyphContentConverter.cs", "Controls/BluetoothDeviceArtwork.cs",
+            "Controls/DesktopNotificationIcons.cs", "Controls/DesktopNotificationCard.cs", "Controls/ComponentRadialMenu.cs",
+            "Animation/ActionIconMotion.cs", "Animation/MotionPolicy.cs", "Core/WeatherIconPolicy.cs", "Themes/Win11Settings.xaml",
+            "Themes/Controls.xaml", "Themes/LiquidGlass.xaml", "MainWindow.xaml", "Settings/SettingsWindow.xaml" })
+            Copy(file, "10-绘制与动画源码/" + file);
+        File.WriteAllText(Path.Combine(Out, "说明与来源.md"), "# Alpha Island 当前图标审阅包\n\n" +
+            "版本：" + typeof(SemanticIcon).Assembly.GetName().Version + "\n\n" +
+            "双击 index.html 可分类查看全部图标；总览.png 便于一次浏览。\n\n" +
+            "静态图标为透明背景 PNG。动态图标 GIF 使用深色主题背景，来源为当前生产 WPF SemanticIcon + ActionIconMotion 的实际播放；PNG帧 保留透明背景与完整动画逐帧素材（40 ms / 帧）。GIF 的循环只为审阅；程序原动画是一次性有限动画。\n\n" +
+            "系统 / 媒体、蓝牙、助手 / 审批、通知 / 剪切板 / 工具、天气、设置、插件、通用控件已分目录。第7、8、9类已重绘为原创圆角矢量；PNG 与可编辑 SVG 来自同一生产路径，glyph ID 保持兼容；manifest.json 列出所有源文件位置。不同状态独立保留。\n\n" +
+            "蓝牙内置 4 个 SVG 保留原件及 Bootstrap Icons 许可，未知音频使用扬声器图形，开放式耳机由项目代码绘制。来源见 03-蓝牙设备/原始SVG/SOURCES.md。\n\n" +
+            "只有 Alpha Island 品牌 PNG / ICO 是内置应用图标。Windows 通知中心应用 Logo、正在播放的专辑封面、用户设置的自定义图标来自运行时或用户目录，没有统一的固定素材；本包不采集通知内容、媒体封面或个人文件。助手 Codex / Antigravity 等当前使用共用助手语义图形，没有单独嵌入品牌图片。\n\n" +
+            "媒体播放器与助手软件的真实窗口入岛 / 出岛形变属于交互动画（非图标素材），其内容是实时窗口画面；本包不截取或复制真实用户窗口。若制作这种交互预览，应使用虚构模板窗口；不能将其与固定图标动画混为同一份素材。\n\n" +
+            "内置第7、8、9类由 GlyphArtwork 直接绘制，不依赖图标字体。未重绘的第三方/备用字形仍可使用系统字体；没有复制 Windows 字体文件。\n\n" +
+            "10-绘制与动画源码 只包含上述控件、动画和公开界面布局原始文件。未包含密钥、配置、对话、通知历史、日志或用户临时截图。\n", new UTF8Encoding(false));
+    }
+
+    private static void WriteIndex()
+    {
+        var html = new StringBuilder("<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Alpha Island 图标审阅包</title><style>body{background:#101725;color:#ecf3ff;font:15px 'Segoe UI','Microsoft YaHei UI',sans-serif;margin:32px}h1{font-size:28px}h2{margin-top:34px}p{color:#adbad0;line-height:1.7}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.card{border:1px solid #34425a;border-radius:16px;padding:16px;background:#182237}img{width:96px;height:96px;object-fit:contain;image-rendering:auto}summary{cursor:pointer;color:#86dcff}a{color:#86dcff}small{color:#b4c4df}pre{white-space:pre-wrap;font-size:12px;color:#adc0de}.pair{display:flex;gap:12px}</style><h1>Alpha Island 当前图标</h1><p>实际项目控件绘制；动态预览来自当前有限 WPF 动画。透明静态 PNG、GIF、透明逐帧 PNG 和原始源码可分别打开。<br>部分外部图标（通知应用 Logo、媒体封面）由系统或应用运行时提供，本包未采集个人数据。详细来源见 <a href='说明与来源.md'>说明与来源.md</a>。</p>");
+        foreach (var group in Entries.GroupBy(e => e.Category))
+        {
+            html.Append("<h2>").Append(E(group.Key)).Append(" · ").Append(group.Count()).Append(" 项</h2><div class=grid>");
+            foreach (var item in group)
+            {
+                html.Append("<article class=card><div class=pair><a href='").Append(U(item.StaticPath)).Append("'><img loading=lazy src='").Append(U(item.StaticPath)).Append("' alt='").Append(E(item.Title)).Append("'></a>");
+                if (item.AnimationPath != null) html.Append("<a href='").Append(U(item.AnimationPath)).Append("'><img loading=lazy src='").Append(U(item.AnimationPath)).Append("' alt='状态动画'></a>");
+                html.Append("</div><h3>").Append(E(item.Title)).Append("</h3><small>").Append(E(item.Note)).Append("</small>");
+                if (item.FramesPath != null) html.Append("<p><a href='").Append(U(item.FramesPath)).Append("/'>透明 PNG 帧</a></p>");
+                if (item.Sources != null) html.Append("<details><summary>源码位置</summary><pre>").Append(E(string.Join("\n", item.Sources))).Append("</pre></details>");
+                html.Append("</article>");
+            }
+            html.Append("</div>");
+        }
+        File.WriteAllText(Path.Combine(Out, "index.html"), html.Append("</html>").ToString(), new UTF8Encoding(false));
+    }
+
+    private static void WriteOverview()
+    {
+        const int columns = 8, cellWidth = 150, cellHeight = 146;
+        int rows = (int)Math.Ceiling(Entries.Count / (double)columns), width = columns * cellWidth, height = 80 + rows * cellHeight;
+        var canvas = new Canvas { Width = width, Height = height, Background = new SolidColorBrush(Color.FromRgb(0x10, 0x17, 0x25)) };
+        var heading = new TextBlock { Text = $"Alpha Island 当前图标 · {Entries.Count} 项 · 含状态与字体字形", Foreground = Brushes.White, FontSize = 24, FontFamily = new FontFamily("Microsoft YaHei UI") };
+        Canvas.SetLeft(heading, 20); Canvas.SetTop(heading, 20); canvas.Children.Add(heading);
+        for (int i = 0; i < Entries.Count; i++)
+        {
+            int x = i % columns * cellWidth, y = 80 + i / columns * cellHeight;
+            var image = new Image { Source = Load(Entries[i].StaticPath), Width = 80, Height = 80 };
+            Canvas.SetLeft(image, x + 35); Canvas.SetTop(image, y + 4); canvas.Children.Add(image);
+            var title = new TextBlock { Text = Entries[i].Title, Width = 144, Foreground = Brushes.White, FontSize = 11, FontFamily = new FontFamily("Microsoft YaHei UI"), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
+            Canvas.SetLeft(title, x + 3); Canvas.SetTop(title, y + 90); canvas.Children.Add(title);
+            var category = new TextBlock { Text = Entries[i].Category, Width = 144, Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x9B, 0xB5)), FontSize = 9, TextAlignment = TextAlignment.Center };
+            Canvas.SetLeft(category, x + 3); Canvas.SetTop(category, y + 126); canvas.Children.Add(category);
+        }
+        canvas.Measure(new(width, height)); canvas.Arrange(new(0, 0, width, height)); canvas.UpdateLayout();
+        SavePng(Render(canvas, width, height), "总览.png");
+        // A smaller first sheet makes visual QA possible without unreadable downsampling.
+        SavePng(new CroppedBitmap(Render(canvas, width, height), new Int32Rect(0, 0, width, Math.Min(height, 80 + 5 * cellHeight))), "系统与动画总览.png");
+    }
+
+    private static void WriteMotionSequence()
+    {
+        string[] ids = { "volume", "play-pause", "wifi", "bluetooth", "agent-thinking", "notification", "timer", "rain" };
+        int[] frames = { 0, 2, 5, 15, 45, 80 };
+        string[] labels = { "初始", "关闭 80 ms", "关闭 200 ms", "关闭 600 ms", "开启 200 ms", "开启完成" };
+        const int width = 930, height = 850;
+        var canvas = new Canvas { Width = width, Height = height, Background = new SolidColorBrush(Color.FromRgb(0x10, 0x17, 0x25)) };
+        var heading = new TextBlock { Text = "当前程序实际动画帧 · 无手工绘制或替换", Foreground = Brushes.White, FontSize = 23, FontFamily = new FontFamily("Microsoft YaHei UI") };
+        Canvas.SetLeft(heading, 20); Canvas.SetTop(heading, 18); canvas.Children.Add(heading);
+        for (int col = 0; col < labels.Length; col++)
+        {
+            var label = new TextBlock { Text = labels[col], Width = 112, Foreground = Brushes.White, FontSize = 12, TextAlignment = TextAlignment.Center };
+            Canvas.SetLeft(label, 208 + col * 116); Canvas.SetTop(label, 55); canvas.Children.Add(label);
+        }
+        for (int row = 0; row < ids.Length; row++)
+        {
+            var entry = Entries.Single(e => e.Id == ids[row]);
+            var label = new TextBlock { Text = entry.Title, Width = 198, Foreground = Brushes.White, FontSize = 12, FontFamily = new FontFamily("Microsoft YaHei UI") };
+            Canvas.SetLeft(label, 16); Canvas.SetTop(label, 116 + row * 94); canvas.Children.Add(label);
+            for (int col = 0; col < frames.Length; col++)
+            {
+                var image = new Image { Width = 82, Height = 82, Source = Load(entry.FramesPath + $"/frame-{frames[col]:D3}.png") };
+                Canvas.SetLeft(image, 222 + col * 116); Canvas.SetTop(image, 79 + row * 94); canvas.Children.Add(image);
+            }
+        }
+        canvas.Measure(new(width, height)); canvas.Arrange(new(0, 0, width, height)); canvas.UpdateLayout();
+        SavePng(Render(canvas, width, height), "动画状态序列.png");
+    }
+
+    private static BitmapSource Load(string relative)
+    {
+        var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
+        image.UriSource = new Uri(Path.Combine(Out, relative)); image.EndInit(); image.Freeze(); return image;
+    }
+    private static void Copy(string original, string relative)
+    {
+        string path = Path.Combine(Out, relative); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.Copy(Path.Combine(Root, original), path, true);
+    }
+    private static void SavePng(BitmapSource image, string relative)
+    {
+        string path = Path.Combine(Out, relative); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+        using var stream = File.Create(path); encoder.Save(stream);
+    }
+    private static BitmapSource ThemeFrame(BitmapSource image)
+    {
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        { dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x18, 0x22, 0x37)), null, new Rect(0, 0, Tile, Tile)); dc.DrawImage(image, new Rect(0, 0, Tile, Tile)); }
+        var bitmap = new RenderTargetBitmap(Tile, Tile, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual); bitmap.Freeze(); return bitmap;
+    }
+    private static string FrameDigest(BitmapSource image)
+    {
+        int stride = (image.PixelWidth * image.Format.BitsPerPixel + 7) / 8;
+        var pixels = new byte[stride * image.PixelHeight]; image.CopyPixels(pixels, stride, 0);
+        return Convert.ToHexString(SHA256.HashData(pixels));
+    }
+    private static void SaveGif(IReadOnlyList<BitmapSource> frames, string relative)
+    {
+        var encoder = new GifBitmapEncoder();
+        foreach (var frame in frames)
+        {
+            var metadata = new BitmapMetadata("gif"); metadata.SetQuery("/grctlext/Delay", (ushort)4); metadata.SetQuery("/grctlext/Disposal", (byte)1);
+            encoder.Frames.Add(BitmapFrame.Create(frame, null, metadata, null));
+        }
+        using var memory = new MemoryStream(); encoder.Save(memory); byte[] bytes = memory.ToArray();
+        int palette = (bytes[10] & 0x80) != 0 ? 3 * (1 << ((bytes[10] & 7) + 1)) : 0, at = 13 + palette;
+        byte[] loop = { 0x21, 0xFF, 0x0B, 78, 69, 84, 83, 67, 65, 80, 69, 50, 46, 48, 3, 1, 0, 0, 0 };
+        using (var file = File.Create(Path.Combine(Out, relative))) { file.Write(bytes, 0, at); file.Write(loop); file.Write(bytes, at, bytes.Length - at); }
+        using var check = File.OpenRead(Path.Combine(Out, relative));
+        var decoded = new GifBitmapDecoder(check, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        if (decoded.Frames.Count != frames.Count || decoded.Frames.Any(f => f.PixelWidth != Tile || f.PixelHeight != Tile)) throw new InvalidDataException("GIF verification failed.");
+    }
+    private static RenderTargetBitmap Render(Visual visual, int width, int height)
+    {
+        var image = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); image.Render(visual); image.Freeze(); return image;
+    }
+    private static void Pump(int milliseconds)
+    {
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(milliseconds) };
+        timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+        timer.Start(); Dispatcher.PushFrame(frame);
+    }
+    private static string E(string value) => WebUtility.HtmlEncode(value);
+    private static string U(string value) => string.Join("/", value.Split('/').Select(Uri.EscapeDataString));
+}

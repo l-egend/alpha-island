@@ -796,6 +796,8 @@ namespace alpha_island.Services
             }
 
             if (s.Contains("tws") || s.Contains("ear") || s.Contains("buds") ||
+                s.Contains("耳机") || s.Contains("耳夹") || s.Contains("音箱") || s.Contains("扬声器") ||
+                s.Contains("freeclip") || s.Contains("enco clip") || s.Contains("openfit") || s.Contains("openrun") || s.Contains("aerofit") ||
                 s.Contains("headphone") || s.Contains("headset") || s.Contains("audio") ||
                 s.Contains("airpods") || s.Contains("freebuds") || s.Contains("enco") ||
                 s.Contains("sound") || s.Contains("speaker") || s.Contains("wh-1000") ||

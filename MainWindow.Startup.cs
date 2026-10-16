@@ -35,14 +35,22 @@ namespace alpha_island
     {
         // ================= Win32 消息过滤：无条件穿透非交互区 =================
         private const int WM_NCHITTEST = 0x0084;
+        private const int WM_MOUSEACTIVATE = 0x0021;
+        private const int MA_NOACTIVATE = 3;
         private const int WM_POWERBROADCAST = 0x0218;
         private const int HTTRANSPARENT = -1;
 
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
+            // 主岛作为桌面工具驻留：隐藏于 Alt+Tab，但仍能点击、激活和输入文字。
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int extendedStyle = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
+            NativeMethods.SetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE,
+                (extendedStyle | NativeMethods.WS_EX_TOOLWINDOW) & ~NativeMethods.WS_EX_APPWINDOW);
             var hwndSource = PresentationSource.FromVisual(this) as HwndSource;
             hwndSource?.AddHook(WndProc);
+            StartOverlayZOrderGuard(hwnd);
         }
 
         /// <summary>诊断开关 ALPHA_ISLAND_HITTEST=1：把每次 WM_NCHITTEST 的判定与岛矩形写进日志。
@@ -63,6 +71,7 @@ namespace alpha_island
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
+            if (msg == 0x0047) _overlayZOrder?.RequestCheck();
             if (msg == 0x007E || msg == 0x02E0)
                 Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
                 {
@@ -78,6 +87,14 @@ namespace alpha_island
                 IslandLog.Debug("InputDebug", $"按钮消息 0x{msg:X4} client=({cx},{cy}) 形态 {_state} 激活={IsActive} 前台=0x{NativeMethods.GetForegroundWindow().ToInt64():X}");
             }
 
+            // Windows activates the HWND before WPF routes the click. Compact
+            // surfaces keep the app's focus so foreground guards see the real source.
+            if (msg == WM_MOUSEACTIVATE && (_state is IslandState.Bar or IslandState.Pill
+                || NativeMethods.TryGetCursorPos(out var cursor) && CompactClickKeepsExternalFocus(cursor.X, cursor.Y)))
+            {
+                handled = true;
+                return new IntPtr(MA_NOACTIVATE); // Deliver the click without activating the island.
+            }
             if (msg == WM_POWERBROADCAST)
             {
                 _battery?.NotifyPowerBroadcast();
@@ -102,6 +119,9 @@ namespace alpha_island
             return IntPtr.Zero;
         }
 
+        private bool CompactClickKeepsExternalFocus(int screenX, int screenY)
+            => _state is IslandState.Bar or IslandState.Pill
+                || IsPointInsideInteractiveZone(screenX, screenY) && !IsPointInsideIsland(screenX, screenY);
         private bool IsPointInsideInteractiveZone(int screenX, int screenY)
         {
             if (IsPointOnMediaSourcesMenu(screenX, screenY)) return true;
@@ -187,12 +207,16 @@ namespace alpha_island
             };
             _mouseHook.Hook();
 
-            // 频谱采集尽早启动：它全程跑在后台线程（Start() 内部自建采集线程），不占 UI 线程、
-            // 不影响问候动画。排到 Phase 2 的第 7 位要十几秒后才就绪，那段时间频谱只能是一条平线。
+            // 已有媒体时启动频谱；否则由首次媒体事件拉起，避免空闲启动分配采集缓冲。
             StartAudioSpectrum();
+            _ = Task.Run(async () =>
+            {
+                await CapabilityProbe.WarmUpAsync().ConfigureAwait(false);
+                if (!_exiting) CapabilityProbe.CheckAll();
+            });
 
             // ── Phase 1（立即）：先播问候动画，UI 线程完全空闲 ──────────────────
-            // 所有重型服务在此期间一概不启动，UI 线程 100% 满帧顺滑展示欢迎动画。
+            // 交互服务等问候结束再加载；能力探测在后台并发预热。
             if (_forcedState == null && _options.GreetingEnabled)
             {
                 _greetingFinishedTcs = new TaskCompletionSource<bool>();
@@ -242,10 +266,10 @@ namespace alpha_island
             // 第一次窗口排版时它就已经被测量/排列过，之后一直保持有效（见 MainWindow.xaml 的 CardCarouselHost）。
         }
 
-        /// <summary>尽早拉起 WASAPI 频谱采集（实现里已把 Start() 丢后台线程，失败不影响启动）。已启动则直接返回。</summary>
+        /// <summary>首次媒体出现时拉起 WASAPI；已启动则直接返回，失败不影响主窗口。</summary>
         private void StartAudioSpectrum()
         {
-            if (_exiting) return;
+            if (_exiting || !_runtimeEnabled || _smtc?.Current?.HasMedia != true) return;
             EnsureService(IslandServiceIds.Spectrum, "频谱采集");
         }
 
@@ -258,6 +282,7 @@ namespace alpha_island
         private async void InitializeServicesDeferred()
         {
             if (_exiting) return;
+            ShowAutoStartupBootTiming();
 
             // 1. 歌词服务（纯内存/网络客户端，极度轻量无阻塞）
             EnsureService(IslandServiceIds.Lyrics, "模块 1/8 [歌词服务]");
@@ -300,9 +325,9 @@ namespace alpha_island
                 if (smtc != null)
                 {
                     var smtcTask = Task.Run(async () => await smtc.InitializeAsync());
-                    // 只等 1.5s：SMTC 首帧拿不到也没关系，下面的兜底与后续事件都会补上，
+                    // 只等 800ms：SMTC 首帧拿不到也没关系，下面的兜底与后续事件都会补上，
                     // 而这里是启动路径上唯一还会阻塞"服务全部就绪"的 await（原来等 4s）。
-                    await Task.WhenAny(smtcTask, Task.Delay(1500));
+                    await Task.WhenAny(smtcTask, Task.Delay(800));
 
                     // 兜底：初始化超时，或在订阅前就已发出首帧时，用 Current 补一次首帧，
                     // 保证媒体状态机（_lastIsPlaying / _sawMedia）一定被初始化。
@@ -321,8 +346,8 @@ namespace alpha_island
 
             if (_exiting) return;
 
-            // 7. 音频：WASAPI 环回采集 → 频谱（已在 Window_Loaded 里提前启动，这里只做兜底）
-            EnsureService(IslandServiceIds.Spectrum, "模块 7/8 [WASAPI频谱]");
+            // 7. 音频：已有媒体才采集，否则等待首次媒体事件。
+            StartAudioSpectrum();
 
             if (_exiting) return;
 
@@ -334,10 +359,10 @@ namespace alpha_island
 
             // 9. 能力探测：把「哪些可选项真能用」提前探出来（关于页 / 各功能降级分支都要读）。
             //    异步能力（无线电、出网）自己后台跑；同步能力丢到线程池，UI 线程不碰注册表/DPAPI。
-            _ = CapabilityProbe.WarmUpAsync();
-            _ = Task.Run(() => CapabilityProbe.CheckAll());
+            // 能力探测已在问候期间从后台预热。
 
-            _progressTimer?.Start();
+            ApplyPowerSavePacing();
+            _ = InitializePortableIntegrationsAsync();
 
             ApplyOptions();   // 建/刷新真实玻璃层，并按"有没有真实模糊"重算本色浓度
 
@@ -357,7 +382,7 @@ namespace alpha_island
                     double c = IslandMetrics.CircleSize;
                     _animator?.SetImmediate(new IslandGeometry(c, c, 18, new CornerRadius(c / 2)));
                     SiriOrbTranslate.X = 0;
-                    SiriOrb.BeginAnimation(OpacityProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SiriOrb,OpacityProperty, null);
                     SiriOrb.Opacity = 1;
                 }
                 else
@@ -383,7 +408,7 @@ namespace alpha_island
                     }
                     else if (_forcedState.Equals("bluetooth", StringComparison.OrdinalIgnoreCase))
                     {
-                        // 调试定态：一级胶囊 + 蓝牙连接提示（3D模型旋转 + 设备名称 + 电量）
+                        // 调试定态：一级胶囊 + 蓝牙连接提示（二维设备图片 + 短动画 + 电量）
                         ShowBluetoothNotify(new BluetoothDeviceInfo("test-id", "AirPods Pro", BluetoothDeviceCategory.Audio, 85, true));
                     }
                 }
@@ -457,21 +482,6 @@ namespace alpha_island
                 ApplyPillLyricText(forcedLyric);
             }
 
-            // 调试：ALPHA_ISLAND_MEMORY_TRIM=<秒> 启动 N 秒后自动触发一次「整理内存」，
-            // 用来验证托盘菜单那条链路（免点鼠标）。
-            string? autoTrim = Environment.GetEnvironmentVariable("ALPHA_ISLAND_MEMORY_TRIM");
-            if (int.TryParse(autoTrim, out int trimAfterSeconds) && trimAfterSeconds > 0)
-            {
-                var trimTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(trimAfterSeconds) };
-                trimTimer.Tick += (_, __) =>
-                {
-                    trimTimer!.Stop();
-                    IslandLog.Debug("Memory", "调试钩子：自动触发「整理内存」");
-                    TrimMemoryNow();
-                };
-                trimTimer.Start();
-            }
-
             // 调试：ALPHA_ISLAND_POWER_FAKE=<瓦数> —— 伪造放电功率（插着电源也能验证功耗提示链路）
             string? fakePower = Environment.GetEnvironmentVariable("ALPHA_ISLAND_POWER_FAKE");
             if (double.TryParse(fakePower, out double fakeWatts) && fakeWatts > 0)
@@ -526,32 +536,6 @@ namespace alpha_island
                     await RunAiSelfTestAsync();
                 };
                 aiTestTimer.Start();
-            }
-
-            // 调试：ALPHA_ISLAND_AI_ASK=<文本> —— 开机 N 秒后（默认 4 秒，可用
-            // ALPHA_ISLAND_AI_ASK_DELAY 改）往 AI 卡片页输入框里灌一句话并发送，
-            // 用来在没有人手的情况下跑通「用户气泡 → 流式追加 → 错误/回复 → 状态复位」整条 UI 链路。
-            // 配合 ALPHA_ISLAND_STATE=card + ALPHA_ISLAND_CARD_PAGE=3，且 options 里 AiEnabled=true。
-            string? aiAsk = Environment.GetEnvironmentVariable("ALPHA_ISLAND_AI_ASK");
-            if (!string.IsNullOrEmpty(aiAsk))
-            {
-                double askAfter = 4;
-                if (double.TryParse(Environment.GetEnvironmentVariable("ALPHA_ISLAND_AI_ASK_DELAY"), out double customAskAfter) &&
-                    customAskAfter > 0)
-                {
-                    askAfter = customAskAfter;
-                }
-
-                var askTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(askAfter) };
-                askTimer.Tick += (_, __) =>
-                {
-                    askTimer!.Stop();
-                    if (AiInputBox == null) return;
-                    AiInputBox.Text = aiAsk;
-                    IslandLog.Debug("Ai", $"调试钩子：向 AI 页发送「{aiAsk}」");
-                    SendAiFromInput();
-                };
-                askTimer.Start();
             }
 
             // 调试：ALPHA_ISLAND_AGENT_FAKE=thinking|streaming|toolwait|error|idle —— 直接往
@@ -691,6 +675,8 @@ namespace alpha_island
         {
             switch ((text ?? string.Empty).Trim().ToLowerInvariant())
             {
+                case "working":
+                case "work": return AgentRunState.Working;
                 case "thinking":
                 case "think": return AgentRunState.Thinking;
                 case "streaming":

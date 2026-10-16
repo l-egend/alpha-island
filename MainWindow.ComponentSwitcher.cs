@@ -126,7 +126,7 @@ public partial class MainWindow
         _componentMenu.Reveal();
         _componentPopup.IsOpen = true;
         if (_runtimeEnabled) Keyboard.Focus(ComponentHandle);
-        _componentMenu.BeginAnimation(UIElement.OpacityProperty, null); _componentMenu.Opacity = 1;
+        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_componentMenu,UIElement.OpacityProperty, null); _componentMenu.Opacity = 1;
         _componentPointerTimer?.Start();
     }
 
@@ -209,9 +209,10 @@ public partial class MainWindow
 
     private string CurrentComponentId() => _state == IslandState.Card ? _pages.ActiveId : _activeMainIslandKey switch
     {
-        "music" => IslandPageIds.Music, "netspeed" or "system" => IslandPageIds.System,
+        "music" => IslandPageIds.Music, "netspeed" => IslandPageIds.NetSpeed,
+        "status" or "charging" or "battery" or ChargingPreviewIslandKey => IslandPageIds.System, "system" => _systemNotifyTargetPage,
         "volume" => IslandPageIds.Volume, "download" => IslandPageIds.Download, "clipboard" => IslandPageIds.Clipboard,
-        DesktopToastKey => IslandPageIds.Notifications, "approval" or "agentstatus" => IslandPageIds.Ai,
+        DesktopToastKey => IslandPageIds.Notifications, "approval" => IslandPageIds.Ai, _ when IsAgentIslandKey(_activeMainIslandKey) => AgentPage(_activeMainIslandKey),
         _ => CardPageFromPinKey(_activeMainIslandKey) ?? _pages.ActiveId
     };
 
@@ -220,7 +221,6 @@ public partial class MainWindow
         int index = _pages.IndexOf(id);
         if (index < 0 || !CanUseComponentSwitcher) { CloseComponentSwitcher(); return; }
         CloseComponentSwitcher();
-        _notificationAutoCard = false;
         if (_state == IslandState.Card) SwitchCardPage(index);
         // The contour menu replaces card pagination for every page, including pages with a compact notification layer.
         else SetState(IslandState.Card, preferredPage: id);
@@ -232,7 +232,8 @@ public partial class MainWindow
     private bool HoldSelectedComponentCard(bool cursorInside)
     {
         if (_state != IslandState.Card || !_componentCardAwaitingPointer) return false;
-        if (!cursorInside || Environment.TickCount64 - _componentSelectedTick < 450) return true;
+        long elapsed = Environment.TickCount64 - _componentSelectedTick;
+        if (elapsed < 450 || (!cursorInside && elapsed < 1500)) return true;
         _componentCardAwaitingPointer = false;
         return false;
     }

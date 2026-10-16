@@ -18,8 +18,8 @@ internal static partial class Program
             var method = typeof(alpha_island.MainWindow).GetMethod(name, flags)!;
             return method.Invoke(window, method.GetParameters().Select((p, i) => i < values.Length ? values[i] : p.DefaultValue).ToArray());
         }
-        T Field<T>(string name) => (T)typeof(alpha_island.MainWindow).GetField(name, flags)!.GetValue(window)!;
-        void Set(string name, object? value) => typeof(alpha_island.MainWindow).GetField(name, flags)!.SetValue(window, value);
+        T Field<T>(string name) => (T)ReadWindowMember(window, name)!;
+        void Set(string name, object? value) => WriteWindowMember(window, name, value);
         var layers = Field<IslandLayerHost>("_layers");
         uint sequence = 10;
         int reads = 0, copied = 0, pasted = 0, failures = 0;

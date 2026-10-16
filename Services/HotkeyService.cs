@@ -17,7 +17,7 @@ namespace alpha_island.Services
     ///  2. 提供底层按键事件总线；
     ///  3. 提供 SendInput 模拟按键能力（如模拟执行 Ctrl+V 粘贴）。
     /// </summary>
-    public sealed class HotkeyService : IDisposable
+    public sealed partial class HotkeyService : IDisposable
     {
         private readonly Dispatcher _dispatcher;
         private readonly KeyboardHook _hook = new();
@@ -25,6 +25,7 @@ namespace alpha_island.Services
         private bool _disposed;
 
         /// <summary>任意按键按下时触发（已封送至 UI Dispatcher）。</summary>
+        internal event EventHandler<KeyboardHookEventArgs>? PreviewKeyPressed;
         public event EventHandler<KeyboardHookEventArgs>? KeyPressed;
 
         public HotkeyService(Dispatcher dispatcher)
@@ -63,6 +64,7 @@ namespace alpha_island.Services
         private void OnHookKeyAction(object? sender, KeyboardHookEventArgs e)
         {
             if (_disposed || !e.IsKeyDown) return;
+            PreviewKeyPressed?.Invoke(this, e); // Hook-thread observers must never perform COM/UI work.
 
             // 检查是否有精确匹配的热键
             var combo = new HotkeyCombo(e.Modifiers, e.Key);
@@ -161,6 +163,7 @@ namespace alpha_island.Services
             _hook.KeyAction -= OnHookKeyAction;
             _hook.Dispose();
             _hotkeys.Clear();
+            PreviewKeyPressed = null; KeyPressed = null;
         }
     }
 }

@@ -9,7 +9,7 @@ internal sealed class WheelAccumulator
         long now = tick ?? Environment.TickCount64;
         if (now - _lastTick > 500 || Math.Sign(delta) != Math.Sign(_remainder)) _remainder = 0;
         _lastTick = now;
-        _remainder = Math.Clamp(_remainder + delta, -1200, 1200);
+        _remainder = (int)Math.Clamp((long)_remainder + delta, -1200, 1200);
         int steps = _remainder / 120;
         _remainder %= 120;
         return steps;

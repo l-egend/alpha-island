@@ -102,6 +102,9 @@ namespace alpha_island
 
         /// <summary>当前胶囊形态该用的宽度：通知层在展时回落到基准宽度。</summary>
         private double CurrentPillWidth => _activeMainIslandKey == "netspeed" ? StatusPillWidth
+            : _activeMainIslandKey == "status" ? ResourcePillWidth
+            : _activeMainIslandKey is ChargingIslandKey or ChargingPreviewIslandKey ? 148
+            : _activeMainIslandKey == "system" && _systemNotifyCompact ? CompactSystemNotifyWidth
             : IslandSizing.PillWidth(PillLyricWantsWide, _pillLyricWidth);
 
         /// <summary>写入胶囊歌词：文本变化时做换行过场动画，然后重新量宽度决定伸缩 / 跑马灯。</summary>
@@ -140,12 +143,12 @@ namespace alpha_island
             if (PillLyric == null || PillLyricStage == null || PillLyricGhost == null) return;
 
             // 无论走哪条分支，新歌词都必须以"无偏移 + 全不透明"收场，所以先复位舞台。
-            PillLyricStage.BeginAnimation(OpacityProperty, null);
-            PillLyricRoll?.BeginAnimation(TranslateTransform.YProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricStage,OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricRoll,TranslateTransform.YProperty, null);
             if (PillLyricRoll != null) PillLyricRoll.Y = 0;
 
             bool stageVisible = PillLayer != null && PillLayer.Visibility == Visibility.Visible && PillLayer.Opacity > 0.05;
-            if (!stageVisible || !PillLyricWantsWide || string.IsNullOrWhiteSpace(oldText) || oldText == newText)
+            if (_smtc?.Current?.IsPlaying != true || !stageVisible || !PillLyricWantsWide || string.IsNullOrWhiteSpace(oldText) || oldText == newText)
             {
                 ResetPillLyricGhost();
                 PillLyricStage.Opacity = 1.0;
@@ -156,18 +159,18 @@ namespace alpha_island
             PillLyricGhost.Text = oldText;
             if (PillLyricGhostScroll != null) PillLyricGhostScroll.X = PillLyricScroll?.X ?? 0.0;
             if (PillLyricGhostRoll != null) PillLyricGhostRoll.Y = 0.0;
-            PillLyricGhost.BeginAnimation(OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricGhost,OpacityProperty, null);
             PillLyricGhost.Opacity = 1.0;
 
             var rollEase = new CubicEase { EasingMode = EasingMode.EaseOut };
             if (PillLyricGhostRoll != null)
             {
                 var ghostRoll = new DoubleAnimation(0.0, -PillLyricRollDistance, PillLyricRollDuration) { EasingFunction = rollEase };
-                PillLyricGhostRoll.BeginAnimation(TranslateTransform.YProperty, ghostRoll);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricGhostRoll,TranslateTransform.YProperty, ghostRoll);
             }
             var ghostFade = new DoubleAnimation(1.0, 0.0, PillLyricRollDuration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
             ghostFade.Completed += (_, _) => ResetPillLyricGhost();
-            PillLyricGhost.BeginAnimation(OpacityProperty, ghostFade);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricGhost,OpacityProperty, ghostFade);
 
             // 新歌词：从下方 +RollDistance 处上移到原位，同时淡入。
             if (PillLyricRoll != null)
@@ -177,20 +180,20 @@ namespace alpha_island
                 stageRoll.Completed += (_, _) =>
                 {
                     if (PillLyricRoll == null) return;
-                    PillLyricRoll.BeginAnimation(TranslateTransform.YProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricRoll,TranslateTransform.YProperty, null);
                     PillLyricRoll.Y = 0.0;
                 };
-                PillLyricRoll.BeginAnimation(TranslateTransform.YProperty, stageRoll);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricRoll,TranslateTransform.YProperty, stageRoll);
             }
             PillLyricStage.Opacity = 0.0;
             var stageFade = new DoubleAnimation(0.0, 1.0, PillLyricRollDuration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
             stageFade.Completed += (_, _) =>
             {
                 if (PillLyricStage == null) return;
-                PillLyricStage.BeginAnimation(OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricStage,OpacityProperty, null);
                 PillLyricStage.Opacity = 1.0;
             };
-            PillLyricStage.BeginAnimation(OpacityProperty, stageFade);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricStage,OpacityProperty, stageFade);
         }
 
         /// <summary>收起"上一句歌词"那一层（动画结束后必须调，否则它停在 HoldEnd 的 0 透明度上继续占位）。</summary>
@@ -198,11 +201,11 @@ namespace alpha_island
         {
             if (PillLyricGhost == null) return;
 
-            PillLyricGhost.BeginAnimation(OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricGhost,OpacityProperty, null);
             PillLyricGhost.Opacity = 0.0;
             if (PillLyricGhostRoll != null)
             {
-                PillLyricGhostRoll.BeginAnimation(TranslateTransform.YProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricGhostRoll,TranslateTransform.YProperty, null);
                 PillLyricGhostRoll.Y = 0.0;
             }
         }
@@ -214,12 +217,12 @@ namespace alpha_island
 
             if (PillLyricStage != null)
             {
-                PillLyricStage.BeginAnimation(OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricStage,OpacityProperty, null);
                 PillLyricStage.Opacity = 1.0;
             }
             if (PillLyricRoll != null)
             {
-                PillLyricRoll.BeginAnimation(TranslateTransform.YProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricRoll,TranslateTransform.YProperty, null);
                 PillLyricRoll.Y = 0.0;
             }
         }
@@ -304,7 +307,7 @@ namespace alpha_island
             // 跑马灯已彻底移除：副本层永远收起，横向位移只用来把整句居中。
             if (PillLyricEcho.Visibility != Visibility.Collapsed) PillLyricEcho.Visibility = Visibility.Collapsed;
 
-            PillLyricScroll.BeginAnimation(TranslateTransform.XProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLyricScroll,TranslateTransform.XProperty, null);
             double center = Math.Max(0.0, (hostWidth - textWidth) / 2.0);
             if (Math.Abs(PillLyricScroll.X - center) > 0.5) PillLyricScroll.X = center;
         }
@@ -455,10 +458,10 @@ namespace alpha_island
                 new CubicEase { EasingMode = EasingMode.EaseIn }));
             anim.Completed += (_, _) =>
             {
-                blur.BeginAnimation(BlurEffect.RadiusProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(blur,BlurEffect.RadiusProperty, null);
                 if (ReferenceEquals(PillLayer.Effect, blur)) PillLayer.Effect = null;
             };
-            blur.BeginAnimation(BlurEffect.RadiusProperty, anim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(blur,BlurEffect.RadiusProperty, anim);
         }
 
         /// <summary>
@@ -469,7 +472,7 @@ namespace alpha_island
             if (PillLayer?.Effect == null) return;
             if (PillLayer.Effect is BlurEffect blur)
             {
-                blur.BeginAnimation(BlurEffect.RadiusProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(blur,BlurEffect.RadiusProperty, null);
             }
             PillLayer.Effect = null;
         }
@@ -521,7 +524,7 @@ namespace alpha_island
             if (CardCarouselHost?.Effect == null) return;
             if (CardCarouselHost.Effect is BlurEffect blur)
             {
-                blur.BeginAnimation(BlurEffect.RadiusProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(blur,BlurEffect.RadiusProperty, null);
             }
             CardCarouselHost.Effect = null;
         }
@@ -577,8 +580,8 @@ namespace alpha_island
 
                 var upFade = new DoubleAnimation(0.0, 1.0, duration) { EasingFunction = ease };
                 var upSlide = new DoubleAnimation(8.0, 0.0, duration) { EasingFunction = ease };
-                PillUpNext.BeginAnimation(UIElement.OpacityProperty, upFade);
-                PillUpNextTranslate?.BeginAnimation(TranslateTransform.YProperty, upSlide);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillUpNext,UIElement.OpacityProperty, upFade);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillUpNextTranslate,TranslateTransform.YProperty, upSlide);
 
                 var specFade = new DoubleAnimation(PillSpectrum.Opacity, 0.0, duration) { EasingFunction = ease };
                 specFade.Completed += (_, __) =>
@@ -588,7 +591,7 @@ namespace alpha_island
                         PillSpectrum.Visibility = Visibility.Collapsed;
                     }
                 };
-                PillSpectrum.BeginAnimation(UIElement.OpacityProperty, specFade);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillSpectrum,UIElement.OpacityProperty, specFade);
             }
             else
             {
@@ -597,7 +600,7 @@ namespace alpha_island
                 var duration = TimeSpan.FromMilliseconds(220);
 
                 var specFade = new DoubleAnimation(0.0, 1.0, duration) { EasingFunction = ease };
-                PillSpectrum.BeginAnimation(UIElement.OpacityProperty, specFade);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillSpectrum,UIElement.OpacityProperty, specFade);
 
                 var upFade = new DoubleAnimation(PillUpNext.Opacity, 0.0, duration) { EasingFunction = ease };
                 var upSlide = new DoubleAnimation(0.0, -8.0, duration) { EasingFunction = ease };
@@ -609,8 +612,8 @@ namespace alpha_island
                         PillUpNext.Opacity = 0.0;
                     }
                 };
-                PillUpNext.BeginAnimation(UIElement.OpacityProperty, upFade);
-                PillUpNextTranslate?.BeginAnimation(TranslateTransform.YProperty, upSlide);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillUpNext,UIElement.OpacityProperty, upFade);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillUpNextTranslate,TranslateTransform.YProperty, upSlide);
 
                 if (!string.IsNullOrWhiteSpace(_pillLyricNormal))
                 {
@@ -654,7 +657,7 @@ namespace alpha_island
             // 若未置顶，且光标不在热区，且未保持播放展开，则收回
             if (!HasVisibleMusicPin && !HasActiveNotification && _state == IslandState.Pill && !IsCursorInHotZone())
             {
-                if (!_options.KeepCompactWhilePlaying || _smtc?.Current?.IsPlaying != true)
+                if (!KeepPlayingMusicIslandVisible)
                 {
                     CollapseToBar();
                 }
@@ -723,7 +726,7 @@ namespace alpha_island
             SyncUpNextContent();
         }
 
-        private bool CanPresentMediaStatePrompt => !ShouldHideForegroundMedia && !_sessionLocked && !_clipboardLocked
+        private bool CanPresentMediaStatePrompt => !GameDoNotDisturbActive && !ShouldHideForegroundMedia && !_sessionLocked && !_clipboardLocked
             && !_fileDragActive && !_exportingTransferItem && _approvalCurrent == null && !_layers.IsActive(ApprovalLayerKey);
 
         private void BringMediaPromptToMain()
@@ -734,7 +737,6 @@ namespace alpha_island
             if (_state == IslandState.Card)
             {
                 CloseComponentSwitcher();
-                _notificationAutoCard = false;
                 int index = _pages.IndexOf(IslandPageIds.Music);
                 if (index >= 0 && _pages.ActiveIndex != index) SwitchCardPage(index);
             }
@@ -751,6 +753,7 @@ namespace alpha_island
             _activeMainIslandKey = "music";
             _layers.PreferredWinnerKey = null; // 允许问候语正常独占主岛
             _layers.ShowSeconds(IslandLayerHost.GreetingKey, _options.GreetingSeconds);
+            SyncVolumeFlyoutTakeover();
             GreetingText.Text = string.IsNullOrWhiteSpace(_options.GreetingText) ? "欢迎回来" : _options.GreetingText;
 
             ScheduleGreetingDismiss();
@@ -788,6 +791,7 @@ namespace alpha_island
             if (!_greetingShowing && !GreetingActive) return;
 
             _layers.Hide(IslandLayerHost.GreetingKey);
+            SyncVolumeFlyoutTakeover();
             // 欢迎结束不能抢回刚由复制等事件选中的主岛。
             if (!IsIslandActive(_activeMainIslandKey))
             {
@@ -798,7 +802,7 @@ namespace alpha_island
             // 若未置顶，且光标不在热区，且没有正在播放的媒体，自动平滑收回至细条
             if (!HasVisibleMusicPin && !_layers.AnyPinned && _state == IslandState.Pill && !IsCursorInHotZone())
             {
-                if (!HasActiveNotification && (!_options.KeepCompactWhilePlaying || _smtc?.Current?.IsPlaying != true))
+                if (!HasActiveNotification && !KeepPlayingMusicIslandVisible)
                 {
                     CollapseToBar();
                     return;

@@ -25,6 +25,7 @@ internal sealed partial class PluginHost : IDisposable
         internal Context? Context { get; set; }
         internal List<PluginIslandPage> Pages { get; } = new();
         internal List<PluginService> Started { get; } = new();
+        internal Task Teardown { get; set; } = Task.CompletedTask;
         internal bool Active { get; set; }
         internal bool Running => Active && Instance != null && Error.Length == 0;
     }
@@ -38,6 +39,8 @@ internal sealed partial class PluginHost : IDisposable
         internal readonly List<PluginSetting> Settings = new();
         internal readonly List<PluginService> Services = new();
         internal readonly List<PluginNetworkSource> NetworkSources = new();
+        internal readonly List<PluginAction> Actions = new();
+        internal Func<System.Windows.FrameworkElement>? SettingsView;
         internal bool Sealed;
         internal Context(PluginHost host, Entry entry) { _host = host; _entry = entry; }
         public string PluginId => _entry.Manifest!.Id;
@@ -94,14 +97,55 @@ internal sealed partial class PluginHost : IDisposable
             var definition = Settings.FirstOrDefault(s => s.Key == key);
             if (definition == null) return fallback;
             var value = _host.ReadSetting(_entry, definition);
-            try { return value.Deserialize<T>()!; } catch { return fallback; }
+            try { return value.Deserialize<T>() ?? fallback; } catch { return fallback; }
         }
         public void OpenPage(string key)
         {
             Dispatcher.VerifyAccess();
-            if (_entry.Running && _entry.Pages.Any(p => p.Id == PageId(PluginId, key))) _host._open(PageId(PluginId, key));
+            if (_entry.Running && _entry.Pages.Any(p => p.Id == PageId(PluginId, key) && p.IsAvailable(_host._options))) _host._open(PageId(PluginId, key));
+        }
+        public void RegisterAction(PluginAction action)
+        {
+            VerifyRegistration(action.Key);
+            if (Actions.Any(a => a.Key == action.Key) || string.IsNullOrWhiteSpace(action.Title) || action.Invoke == null) throw new ArgumentException("插件操作无效或重复");
+            Actions.Add(action);
+        }
+        public void RegisterSettingsView(Func<System.Windows.FrameworkElement> createView)
+        { VerifyRegistration("settings"); if (SettingsView != null) throw new InvalidOperationException("设置界面已注册"); SettingsView = createView; }
+        public string DataDirectory => _host.DataRoot;
+        public string ConfigDirectory => Path.Combine(DataDirectory, "config");
+        public T ReadConfiguration<T>(string key, T fallback)
+        { Dispatcher.VerifyAccess(); try { return _host._options.Extras.TryGetValue(key, out var value) ? value.Deserialize<T>() ?? fallback : fallback; } catch { return fallback; } }
+        public void WriteConfiguration(string key, object value)
+        {
+            Dispatcher.VerifyAccess(); if (Cancellation.IsCancellationRequested || _host._disposed) return;
+            if (key == "AiApiKey" && value is not ""
+                && !(value is JsonElement element && element.ValueKind == JsonValueKind.String && element.GetString() == ""))
+                throw new ArgumentException("密钥必须通过加密仓保存");
+            var json = JsonSerializer.SerializeToElement(value);
+            if (_host._options.Extras.TryGetValue(key, out var old) && old.GetRawText() == json.GetRawText()) return;
+            _host._options.Extras[key] = json;
+            _host.ConfigurationChanged?.Invoke();
+        }
+        public void Refresh() { if (!_host._disposed && !Cancellation.IsCancellationRequested) _host.AvailabilityChanged?.Invoke(); }
+        public void OpenSettings() { if (_entry.Running) _host.SettingsRequested?.Invoke(); }
+        public void ReportActivity(string state, string detail)
+        {
+            Dispatcher.VerifyAccess(); if (Cancellation.IsCancellationRequested || _host._disposed) return;
+            string owner = "plugin:" + PluginId;
+            if (state == "idle") AgentStatus.Reset(owner:owner);
+            else AgentStatus.Set(state switch { "working" => AgentRunState.Working, "streaming" => AgentRunState.Streaming, "error" => AgentRunState.Error, "waiting" => AgentRunState.ToolWait, _ => AgentRunState.Thinking }, detail, owner);
         }
         public void Log(string message) => IslandLog.Info("Plugin:" + PluginId, message);
+        public void ReportBluetoothBattery(PluginBluetoothBattery battery)
+        {
+            Dispatcher.VerifyAccess();
+            if (_host._disposed || !_entry.Running || Cancellation.IsCancellationRequested
+                || string.IsNullOrWhiteSpace(battery.Id) || battery.Id.Length > 128
+                || string.IsNullOrWhiteSpace(battery.Name) || battery.Name.Length > 256
+                || battery.Percent is < 0 or > 100) return;
+            _host.DeviceBatteryReported?.Invoke(battery with { Id = PluginId + "/" + battery.Id });
+        }
         public void NotifyPage(string key, string title, string detail, double seconds = 6)
         {
             Dispatcher.VerifyAccess();
@@ -127,13 +171,54 @@ internal sealed partial class PluginHost : IDisposable
         Action<PluginIslandPage> attach, Action<PluginIslandPage> detach, Action<string> open)
     { _dispatcher = dispatcher; _options = options; _roots = roots.ToArray(); _attach = attach; _detach = detach; _open = open; }
     internal IReadOnlyList<Entry> Entries => _entries;
+    internal Task ShutdownCompletion => Task.WhenAll(_entries.Select(entry => entry.Teardown));
     internal event Action? Changed;
+    internal event Action<PluginBluetoothBattery>? DeviceBatteryReported;
     internal event Action<string, string, string, double>? PageNotificationRequested;
+    internal string DataRoot { get; set; } = AppPaths.Root;
+    internal event Action? ConfigurationChanged;
+    internal event Action? AvailabilityChanged;
+    internal event Action? SettingsRequested;
+    private (Entry Owner, PluginAction Action)[] AvailableActionEntries()
+    {
+        _dispatcher.VerifyAccess();
+        if (_disposed) return Array.Empty<(Entry, PluginAction)>();
+        var available = new List<(Entry, PluginAction)>();
+        foreach (var entry in _entries.Where(e => e.Running && e.Context != null).ToArray())
+        {
+            try
+            {
+                var actions = entry.Context!.Actions.ToArray().Where(action => action.Available?.Invoke() ?? true).ToArray();
+                if (entry.Running) available.AddRange(actions.Select(action => (entry, action)));
+            }
+            catch (Exception ex) { Fail(entry, ex); }
+        }
+        return available.ToArray();
+    }
+    internal IReadOnlyList<PluginAction> AvailableActions => AvailableActionEntries().Select(item => item.Action).ToArray();
+    internal bool InvokeAction(string key)
+    {
+        var item = AvailableActionEntries().FirstOrDefault(item => item.Action.Key == key);
+        if (item.Owner == null || !item.Owner.Running) return false;
+        try { item.Action.Invoke(); return true; }
+        catch (Exception ex) { Fail(item.Owner, ex); return false; }
+    }
     internal static string EnabledKey(string id) => $"plugin/{id}/enabled";
     internal static string SettingKey(string id, string key) => $"plugin/{id}/setting/{key}";
+    internal async Task<bool> PrefillAsync(string pageId, string text)
+    {
+        var entry = _entries.FirstOrDefault(entry => entry.Running && entry.Pages.Any(page => page.Id == pageId && page.IsAvailable(_options)));
+        if (entry?.Instance is not Isolation.IsolatedPlugin proxy || entry.Context == null || entry.Manifest == null) return false;
+        var page = entry.Context.Pages.FirstOrDefault(page => PageId(entry.Manifest.Id, page.Key) == pageId);
+        if (page == null) return false;
+        try { return await proxy.PrefillAsync(page.Key, text); }
+        catch (Exception ex) { if (ReferenceEquals(entry.Instance, proxy)) Fail(entry, ex); return false; }
+    }
     internal static string PageId(string id, string key) => $"plugin:{id}/{key}";
+    internal string? PageForActivity(string owner) => _entries.Where(e=>e.Running&&owner=="plugin:"+e.Manifest!.Id)
+        .SelectMany(e=>e.Pages).OrderBy(p=>p.Order).FirstOrDefault(p=>p.IsAvailable(_options))?.Id;
     internal static bool IsEnabled(IslandOptions options, string id) => options.Extras.TryGetValue(EnabledKey(id), out var value)
-        && value.ValueKind == JsonValueKind.True;
+        ? value.ValueKind == JsonValueKind.True : id is "ai.api-chat" or "ai.local-agents";
 
     internal void Discover()
     {
@@ -196,29 +281,42 @@ internal sealed partial class PluginHost : IDisposable
     private void Start(Entry entry)
     {
         entry.Attempted = true;
+        entry.Context = new Context(this, entry);
+        Isolation.IsolatedPlugin? proxy = null;
+        proxy = new Isolation.IsolatedPlugin(_dispatcher,
+            () => _options.Extras.Where(pair => pair.Value.ValueKind != JsonValueKind.Undefined).ToDictionary(pair => pair.Key, pair => pair.Value.Clone()),
+            ex => { if (!_disposed && ReferenceEquals(entry.Instance, proxy)) Fail(entry, ex); });
+        entry.Instance = proxy;
+        _ = StartIsolated(entry, proxy);
+    }
+    private async Task StartIsolated(Entry entry, Isolation.IsolatedPlugin proxy)
+    {
         try
         {
-            string assembly = Path.Combine(entry.Directory, entry.Manifest!.Assembly);
-            entry.Loader = new PluginLoadContext(assembly);
-            var type = entry.Loader.LoadPluginAssembly(assembly).GetType(entry.Manifest.EntryType, throwOnError: true)!;
-            if (!typeof(IIslandPlugin).IsAssignableFrom(type) || type.IsAbstract) throw new InvalidDataException("入口类型必须实现 IIslandPlugin");
-            entry.Instance = (IIslandPlugin)Activator.CreateInstance(type)!;
-            entry.Context = new Context(this, entry);
-            entry.Instance.Initialize(entry.Context);
-            entry.Context.Sealed = true;
-            foreach (var page in entry.Context.Pages) entry.Pages.Add(new PluginIslandPage(entry.Manifest.Id, page, ex => QueueFailure(entry, ex)));
-            foreach (var service in entry.Context.Services)
+            var context = entry.Context ?? throw new InvalidOperationException("插件上下文未创建");
+            var token = context.Lifetime;
+            await entry.Teardown.ConfigureAwait(false);
+            var initialization = await _dispatcher.InvokeAsync(() =>
+                _disposed || !ReferenceEquals(entry.Instance, proxy) || token.IsCancellationRequested
+                    ? Task.CompletedTask : proxy.InitializeAsync(context, entry.Manifest!, entry.Directory));
+            await initialization.ConfigureAwait(false);
+            await _dispatcher.InvokeAsync(() =>
             {
-                // 先记录再启动：Start 中途失败时也调用 Stop 清理已经分配的资源。
-                entry.Started.Add(service); service.Start(entry.Context.Lifetime);
-            }
-            foreach (var page in entry.Pages) _attach(page);
-            entry.Active = true;
-            IslandLog.Info("Plugins", $"已启用 {entry.Manifest.Id} {entry.Manifest.Version}");
+                if (_disposed || !ReferenceEquals(entry.Instance, proxy) || token.IsCancellationRequested) return;
+                context.Sealed = true;
+                foreach (var page in context.Pages) entry.Pages.Add(new PluginIslandPage(entry.Manifest!.Id, page, ex => QueueFailure(entry, ex)));
+                foreach (var page in entry.Pages) _attach(page);
+                entry.Active = true; proxy.OnSettingsChanged();
+                IslandLog.Info("Plugins", $"已在独立进程启用 {entry.Manifest!.Id} pid={proxy.ProcessId}");
+                Changed?.Invoke();
+            });
         }
-        catch (Exception ex) { Fail(entry, ex); }
+        catch (Exception ex)
+        {
+            if (!_dispatcher.HasShutdownStarted)
+                await _dispatcher.InvokeAsync(() => { if (!_disposed && ReferenceEquals(entry.Instance, proxy)) Fail(entry, ex); });
+        }
     }
-
     private void QueueFailure(Entry entry, Exception ex)
     {
         var failedInstance = entry.Instance;
@@ -240,7 +338,9 @@ internal sealed partial class PluginHost : IDisposable
         for (int i = entry.Started.Count - 1; i >= 0; i--) TryCleanup(entry.Started[i].Stop);
         entry.Started.Clear();
         if (entry.Instance != null) TryCleanup(entry.Instance.Dispose);
+        if (entry.Instance is Isolation.IsolatedPlugin stopped) entry.Teardown = stopped.ShutdownCompletion;
         entry.Instance = null;
+        if (entry.Manifest != null) AgentStatus.Reset(owner:"plugin:" + entry.Manifest.Id);
         entry.Context?.Cancellation.Dispose(); entry.Context = null;
         entry.Loader?.Unload(); entry.Loader = null;
     }
@@ -263,11 +363,8 @@ internal sealed partial class PluginHost : IDisposable
             {
                 if (!item.Entry.Running) continue;
                 var sample = item.Source.Read();
-                if (!item.Entry.Running || sample == null || now - sample.Timestamp > TimeSpan.FromSeconds(5)
-                    || sample.Timestamp - now > TimeSpan.FromSeconds(1) || !double.IsFinite(sample.DownBytesPerSecond)
-                    || !double.IsFinite(sample.UpBytesPerSecond) || sample.DownBytesPerSecond < 0 || sample.UpBytesPerSecond < 0
-                    || sample.DownloadCounterBytes < 0 || sample.UploadCounterBytes < 0 || sample.TodayDownBytes < 0 || sample.TodayUpBytes < 0) continue;
-                return ($"{item.Entry.Manifest!.Id}/{item.Source.Key}", item.Source.Title, sample);
+                if (!item.Entry.Running || !PluginNetworkRules.IsUsable(sample, now)) continue;
+                return ($"{item.Entry.Manifest!.Id}/{item.Source.Key}", item.Source.Title, sample!);
             }
             catch (Exception ex) { Fail(item.Entry, ex); }
         }

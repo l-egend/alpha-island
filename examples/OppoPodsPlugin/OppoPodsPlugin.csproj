@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <AssemblyName>AlphaIsland.Plugins.OppoPods</AssemblyName>
-    <Version>0.1.2</Version>
+    <Version>0.1.3</Version>
     <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
@@ -18,6 +18,10 @@
     <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
     <EmbeddedResource Include="upstream\Data\DeviceModels.json" LogicalName="OppoPodsManager.DeviceModels.json" />
     <EmbeddedResource Include="upstream\Data\EqModeNames*.json" LogicalName="OppoPodsManager.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="upstream2\Data\Vivo.DeviceModels.json" LogicalName="AlphaIsland.EarbudsV2.Assets.Vivo.Data.DeviceModels.json" />
+    <EmbeddedResource Include="upstream2\Data\Oplus.DeviceModels.json" LogicalName="AlphaIsland.EarbudsV2.Assets.Oplus.Data.DeviceModels.json" />
+    <EmbeddedResource Include="upstream2\Data\Oplus.EqModeNames.json" LogicalName="AlphaIsland.EarbudsV2.Assets.Oplus.Data.EqModeNames.json" />
+    <EmbeddedResource Include="upstream2\Data\Strings.json" LogicalName="AlphaIsland.EarbudsV2.Assets.Localization.Strings.json" />
     <None Update="plugin.json;LICENSE;THIRD-PARTY-NOTICES.md;README.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="DeployEarbudsPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">

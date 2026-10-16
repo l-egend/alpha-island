@@ -233,7 +233,7 @@ internal static partial class Program
         surface.UpdateLayout();
         SaveThemePreview(surface, "docs/screens/plugin-earbuds.png");
 
-        string source = Path.GetFullPath("examples/OppoPodsPlugin/bin/Debug/net8.0-windows10.0.19041.0");
+        string source = Path.GetFullPath($"examples/OppoPodsPlugin/bin/{TestBuildConfiguration}/net8.0-windows10.0.19041.0");
         string pluginRoot = Path.Combine(root, "earbud-plugins"), folder = Path.Combine(pluginRoot, "oppo.pods"); Directory.CreateDirectory(folder);
         foreach (string name in new[] { "AlphaIsland.Plugins.OppoPods.dll", "AlphaIsland.Plugins.OppoPods.deps.json", "plugin.json" }) File.Copy(Path.Combine(source, name), Path.Combine(folder, name));
         var options = new IslandOptions(); var viewport = new Grid();

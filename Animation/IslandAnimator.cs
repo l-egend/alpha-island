@@ -71,6 +71,10 @@ namespace alpha_island.Animation
         private readonly DropShadowEffect? _shadow;
         private readonly ShapeRect? _specular;
         private readonly TranslateTransform? _specularTranslate;
+        private readonly LiquidIslandShape? _liquidShape;
+        private double _initialNeckX, _initialNeckY;
+        public Action? FrameApplied { get; set; }
+        public Action<bool>? RunningChanged { get; set; }
 
         private readonly GelSpring _main = new();
         private readonly GelSpring _bulge = new();
@@ -129,7 +133,7 @@ namespace alpha_island.Animation
 
         public IslandAnimator(Border body, TranslateTransform translate, ScaleTransform squashScale,
             TranslateTransform? sheen = null, DropShadowEffect? shadow = null,
-            ShapeRect? specular = null, TranslateTransform? specularTranslate = null)
+            ShapeRect? specular = null, TranslateTransform? specularTranslate = null, LiquidIslandShape? liquidShape = null)
         {
             _body = body ?? throw new ArgumentNullException(nameof(body));
             _translate = translate ?? throw new ArgumentNullException(nameof(translate));
@@ -138,11 +142,24 @@ namespace alpha_island.Animation
             _shadow = shadow;
             _specular = specular;
             _specularTranslate = specularTranslate;
+            _liquidShape = liquidShape;
             _from = CurrentGeometry();
             _to = _from;
         }
 
         public bool IsRunning => _running;
+        public bool PreservePowerTransitionMotion { get; set; }
+        public Rect MotionBounds
+        {
+            get
+            {
+                double width = Math.Max(_from.Width, Math.Max(_to.Width, _via?.Width ?? 0)) * 1.2 + 12;
+                double top = Math.Min(_from.Top, Math.Min(_to.Top, _via?.Top ?? _to.Top)) - 12;
+                double bottom = Math.Max(_from.Top + _from.Height, Math.Max(_to.Top + _to.Height,
+                    (_via?.Top ?? 0) + (_via?.Height ?? 0))) + Math.Max(_from.Height, _to.Height) * .2 + 12;
+                return new Rect(-width / 2, top, width, Math.Max(1, bottom - top));
+            }
+        }
 
         /// <summary>读回当前实际几何（含动画中途的中间值）。</summary>
         public IslandGeometry CurrentGeometry()
@@ -183,6 +200,8 @@ namespace alpha_island.Animation
             Action? completed = null, IslandGeometry? via = null, double viaAt = 0.5,
             double followLag = 1.0, double? followDelay = null)
         {
+            _initialNeckX = _liquidShape?.NeckX ?? 0;
+            _initialNeckY = _liquidShape?.NeckY ?? 0;
             Stop("MorphTo");
 
             // 「减弱动效」或软件渲染：不做逐帧积分，直接落到目标几何。
@@ -213,6 +232,7 @@ namespace alpha_island.Animation
             _lastTick = -1;
 
             _duration = duration.HasTimeSpan ? Math.Max(0.08, duration.TimeSpan.TotalSeconds) : 0.4;
+            _slowFrames = 0;
             _fallbackEase = ease;
 
             if (gel)
@@ -236,6 +256,7 @@ namespace alpha_island.Animation
 
             _running = true;
             CompositionTarget.Rendering += OnRendering;
+            RunningChanged?.Invoke(true);
         }
 
         /// <summary>中途打断（用户又动鼠标了）。会停在被调用的那一刻，不跳到终点。</summary>
@@ -254,6 +275,7 @@ namespace alpha_island.Animation
                 Trace?.Flush();
                 CompositionTarget.Rendering -= OnRendering;
                 _running = false;
+                RunningChanged?.Invoke(false);
             }
             _lastTick = -1;
             _completed = null;
@@ -278,19 +300,18 @@ namespace alpha_island.Animation
             double dt = _lastTick < 0 ? 1.0 / 60.0 : now - _lastTick;
             _lastTick = now;
             if (dt <= 0) dt = 1.0 / 60.0;
-            if (dt > 0.1) dt = 0.1;
+            if (dt > (PreservePowerTransitionMotion ? .05 : .1)) dt = PreservePowerTransitionMotion ? .05 : .1;
 
             // 帧预算看门狗：远程桌面 / 虚拟机 / 显卡驱动异常时，逐帧积分只会把 CPU 烧掉、
             // 帧率还是个位数 —— 连续几帧都慢就直接跳到终点（等价降级成 SetImmediate），
-            // 并把整机标成软件渲染，后续形变一开始就瞬变。
-            if (dt > SlowFrameSeconds)
+            // 仅结束本次动画；启动时加载服务导致的掉帧不能改写真实硬件渲染层级。
+            if (!PreservePowerTransitionMotion && dt > SlowFrameSeconds)
             {
                 if (++_slowFrames >= SlowFrameLimit)
                 {
                     Core.IslandLog.Warn("Motion", string.Format(
                         System.Globalization.CultureInfo.InvariantCulture,
                         "连续 {0} 帧超预算（最近 {1:F0}ms）→ 形变降级为瞬变", _slowFrames, dt * 1000.0));
-                    MotionPolicy.MarkSoftwareRendering();
                     FinishImmediately("slow-frames");
                     return;
                 }
@@ -409,6 +430,16 @@ namespace alpha_island.Animation
             _body.Width = Math.Max(1, g.Width);
             _body.Height = Math.Max(1, g.Height);
             _body.CornerRadius = g.Corner;
+            if (_liquidShape != null)
+            {
+                double rawPhase = Math.Clamp(_elapsed / _duration, 0, 1);
+                double pulse = _running && _useGel && !MotionPolicy.InstantMorph && !MotionPolicy.PowerSave ? LiquidIslandShape.Pulse(rawPhase) : 0;
+                double dx = Math.Abs(_to.Width - _from.Width), dy = Math.Abs(_to.Height - _from.Height);
+                double mix = dx + dy < .1 ? .5 : dx / (dx + dy);
+                double carry = _running && _useGel ? 1 - rawPhase * rawPhase * (3 - 2 * rawPhase) : 0;
+                _liquidShape.Update(g, _initialNeckX * carry + pulse * mix, _initialNeckY * carry + pulse * (1 - mix));
+                FrameApplied?.Invoke();
+            }
 
             if (Math.Abs(_translate.Y - g.Top) > 0.01) _translate.Y = g.Top;
 

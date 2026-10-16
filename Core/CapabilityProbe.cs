@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
@@ -26,10 +25,6 @@ namespace alpha_island.Core
         RadiosInfo = 2,
         /// <summary>CapabilityAccessManager  ConsentStore —— 麦克风/摄像头占用（只读注册表）。</summary>
         PrivacyConsentStore = 3,
-        /// <summary>对自身 EmptyWorkingSet（免提权）。</summary>
-        MemoryTrimSelf = 4,
-        /// <summary>整理其它进程的内存（需要管理员，默认不做）。</summary>
-        MemoryTrimSystem = 5,
         /// <summary>NetworkInterface 速率统计（已排除 Loopback/Tunnel）。</summary>
         NetworkAdapterStats = 6,
         /// <summary>真出网（天气/AI 等网络功能的前提）。</summary>
@@ -95,8 +90,6 @@ namespace alpha_island.Core
             IslandCapability.TransparentEffects,
             IslandCapability.RadiosInfo,
             IslandCapability.PrivacyConsentStore,
-            IslandCapability.MemoryTrimSelf,
-            IslandCapability.MemoryTrimSystem,
             IslandCapability.NetworkAdapterStats,
             IslandCapability.OutboundNetwork,
             IslandCapability.Dpapi,
@@ -250,8 +243,6 @@ namespace alpha_island.Core
         {
             IslandCapability.TransparentEffects => ProbeTransparentEffects(),
             IslandCapability.PrivacyConsentStore => ProbeConsentStore(),
-            IslandCapability.MemoryTrimSelf => ProbeTrimSelf(),
-            IslandCapability.MemoryTrimSystem => ProbeTrimSystem(),
             IslandCapability.NetworkAdapterStats => ProbeAdapters(),
             IslandCapability.Dpapi => ProbeDpapi(),
             _ => new CapabilityResult(capability, CapabilityStatus.Unsupported, "未知能力"),
@@ -324,35 +315,6 @@ namespace alpha_island.Core
                 return new CapabilityResult(IslandCapability.PrivacyConsentStore, CapabilityStatus.Denied,
                     "读 ConsentStore 失败：" + ex.GetType().Name);
             }
-        }
-
-        private static CapabilityResult ProbeTrimSelf()
-        {
-            try
-            {
-                IntPtr self = NativeMethods.GetCurrentProcess();
-                if (NativeMethods.EmptyWorkingSet(self))
-                    return new CapabilityResult(IslandCapability.MemoryTrimSelf, CapabilityStatus.Available,
-                        "可对自身调用 EmptyWorkingSet（免提权）");
-
-                return new CapabilityResult(IslandCapability.MemoryTrimSelf, CapabilityStatus.Degraded,
-                    "EmptyWorkingSet(自身) 失败 win32=" + Marshal.GetLastWin32Error());
-            }
-            catch (Exception ex)
-            {
-                return new CapabilityResult(IslandCapability.MemoryTrimSelf, CapabilityStatus.Unsupported,
-                    "psapi 不可用：" + ex.GetType().Name);
-            }
-        }
-
-        private static CapabilityResult ProbeTrimSystem()
-        {
-            if (IsElevated())
-                return new CapabilityResult(IslandCapability.MemoryTrimSystem, CapabilityStatus.Degraded,
-                    "当前已提权，但仍需启用 SeProfileSingleProcessPrivilege 才能整理其它进程");
-
-            return new CapabilityResult(IslandCapability.MemoryTrimSystem, CapabilityStatus.Denied,
-                "需要管理员权限（本程序不提权，默认不做全系统内存整理）");
         }
 
         private static CapabilityResult ProbeAdapters()
@@ -458,17 +420,5 @@ namespace alpha_island.Core
             }
         }
 
-        private static bool IsElevated()
-        {
-            try
-            {
-                using var identity = WindowsIdentity.GetCurrent();
-                return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
-            }
-            catch
-            {
-                return false;
-            }
-        }
     }
 }

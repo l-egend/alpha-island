@@ -18,15 +18,15 @@ namespace alpha_island
         {
             foreach (var row in new FrameworkElement[] { LyricPrev, LyricCurrentHost, LyricTranslation, LyricNext })
             {
-                row.BeginAnimation(UIElement.OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(row,UIElement.OpacityProperty, null);
                 row.Opacity = 1;
                 if (row.RenderTransform is TranslateTransform translate)
                 {
-                    translate.BeginAnimation(TranslateTransform.YProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate,TranslateTransform.YProperty, null);
                     translate.Y = 0;
                 }
                 if (row.Effect is BlurEffect blur)
-                    blur.BeginAnimation(BlurEffect.RadiusProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(blur,BlurEffect.RadiusProperty, null);
             }
             LyricCurrentHost.Effect = null;
             double radius = MotionPolicy.SoftwareRendering ? 0 : 2.2;
@@ -47,10 +47,10 @@ namespace alpha_island
             { EasingFunction = ease, FillBehavior = FillBehavior.Stop };
             foreach (var row in new FrameworkElement[] { LyricPrev, LyricCurrentHost, LyricTranslation, LyricNext })
             {
-                ((TranslateTransform)row.RenderTransform).BeginAnimation(TranslateTransform.YProperty, Tween(9, 0));
-                row.BeginAnimation(UIElement.OpacityProperty, Tween(.65, 1));
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(((TranslateTransform)row.RenderTransform),TranslateTransform.YProperty, Tween(9, 0));
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(row,UIElement.OpacityProperty, Tween(.65, 1));
                 if (row.Effect is BlurEffect blur)
-                    blur.BeginAnimation(BlurEffect.RadiusProperty, Tween(4, blur.Radius));
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(blur,BlurEffect.RadiusProperty, Tween(4, blur.Radius));
             }
 
             var focusBlur = new BlurEffect { Radius = 0, RenderingBias = RenderingBias.Performance };
@@ -61,7 +61,7 @@ namespace alpha_island
                 // 快速跳曲/跳句时，旧动画不得清掉新一轮效果。
                 if (ReferenceEquals(LyricCurrentHost.Effect, focusBlur)) LyricCurrentHost.Effect = null;
             };
-            focusBlur.BeginAnimation(BlurEffect.RadiusProperty, focusAnimation);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(focusBlur,BlurEffect.RadiusProperty, focusAnimation);
         }
 
         private void SetMusicProgress(double ratio)
@@ -88,10 +88,10 @@ namespace alpha_island
         {
             double height = hovered ? 12 : 5;
             double from = capsule.ActualHeight;
-            capsule.BeginAnimation(FrameworkElement.HeightProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(capsule,FrameworkElement.HeightProperty, null);
             capsule.Height = height;
             if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave || from <= 0) return;
-            capsule.BeginAnimation(FrameworkElement.HeightProperty,
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(capsule,FrameworkElement.HeightProperty,
                 new DoubleAnimation(from, height, TimeSpan.FromMilliseconds(150))
                 { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop });
         }

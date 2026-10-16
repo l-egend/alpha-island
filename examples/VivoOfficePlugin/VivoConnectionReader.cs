@@ -1,14 +1,16 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
 namespace AlphaIsland.Plugins.VivoOffice;
 
-// Only these three device fields leave the reader. Flags qualify current/cached data.
+// Device display fields only. Flags distinguish current information from connection history.
 internal sealed record VivoConnection(string DeviceName = "", string ConnectionMethod = "",
-    DateTimeOffset? ConnectedAt = null, bool IsCurrent = false, string Notice = "")
+    DateTimeOffset? ConnectedAt = null, bool IsCurrent = false, string Notice = "", string IpAddress = "", bool IsIpCurrent = false)
 {
     internal string DisplayTime => ConnectedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? "—";
     internal string Summary => DeviceName.Length == 0 ? "暂无连接记录"
@@ -52,40 +54,67 @@ internal sealed class VivoConnectionReader
                         ConnectionMethod = connection.ConnectionMethod.Length == 0 ? fallback.ConnectionMethod : connection.ConnectionMethod,
                         ConnectedAt = connection.ConnectedAt ?? fallback.ConnectedAt
                     };
+                    if (connection.IpAddress.Length > 0) connection = connection with { IsIpCurrent = true };
+                    else
+                    {
+                        var config = ConfigConnection(current);
+                        if (config.Ip.Length > 0) connection = connection with { IpAddress = config.Ip, IsIpCurrent = true };
+                        else if (SameDevice(current, recent)) connection = connection with { IpAddress = fallback.IpAddress };
+                    }
                     return _previous = connection with { IsCurrent = true };
                 }
             }
-            bool? currentFromConfig = running && fallback.DeviceName.Length > 0 ? ConfigContains(recent) : false;
-            return _previous = fallback with { IsCurrent = currentFromConfig == true,
-                Notice = currentFromConfig == null ? "连接状态更新中，显示上次记录" : "" };
+            var configured = running && fallback.DeviceName.Length > 0 ? ConfigConnection(recent) : (Current: (bool?)false, Ip: "");
+            return _previous = fallback with { IsCurrent = configured.Current == true,
+                IpAddress = configured.Ip.Length > 0 ? configured.Ip : fallback.IpAddress,
+                IsIpCurrent = configured.Current == true && configured.Ip.Length > 0,
+                Notice = configured.Current == null ? "连接状态更新中，显示上次记录" : "" };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return _previous with { IsCurrent = false, Notice = "连接记录更新中，显示上次记录" };
+            return _previous with { IsCurrent = false, IsIpCurrent = false, Notice = "连接记录更新中，显示上次记录" };
         }
     }
-    private bool? ConfigContains(JsonElement recent)
+    private (bool? Current, string Ip) ConfigConnection(JsonElement device)
     {
-        string id = Identity(recent);
-        if (id.Length == 0 || !File.Exists(_configPath)) return false;
+        string id = Identity(device);
+        if (id.Length == 0 || !File.Exists(_configPath)) return (false, "");
         try
         {
             using var config = ReadDocument(_configPath);
             var root = config.RootElement;
-            if (root.ValueKind != JsonValueKind.Object) return false;
-            if (root.TryGetProperty("getConnectedDeviceIdList", out var ids) && ids.ValueKind == JsonValueKind.Array
-                && ids.EnumerateArray().Any(e => e.ValueKind == JsonValueKind.String && e.GetString() == id)) return true;
-            return root.TryGetProperty("getConnectedDeviceInfoList", out var devices) && devices.ValueKind == JsonValueKind.Array
-                && devices.EnumerateArray().Any(e => Text(e, "deviceId") == id);
+            if (root.ValueKind != JsonValueKind.Object) return (false, "");
+            if (root.TryGetProperty("getConnectedDeviceInfoList", out var devices) && devices.ValueKind == JsonValueKind.Array)
+            {
+                var match = devices.EnumerateArray().FirstOrDefault(e => Identity(e) == id);
+                if (match.ValueKind == JsonValueKind.Object) return (true, LocalIp(match));
+            }
+            bool current = root.TryGetProperty("getConnectedDeviceIdList", out var ids) && ids.ValueKind == JsonValueKind.Array
+                && ids.EnumerateArray().Any(e => e.ValueKind == JsonValueKind.String && e.GetString() == id);
+            return (current, "");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return (null, ""); }
     }
     private static bool SameDevice(JsonElement left, JsonElement right)
     {
         string a = Identity(left), b = Identity(right);
         return a.Length > 0 && b.Length > 0 ? a == b : Name(left).Length > 0 && Name(left) == Name(right);
     }
-    private static VivoConnection Parse(JsonElement value) => new(Name(value), Method(value), Timestamp(value));
+    private static VivoConnection Parse(JsonElement value) => new(Name(value), Method(value), Timestamp(value), IpAddress: LocalIp(value));
+    private static string LocalIp(JsonElement value)
+    {
+        if (!IPAddress.TryParse(Text(value, "ip"), out var address)) return "";
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+            bool local = bytes[0] == 10 || bytes[0] == 172 && bytes[1] is >= 16 and <= 31
+                || bytes[0] == 192 && bytes[1] == 168 || bytes[0] == 169 && bytes[1] == 254;
+            return local ? address.ToString() : "";
+        }
+        var ipv6 = address.GetAddressBytes();
+        return address.IsIPv6LinkLocal || (ipv6[0] & 0xfe) == 0xfc ? address.ToString() : "";
+    }
     private static string Identity(JsonElement value) => Text(value, "device_id", "mobileDeviceId", "deviceId");
     private static string Name(JsonElement value) => Text(value, "mobileDeviceName", "deviceName");
     private static string Text(JsonElement value, params string[] keys)

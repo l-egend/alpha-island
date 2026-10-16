@@ -23,6 +23,14 @@ namespace alpha_island.Core
     /// </summary>
     public sealed class IslandTicker : IDisposable
     {
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Dispatcher, IslandTicker> SharedTickers = new();
+        internal static IslandTicker Shared(Dispatcher dispatcher)
+        {
+            dispatcher.VerifyAccess();
+            if (SharedTickers.TryGetValue(dispatcher, out var current) && !current._disposed) return current;
+            SharedTickers.Remove(dispatcher);
+            var ticker = new IslandTicker(dispatcher, TimeSpan.FromMilliseconds(16)); SharedTickers.Add(dispatcher, ticker); return ticker;
+        }
         private sealed class Entry
         {
             public string Key = string.Empty;
@@ -33,6 +41,8 @@ namespace alpha_island.Core
         }
 
         private readonly DispatcherTimer _timer;
+        private readonly TimeSpan _resolution;
+        private readonly Func<long> _now;
         private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
         /// <summary>遍历用快照。Register/Unregister 时整体换新数组，回调里再注册不会破坏当前这一拍。</summary>
@@ -44,9 +54,14 @@ namespace alpha_island.Core
         private long _lastTickMs;
 
         public IslandTicker(Dispatcher dispatcher, TimeSpan? resolution = null)
+            : this(dispatcher, resolution, () => Environment.TickCount64) { }
+
+        internal IslandTicker(Dispatcher dispatcher, TimeSpan? resolution, Func<long> now)
         {
             var step = resolution ?? TimeSpan.FromMilliseconds(250);
             if (step < TimeSpan.FromMilliseconds(16)) step = TimeSpan.FromMilliseconds(16);
+            _resolution = step;
+            _now = now;
 
             _timer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
             {
@@ -57,6 +72,33 @@ namespace alpha_island.Core
 
         /// <summary>已注册的订阅数量（含暂停的）。</summary>
         public int Count => _entries.Count;
+        internal TimeSpan ScheduledInterval => _timer.Interval;
+        internal bool IsRunning => _timer.IsEnabled;
+        public string Report() => $"统一心跳：{(_timer.IsEnabled ? "运行" : "暂停")}，下次唤醒 {_timer.Interval.TotalMilliseconds:0} ms\n"
+            + string.Join("\n", _snapshot.Select(entry => $"{entry.Key}：{(entry.Paused ? "已暂停" : entry.Interval.TotalSeconds.ToString("0.###") + " 秒")}"));
+        public sealed class Subscription : IPausable, IDisposable
+        {
+            private IslandTicker? _owner;
+            private readonly Entry _entry;
+            private Subscription(IslandTicker owner, Entry entry) { _owner = owner; _entry = entry; }
+            private bool Current => _owner != null && !_owner._disposed
+                && _owner._entries.TryGetValue(_entry.Key, out var current) && ReferenceEquals(current, _entry);
+            public bool IsPaused => !Current || _entry.Paused;
+            public void SetPaused(bool paused) { if (Current) _owner!.SetPaused(_entry.Key, paused); }
+            public void SetInterval(TimeSpan interval) { if (Current) _owner!.SetInterval(_entry.Key, interval); }
+            public void TriggerNow() { if (Current) _owner!.TriggerNow(_entry.Key); }
+            public void Dispose() { if (Current) _owner!.Unregister(_entry.Key); _owner = null; }
+            internal static Subscription Create(IslandTicker owner, string key) => new(owner, owner._entries[key]);
+        }
+
+        public Subscription Subscribe(string key, TimeSpan interval, Action tick, bool runImmediately = false)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            Register(key, interval, tick);
+            var subscription = Subscription.Create(this, key);
+            if (runImmediately) subscription.TriggerNow();
+            return subscription;
+        }
 
         /// <summary>
         /// 注册一个周期任务。同一 key 重复注册 = 覆盖旧的 interval 和回调（方便热改设置）。
@@ -73,7 +115,7 @@ namespace alpha_island.Core
                 Key = key,
                 Interval = interval,
                 Tick = tick,
-                NextDueMs = Environment.TickCount64 + (long)interval.TotalMilliseconds,
+                NextDueMs = _now() + IntervalMs(interval),
             };
             _entries[key] = entry;
             RebuildSnapshot();
@@ -81,7 +123,7 @@ namespace alpha_island.Core
 
             if (runImmediately)
             {
-                entry.NextDueMs = Environment.TickCount64 + (long)interval.TotalMilliseconds;
+                entry.NextDueMs = _now() + IntervalMs(interval);
                 Invoke(entry);
             }
         }
@@ -105,7 +147,7 @@ namespace alpha_island.Core
 
             entry.Paused = paused;
             // 恢复时把下一拍推到从现在起算的一个完整周期，避免补跑一堆过期拍
-            if (!paused) entry.NextDueMs = Environment.TickCount64 + (long)entry.Interval.TotalMilliseconds;
+            if (!paused) entry.NextDueMs = _now() + IntervalMs(entry.Interval);
             EnsureRunning();
         }
 
@@ -116,9 +158,10 @@ namespace alpha_island.Core
         {
             if (_disposed || interval <= TimeSpan.Zero) return;
             if (!_entries.TryGetValue(key, out var entry)) return;
-
+            if (entry.Interval == interval) return;
             entry.Interval = interval;
-            entry.NextDueMs = Environment.TickCount64 + (long)interval.TotalMilliseconds;
+            entry.NextDueMs = _now() + IntervalMs(interval);
+            EnsureRunning();
         }
 
         /// <summary>立刻跑一次（不管下一拍到没到）。</summary>
@@ -134,14 +177,20 @@ namespace alpha_island.Core
 
         private void OnTimerTick(object? sender, EventArgs e)
         {
-            long now = Environment.TickCount64;
+            RunDue();
+        }
+
+        internal void RunDue()
+        {
+            if (_disposed) return;
+            long now = _now();
 
             // 诊断：本定时器挂在 Background 优先级、周期 250ms。若两次心跳相隔远超 250ms，
             // 说明这一拍之前 UI 线程被某个同步操作占住了（全局 WH_MOUSE_LL 钩子随后会把这段
             // 占住时间放大成"整机鼠标停顿"，所以这行日志是那种卡顿的第一现场）。
             long gap = _lastTickMs == 0 ? 0 : now - _lastTickMs;
             _lastTickMs = now;
-            if (gap >= 500)
+            if (gap >= _timer.Interval.TotalMilliseconds + 500)
             {
                 IslandLog.Debug("Ticker", $"心跳被推迟 {gap}ms（UI 线程此前被占住；本定时器周期 250ms）");
             }
@@ -151,10 +200,11 @@ namespace alpha_island.Core
             for (int i = 0; i < list.Length; i++)
             {
                 var entry = list[i];
+                if (!_entries.TryGetValue(entry.Key, out var current) || !ReferenceEquals(current, entry)) continue;
                 if (entry.Paused) continue;
                 if (now < entry.NextDueMs) continue;
 
-                entry.NextDueMs = now + (long)entry.Interval.TotalMilliseconds;
+                entry.NextDueMs = now + IntervalMs(entry.Interval);
                 Invoke(entry);
             }
 
@@ -187,15 +237,18 @@ namespace alpha_island.Core
         {
             if (_disposed) return;
 
-            bool anyActive = false;
+            long nextDue = long.MaxValue;
             foreach (var entry in _snapshot)
             {
-                if (!entry.Paused) { anyActive = true; break; }
+                if (!entry.Paused) nextDue = Math.Min(nextDue, entry.NextDueMs);
             }
-
-            if (anyActive && !_timer.IsEnabled) _timer.Start();
-            else if (!anyActive && _timer.IsEnabled) _timer.Stop();
+            if (nextDue == long.MaxValue) { _timer.Stop(); _lastTickMs = 0; return; }
+            var interval = TimeSpan.FromMilliseconds(Math.Clamp(nextDue - _now(), _resolution.TotalMilliseconds, int.MaxValue));
+            if (_timer.Interval != interval) _timer.Interval = interval;
+            if (!_timer.IsEnabled) { _lastTickMs = 0; _timer.Start(); }
         }
+
+        private static long IntervalMs(TimeSpan interval) => Math.Max(1, (long)Math.Ceiling(interval.TotalMilliseconds));
 
         private void RebuildSnapshot()
         {

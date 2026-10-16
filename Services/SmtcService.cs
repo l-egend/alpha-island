@@ -43,6 +43,10 @@ namespace alpha_island.Services
         public bool CanNext { get; init; }
         public bool CanPrevious { get; init; }
         public bool CanSeek { get; init; }
+        public bool CanShuffle { get; init; }
+        public bool CanRepeat { get; init; }
+        public MediaPlaybackOrder PlaybackOrder { get; init; }
+        public bool PlaybackOrderKnown { get; init; }
         public bool PlaybackStateInferred { get; init; }
 
         public bool HasMedia => !string.IsNullOrWhiteSpace(Title) || Artwork != null;
@@ -84,15 +88,26 @@ namespace alpha_island.Services
         private long _commandUntilMs;
         private long _commandVersion;
         private bool _commandAcknowledged;
+        private long _pendingCommandVersion;
+        private string? _pendingCommandSession;
+        private PlaybackState _pendingCommandState;
         private TimeSpan _pausePosition;
         private DateTime _pauseStampUtc;
-        private bool _pausedTimelineAdvancing;
-        private readonly DispatcherTimer _metadataProbe;
+        private bool _pausedTimelineAdvancing, _playerQuietAfterPause;
+        private long _playerAudioUntilMs;
+        private TimeSpan _nativeTimelinePosition;
+        private DateTimeOffset _nativeTimelineStamp;
+        private long _nativeTimelineSampleMs, _timelinePlayingUntilMs;
+        private readonly IslandTimer _metadataProbe;
         private readonly DispatcherTimer _metadataEvents;
         private bool _artworkLoading;
         /// <summary>会话、曲目或控制命令改变后，UI 应重新开始累计音频证据。</summary>
         internal long AudioEvidenceEpoch { get; private set; }
 
+        private MediaAudioSessionProbe? _streamProbe;
+        private readonly Func<MediaStreamObservation?> _readStreamObservation;
+        private DateTimeOffset _appliedTimelineStamp;
+        private TimeSpan _appliedNativePosition;
         private NowPlayingInfo? _current;
 
         /// <summary>
@@ -186,14 +201,27 @@ namespace alpha_island.Services
                 : (endpointEvidenceUsable && endpointSilentSeconds >= AudioSilenceTimeout.TotalSeconds);
             bool active = playerEvidenceAvailable
                           && playerActiveSeconds >= AudioActiveConfirmTime.TotalSeconds;
+            // A native position that genuinely advances also confirms the player's
+            // own Playing report when its audio session meter is unavailable.
+            if (_reportedState == PlaybackState.Playing && Environment.TickCount64 < _timelinePlayingUntilMs)
+                silent = false;
+            if (Environment.TickCount64 < _transportEventUntilMs)
+            {
+                if (_lastTransportEvent == PlaybackState.Paused) active = false;
+                else if (_lastTransportEvent == PlaybackState.Playing) silent = false;
+            }
             bool confirming = _commandState != null && Environment.TickCount64 < _commandUntilMs;
-            // A peak alone may be the player's buffered tail after pausing. To undo
-            // an explicit pause, require newer transport progress or an accepted play command.
-            if (_reportedState == PlaybackState.Paused && !_pausedTimelineAdvancing
+            if (_reportedState == PlaybackState.Paused && playerEvidenceAvailable && playerSilentSeconds >= .3)
+                _playerQuietAfterPause = true;
+            // USB streams can stay open while paused. Require a real quiet interval followed
+            // by fresh own-app audio, not just an Active stream or a buffered pause tail.
+            bool resumedAfterQuiet = _playerQuietAfterPause && ReadCurrentStream() is { Running: true };
+            if (_reportedState == PlaybackState.Paused && !_pausedTimelineAdvancing && !resumedAfterQuiet
                 && !(confirming && _commandState == PlaybackState.Playing)) active = false;
 
             // 同一份会话证据不可能同时得出两个结论；真出现就按"在出声"处理（宁可显示播放）。
             if (active && silent) silent = false;
+            if (active) _playerAudioUntilMs = Environment.TickCount64 + 500;
 
             if (_reportedState is not (PlaybackState.Playing or PlaybackState.Paused))
             {
@@ -257,14 +285,67 @@ namespace alpha_island.Services
         /// </summary>
         private PlaybackState ResolveState(PlaybackState reported, string? source = null, MediaContentKind? kind = null)
         {
+            if (_pendingCommandVersion != 0 && _pendingCommandVersion == _commandVersion
+                && _current is { } pendingCurrent && pendingCurrent.SessionId == _pendingCommandSession && (source == null || source == pendingCurrent.SourceApp))
+                return _pendingCommandState;
             if (_commandState is { } requested && Environment.TickCount64 < _commandUntilMs) return requested;
             if (reported == PlaybackState.Changing && (_current?.State is PlaybackState.Playing or PlaybackState.Paused)
                 && (source == null || source == _current.SourceApp)) return _current.State;
             if (MediaSourceNames.IsBrowser(source ?? Current?.SourceApp ?? "") || (kind ?? Current?.ContentKind) == MediaContentKind.Video) return reported;
+            if (ResolveStreamState(reported, source, kind) is { } streamState) return streamState;
             if (!AudioProbeEnabled) return reported;
             if (reported == PlaybackState.Paused && _audioActiveLatched) return PlaybackState.Playing;
             if (reported == PlaybackState.Playing && _audioVetoLatched) return PlaybackState.Paused;
             return reported;
+        }
+
+        internal float ReadPlayerSessionPeak(float mixerPeak)
+        {
+            var observation = ReadCurrentStream();
+            return observation?.Peak is { } peak && float.IsFinite(peak) && peak is >= 0 and <= 1
+                && Environment.TickCount64 - observation.SampledAtMs <= 500 ? peak : mixerPeak;
+        }
+
+        private MediaStreamObservation? ReadCurrentStream(string? source = null, MediaContentKind? kind = null)
+        {
+            var observation = _readStreamObservation();
+            long now = Environment.TickCount64;
+            return observation != null && observation.Source == (source ?? _current?.SourceApp)
+                && observation.SessionId == _current?.SessionId && (kind ?? _current?.ContentKind) == MediaContentKind.Music
+                && now >= observation.SampledAtMs && now - observation.SampledAtMs <= 1500
+                && now - observation.StableSinceMs >= 180 ? observation : null;
+        }
+
+        private PlaybackState? ResolveStreamState(PlaybackState reported, string? source, MediaContentKind? kind)
+        {
+            if (reported is not (PlaybackState.Playing or PlaybackState.Paused)) return null;
+            var observation = ReadCurrentStream(source, kind);
+            if (observation == null || observation.Running) return null;
+            long now = Environment.TickCount64;
+            if (reported == PlaybackState.Playing
+                && (now < _transportEventUntilMs && _lastTransportEvent == PlaybackState.Playing
+                    || now < _timelinePlayingUntilMs && observation.StableSinceMs <= _nativeTimelineSampleMs)) return null;
+            // A short device/stream interruption must not collapse an otherwise playing island.
+            // Once stopped, latch pause: reopening a USB stream alone cannot prove playback resumed.
+            if (now - observation.StableSinceMs < 650 || now < _playerAudioUntilMs) return null;
+            _audioVetoLatched = true; _audioActiveLatched = false;
+            return PlaybackState.Paused;
+        }
+        private PlaybackState? _lastTransportEvent;
+        private long _transportEventUntilMs;
+        internal PlaybackState ObserveTransportState(PlaybackState reported, bool fromEvent)
+        {
+            if (fromEvent)
+            {
+                _lastTransportEvent = reported;
+                _transportEventUntilMs = Environment.TickCount64 + 650;
+                ObservePlaybackEvent(reported);
+            }
+            else if (_lastTransportEvent is { } latest && Environment.TickCount64 < _transportEventUntilMs
+                && reported is PlaybackState.Playing or PlaybackState.Paused && reported != latest)
+                ObserveReportedState(latest);
+            else ObserveReportedState(reported);
+            return _reportedState;
         }
 
         private void ObserveReportedState(PlaybackState reported)
@@ -282,9 +363,11 @@ namespace alpha_island.Services
 
         private void ObservePause()
         {
+            ResetNativeTimelineEvidence();
             _pausePosition = EstimatedPosition;
             _pauseStampUtc = DateTime.UtcNow;
-            _pausedTimelineAdvancing = false;
+            _pausedTimelineAdvancing = _playerQuietAfterPause = false;
+            _playerAudioUntilMs = 0;
             _audioActiveLatched = false;
             AudioEvidenceEpoch++;
         }
@@ -292,17 +375,21 @@ namespace alpha_island.Services
         private void ObservePlaybackEvent(PlaybackState reported)
         {
             bool repeatedPause = reported == PlaybackState.Paused && _reportedState == PlaybackState.Paused;
+            bool newPlaying = reported == PlaybackState.Playing && _reportedState != PlaybackState.Playing;
             ObserveReportedState(reported);
             if (reported == PlaybackState.Paused)
             {
-                if (repeatedPause) ObservePause();
                 // Once play was acknowledged, a new explicit pause is a newer action;
                 // a stale polling sample still uses the command's confirmation window.
-                if (_commandState == PlaybackState.Playing && _commandAcknowledged) _commandState = null;
+                if (!repeatedPause && _commandState == PlaybackState.Playing && _commandAcknowledged) _commandState = null;
             }
-            else if (reported == PlaybackState.Playing
+            else if (newPlaying
+                && _pendingCommandVersion == 0
                 && !(_commandState == PlaybackState.Paused && Environment.TickCount64 < _commandUntilMs))
+            {
                 _audioVetoLatched = false;
+                AudioEvidenceEpoch++;
+            }
         }
 
         internal void ObserveTimelineEvidence(TimeSpan position, DateTimeOffset lastUpdated)
@@ -310,6 +397,35 @@ namespace alpha_island.Services
             if (_reportedState == PlaybackState.Paused && lastUpdated.UtcDateTime > _pauseStampUtc
                 && lastUpdated <= DateTimeOffset.UtcNow.AddSeconds(1) && position > _pausePosition + TimeSpan.FromMilliseconds(150))
                 _pausedTimelineAdvancing = true;
+            long now = Environment.TickCount64;
+            bool eligible = AudioProbeEnabled && _reportedState == PlaybackState.Playing
+                && _current != null && _current.ContentKind != MediaContentKind.Video
+                && !MediaSourceNames.IsBrowser(_current.SourceApp) && _pendingCommandVersion == 0
+                && !(_commandState == PlaybackState.Paused && now < _commandUntilMs)
+                && lastUpdated <= DateTimeOffset.UtcNow.AddSeconds(1)
+                && lastUpdated >= DateTimeOffset.UtcNow.AddSeconds(-15);
+            if (!eligible) { _nativeTimelineSampleMs = 0; _nativeTimelineStamp = default; return; }
+            // A repeated IPC read is not a new timeline sample. Many desktop players
+            // update Position/LastUpdatedTime every 3-5 seconds; use their timestamp,
+            // not the time of the most recent repeated poll, to measure progression.
+            if (lastUpdated <= _nativeTimelineStamp) return;
+            double elapsed = (lastUpdated - _nativeTimelineStamp).TotalMilliseconds;
+            double advance = (position - _nativeTimelinePosition).TotalMilliseconds;
+            if (_nativeTimelineSampleMs != 0 && elapsed is >= 150 and <= 15000
+                && now - _nativeTimelineSampleMs <= 16000
+                && advance >= 120 && advance <= elapsed * 2 + 100)
+            {
+                _timelinePlayingUntilMs = now + (long)Math.Clamp(elapsed + 1500, 1500, 8000);
+                _audioVetoLatched = false;
+            }
+            _nativeTimelinePosition = position; _nativeTimelineSampleMs = now; _nativeTimelineStamp = lastUpdated;
+        }
+
+        private void ResetNativeTimelineEvidence()
+        {
+            _nativeTimelineSampleMs = _timelinePlayingUntilMs = 0;
+            _nativeTimelinePosition = TimeSpan.Zero; _nativeTimelineStamp = default;
+            _playerQuietAfterPause = false; _playerAudioUntilMs = 0;
         }
 
         private void PublishResolvedState()
@@ -322,11 +438,14 @@ namespace alpha_island.Services
             Publish(_current with { State = state, Position = position, PlaybackStateInferred = true });
         }
 
-        public SmtcService(Dispatcher dispatcher)
+        public SmtcService(Dispatcher dispatcher) : this(dispatcher, null) { }
+
+        internal SmtcService(Dispatcher dispatcher, Func<MediaStreamObservation?>? readStreamObservation)
         {
             _dispatcher = dispatcher;
-            _metadataProbe = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
-                { Interval = TimeSpan.FromMilliseconds(500) };
+            _readStreamObservation = readStreamObservation ?? (() => _streamProbe?.Current);
+            _metadataProbe = new IslandTimer(dispatcher, "media-metadata")
+                { Interval = MediaWorkPacing.MetadataInterval(false, false) };
             _metadataProbe.Tick += (_, _) => { if (!_refreshing) QueueRefresh(); };
             _metadataEvents = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
                 { Interval = TimeSpan.FromMilliseconds(35) };
@@ -337,6 +456,8 @@ namespace alpha_island.Services
         {
             try
             {
+                _streamProbe ??= new MediaAudioSessionProbe();
+                _streamProbe.Changed += () => _dispatcher.BeginInvoke(new Action(PublishResolvedState));
                 var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync().AsTask();
                 await _dispatcher.InvokeAsync(async () =>
                 {
@@ -414,8 +535,7 @@ namespace alpha_island.Services
                 if (playback != null)
                 {
                     var reported = MapState(playback.PlaybackStatus);
-                    if (fromPlaybackEvent) ObservePlaybackEvent(reported);
-                    else ObserveReportedState(reported);
+                    reported = ObserveTransportState(reported, fromPlaybackEvent);
                     var newState = ResolveState(reported);
                     var controls = playback.Controls;
                     var updated = _current with
@@ -426,6 +546,7 @@ namespace alpha_island.Services
                         CanNext = controls?.IsNextEnabled ?? false,
                         CanPrevious = controls?.IsPreviousEnabled ?? false
                     };
+                    updated = WithPlaybackOrder(updated, playback);
                     if (updateTimeline || newState != _current.State)
                         updated = ApplyTimeline(updated, session.GetTimelineProperties());
                     if (updated != _current) Publish(updated);
@@ -500,10 +621,13 @@ namespace alpha_island.Services
         private void Detach()
         {
             _session = null;
+            _lastTransportEvent = null; _transportEventUntilMs = 0;
             _artworkKey = ""; _artwork = null; _audioVetoLatched = _audioActiveLatched = false;
             _artworkLoading = false;
             _artworkVersion++; _artworkCancellation?.Cancel();
             _commandState = null; _commandVersion++; AudioEvidenceEpoch++;
+            _pendingCommandVersion = 0; _pendingCommandSession = null;
+            ResetNativeTimelineEvidence();
             _commandAcknowledged = false; _pausedTimelineAdvancing = false; _pausePosition = TimeSpan.Zero;
         }
 
@@ -611,7 +735,7 @@ namespace alpha_island.Services
             // 属性请求完成后才取播放状态，不能让异步读取前的旧状态覆盖较新的播放事件。
             var playback = capturedSession.GetPlaybackInfo();
             var state = MapState(playback?.PlaybackStatus);
-            ObserveReportedState(state);
+            state = ObserveTransportState(state, fromEvent: false);
             // 对外只呈现经音频仲裁后的状态：播放器谎报 Playing 而环回持续无音频时降级为 Paused
             var kind = props?.PlaybackType == Windows.Media.MediaPlaybackType.Video ? MediaContentKind.Video
                 : props?.PlaybackType == Windows.Media.MediaPlaybackType.Music ? MediaContentKind.Music
@@ -634,12 +758,27 @@ namespace alpha_island.Services
                 CanPrevious = controls?.IsPreviousEnabled ?? false,
                 CanSeek = controls?.IsPlaybackPositionEnabled ?? false
             }, capturedSession.GetTimelineProperties());
+            info = WithPlaybackOrder(info, playback);
             var thumbnail = props?.Thumbnail;
             UpdateTrack(info, key, thumbnail == null ? null : token => Task.Run(() => LoadArtworkAsync(thumbnail, token), token));
         }
 
         private NowPlayingInfo ApplyTimeline(NowPlayingInfo info, GlobalSystemMediaTransportControlsSessionTimelineProperties? timeline)
         {
+            var oldInfo = _current;
+            bool sameMedia = oldInfo != null && oldInfo.SessionId == info.SessionId && oldInfo.Title == info.Title && oldInfo.Artist == info.Artist;
+            if (timeline != null && sameMedia && _appliedTimelineStamp != default
+                && timeline.LastUpdatedTime <= _appliedTimelineStamp && timeline.Position == _appliedNativePosition)
+            {
+                // A repeated stale timeline is not a seek. Keep the running clock or the
+                // frozen pause position instead of resetting lyrics to the old native sample.
+                var preservedPosition = EstimatedPosition;
+                _positionStampUtc = DateTime.UtcNow;
+                var preservedState = ResolveState(_reportedState, info.SourceApp, info.ContentKind);
+                return info with { Position = preservedPosition, Duration = timeline.EndTime > timeline.StartTime ? timeline.EndTime - timeline.StartTime : oldInfo!.Duration, State = preservedState,
+                    PlaybackStateInferred = preservedState != _reportedState };
+            }
+            if (timeline != null) { _appliedTimelineStamp = timeline.LastUpdatedTime; _appliedNativePosition = timeline.Position; }
             var previousStamp = _positionStampUtc;
             var estimatedPosition = EstimatedPosition;
             TimeSpan duration = info.Duration;
@@ -686,7 +825,10 @@ namespace alpha_island.Services
                 _positionStampUtc = DateTime.UtcNow;
             }
 
-            return info with { Position = position, Duration = duration, CanSeek = info.CanSeek && duration > TimeSpan.Zero };
+            var resolved = ResolveState(_reportedState, info.SourceApp, info.ContentKind);
+            return info with { Position = position, Duration = duration, CanSeek = info.CanSeek && duration > TimeSpan.Zero,
+                State = resolved, PlaybackStateInferred = resolved != _reportedState
+                    && !(_commandState == resolved && Environment.TickCount64 < _commandUntilMs) };
         }
 
         /// <summary>曲目信息先显示，封面独立加载；迟到的旧曲目封面只能被丢弃。</summary>
@@ -696,6 +838,7 @@ namespace alpha_island.Services
             bool changed = key != _artworkKey;
             if (changed)
             {
+                ResetNativeTimelineEvidence();
                 _artworkCancellation?.Cancel(); _artworkCancellation?.Dispose();
                 _artworkCancellation = null;
                 _artworkVersion++;
@@ -708,7 +851,8 @@ namespace alpha_island.Services
                 if (_reportedState == PlaybackState.Paused)
                 {
                     _pausePosition = info.Position; _pauseStampUtc = DateTime.UtcNow;
-                    _pausedTimelineAdvancing = false;
+                    _pausedTimelineAdvancing = _playerQuietAfterPause = false;
+                    _playerAudioUntilMs = 0;
                 }
             }
             // 用当前曲目的来源决定仲裁，不借用上一首曲目的类型。
@@ -757,18 +901,26 @@ namespace alpha_island.Services
             if (_debugOverride != null) info = _debugOverride;
             if (_current?.State != info?.State)
                 IslandLog.Debug("SMTC", $"状态同步: {_current?.State}->{info?.State} reported={_reportedState} command={(_commandState != null && Environment.TickCount64 < _commandUntilMs ? _commandState : null)} veto={_audioVetoLatched} active={_audioActiveLatched}");
+            _streamProbe?.SetTarget(info?.SupportsLyrics == true && !MediaSourceNames.IsBrowser(info.SourceApp) ? info.SourceApp : "", info?.SessionId ?? "");
             _current = info;
             if (_dispatcher.CheckAccess())
             {
-                NowPlayingChanged?.Invoke(this, info);
+                NotifyNowPlayingChanged(info);
             }
             else
             {
                 _dispatcher.BeginInvoke(new Action(() =>
                 {
-                    NowPlayingChanged?.Invoke(this, info);
+                    NotifyNowPlayingChanged(info);
                 }));
             }
+        }
+
+        private void NotifyNowPlayingChanged(NowPlayingInfo? info)
+        {
+            var probeInterval = MediaWorkPacing.MetadataInterval(_current?.HasMedia == true, _current?.IsPlaying == true);
+            if (_metadataProbe.Interval != probeInterval) _metadataProbe.Interval = probeInterval;
+            NowPlayingChanged?.Invoke(this, info);
         }
 
         private static PlaybackState MapState(Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus? s)
@@ -837,6 +989,53 @@ namespace alpha_island.Services
 
         // ---------------- 播放控制 ----------------
 
+        private readonly MediaPlaybackOrderTracker _playbackOrders = new();
+        private readonly HashSet<string> _shuffleRejected = new(), _repeatRejected = new();
+        private NowPlayingInfo WithPlaybackOrder(NowPlayingInfo info,
+            GlobalSystemMediaTransportControlsSessionPlaybackInfo? playback) => _playbackOrders.Observe(info,
+                playback?.Controls.IsShuffleEnabled == true && !_shuffleRejected.Contains(info.SessionId),
+                playback?.Controls.IsRepeatEnabled == true && !_repeatRejected.Contains(info.SessionId),
+                playback?.IsShuffleActive, playback?.AutoRepeatMode);
+
+        public async Task<bool> CyclePlaybackOrderAsync()
+        {
+            var session = _session;
+            var info = _current;
+            if (session == null || info == null) return false;
+            try
+            {
+                var playback = session.GetPlaybackInfo();
+                info = WithPlaybackOrder(info, playback);
+                var target = MediaPlaybackOrders.Next(info);
+                bool accepted = await MediaPlaybackOrders.ChangeAsync(info, target,
+                    async value =>
+                    {
+                        bool ok = await session.TryChangeShuffleActiveAsync(value).AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+                        if (!ok) _shuffleRejected.Add(info.SessionId);
+                        return ok;
+                    },
+                    async value =>
+                    {
+                        bool ok = await session.TryChangeAutoRepeatModeAsync(value).AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+                        if (!ok) _repeatRejected.Add(info.SessionId);
+                        return ok;
+                    },
+                    () => !_disposed && IsSameSession(_session, session) && _current?.SessionId == info.SessionId);
+                if (accepted)
+                {
+                    try { playback = session.GetPlaybackInfo(); }
+                    catch { /* The accepted request remains valid if its readback fails. */ }
+                    _playbackOrders.Accept(info.SessionId, target, playback?.IsShuffleActive, playback?.AutoRepeatMode);
+                    // Publish the successful request now. Mode changes do not need song
+                    // properties, artwork, or the player's delayed playback-info report.
+                    if (_current?.SessionId == info.SessionId)
+                        Publish(_current with { PlaybackOrder = target, PlaybackOrderKnown = true });
+                }
+                else CheckFastPlaybackState();
+                return accepted;
+            }
+            catch { return false; }
+        }
         public async Task TogglePlayPauseAsync()
         {
             var s = _session;
@@ -864,13 +1063,25 @@ namespace alpha_island.Services
         internal async Task ExecutePlaybackCommandAsync(string sessionId, PlaybackState target, Func<Task<bool>> request, bool optimistic = true)
         {
             long version = ++_commandVersion;
-            bool accepted = await request();
+            if (_current?.SessionId == sessionId)
+            {
+                _pendingCommandVersion = version;
+                _pendingCommandSession = sessionId;
+                _pendingCommandState = _current.State;
+            }
+            bool accepted;
+            try { accepted = await request(); }
+            finally
+            {
+                if (_pendingCommandVersion == version) { _pendingCommandVersion = 0; _pendingCommandSession = null; }
+            }
             if (!accepted || _disposed || version != _commandVersion || _current?.SessionId != sessionId) return;
             // Toggle-only providers do not describe the resulting state. If the raw
             // state disagrees with the button, wait for feedback instead of guessing "playing".
             if (!optimistic) return;
             var position = EstimatedPosition;
             _commandState = target;
+            ResetNativeTimelineEvidence();
             _commandAcknowledged = false;
             _commandUntilMs = Environment.TickCount64 + 2000;
             _audioVetoLatched = _audioActiveLatched = false;
@@ -924,24 +1135,7 @@ namespace alpha_island.Services
                 var cur = _current;
                 if (cur != null)
                 {
-                    _current = new NowPlayingInfo
-                    {
-                        Title = cur.Title,
-                        Artist = cur.Artist,
-                        Album = cur.Album,
-                        SourceApp = cur.SourceApp,
-                        SessionId = cur.SessionId,
-                        ContentKind = cur.ContentKind,
-                        CanToggle = cur.CanToggle,
-                        Artwork = cur.Artwork,
-                        State = cur.State,
-                        Position = position,
-                        Duration = cur.Duration,
-                        CanNext = cur.CanNext,
-                        CanPrevious = cur.CanPrevious,
-                        CanSeek = cur.CanSeek,
-                        PlaybackStateInferred = cur.PlaybackStateInferred
-                    };
+                    _current = cur with { Position = position };
                     _positionStampUtc = DateTime.UtcNow;
                 }
             }
@@ -953,7 +1147,7 @@ namespace alpha_island.Services
         {
             if (_disposed) return;
             _disposed = true;
-            _metadataProbe.Stop(); _metadataEvents.Stop();
+            _metadataProbe.Dispose(); _metadataEvents.Stop();
             _metadataCancellation?.Cancel(); _metadataCancellation?.Dispose();
             _artworkCancellation?.Cancel(); _artworkCancellation?.Dispose();
             _artworkCancellation = null;
@@ -971,6 +1165,7 @@ namespace alpha_island.Services
             }
             catch (Exception ex) { Debug.WriteLine(ex); }
 
+            _streamProbe?.Dispose(); _streamProbe = null;
             _manager = null;
         }
     }

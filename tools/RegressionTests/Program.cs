@@ -31,9 +31,152 @@ internal static partial class Program
     private static async Task RunChecks(string[] args)
     {
         IslandLog.FileSinkEnabled = false;
+        if (args.Contains("--island-zorder-peer")) { IslandZOrderPeer(args[1]); return; }
+        if (args.Contains("--core-logic-only")) { CoreLogicChecks(); Console.WriteLine($"All {_checks} core logic checks passed."); return; }
+        if (args.Contains("--optimization-core-only"))
+        {
+            string optimizationRoot = Path.Combine(Path.GetTempPath(), "alpha-island-optimization-" + Guid.NewGuid().ToString("N"));
+            try { CoreLogicChecks(); OptimizationTickerChecks(); await OptimizationLogChecks(optimizationRoot); Console.WriteLine($"All {_checks} optimization core checks passed."); }
+            finally { if (Directory.Exists(optimizationRoot)) Directory.Delete(optimizationRoot, true); }
+            return;
+        }
+        if (args.Contains("--liquid-cell-motion-only")) { string cellRoot = Path.Combine(Path.GetTempPath(), "alpha-liquid-cell-" + Guid.NewGuid().ToString("N")); try { Directory.CreateDirectory(cellRoot); IslandUi(cellRoot, iconEntryProbe: "liquid-cell-motion"); Console.WriteLine($"All {_checks} liquid cell motion checks passed."); } finally { if (Directory.Exists(cellRoot)) Directory.Delete(cellRoot, true); } return; }
+        if (args.Contains("--liquid-glass-core-only")) { LiquidGlassCoreChecks(); Console.WriteLine($"All {_checks} liquid glass core checks passed."); return; }
+        if (args.Contains("--liquid-glass-native-only")) { LiquidGlassNativeChecks(); Console.WriteLine($"All {_checks} native liquid glass checks passed."); return; }
+        if (args.Contains("--vivo-ip-live"))
+        {
+            var current=new AlphaIsland.Plugins.VivoOffice.VivoConnectionReader().Read();
+            Console.WriteLine($"Vivo IP={current.IpAddress}, current device={current.IsCurrent}, current address={current.IsIpCurrent}");
+            Check(current.DeviceName.Length>0 && current.IpAddress.Length>0,"本机 vivo 记录的内网地址可由实际插件读取");
+            Console.WriteLine($"All {_checks} live vivo IP checks passed."); return;
+        }
+        if (args.Contains("--bluetooth-media-latency-only")) { await BluetoothMediaLatencyChecks(); Console.WriteLine($"All {_checks} Bluetooth media latency checks passed."); return; }
+        if (args.Contains("--smart-state-stability-only")) { await SmartStateStabilityChecks(); Console.WriteLine($"All {_checks} smart state stability checks passed."); return; }
+        if (args.Contains("--music-state-stability-only")) { await MusicStateStabilityChecks(); Console.WriteLine($"All {_checks} music state stability checks passed."); return; }
+        if (args.Contains("--usb-resume-latency-only")) { await UsbResumeLatencyChecks(); Console.WriteLine($"All {_checks} USB resume latency checks passed."); return; }
+        if (args.Contains("--multi-brand-earbuds-only")) { await MultiBrandEarbudsChecks(); Console.WriteLine($"All {_checks} multi brand earbuds checks passed."); return; }
+        if (args.Contains("--usb-media-state-only")) { await UsbMediaStateChecks(); Console.WriteLine($"All {_checks} USB media state checks passed."); return; }
+        if (args.Contains("--charger-type-live")) { await ChargerTypeLiveCheck(); return; }
+        if (args.Contains("--battery-sampling-latency-only")) { await BatterySamplingLatencyChecks(); await BatteryBroadcastCoalescingChecks(); Console.WriteLine($"All {_checks} battery sampling latency checks passed."); return; }
+        if (args.Contains("--smart-charging-live")) { await SmartChargingLiveCheck(); return; }
+        if (args.Contains("--messenger-activation-live") || args.Contains("--qq-activation-live"))
+        {
+            var client = args.Contains("--qq-activation-live") ? MessengerClient.QQ : MessengerClient.WeChat;
+            bool opened = await Task.Run(() => alpha_island.Interop.MessengerWindowReader.TryOpen(client));
+            Check(opened, "实际" + MessengerIdentity.Name(client) + "通过自身托盘动作打开");
+            var processes = new alpha_island.Interop.MessengerWindowReader().ReadProcesses().Where(p => p.Client == client).Select(p => p.Id).ToHashSet();
+            IntPtr foreground = IntPtr.Zero;
+            bool focused = false;
+            for (int attempt = 0; attempt < 30; attempt++)
+            {
+                foreground = alpha_island.Interop.NativeMethods.GetForegroundWindow();
+                alpha_island.Interop.NativeMethods.GetWindowThreadProcessId(foreground, out uint process);
+                if (processes.Contains((int)process)) { focused = true; break; }
+                await Task.Delay(60);
+            }
+            string type = alpha_island.Interop.MessengerWindowReader.ReadClass(foreground);
+            Console.WriteLine("Restored foreground class: " + type);
+            Check(focused && !type.Contains("TrayIconMessage", StringComparison.OrdinalIgnoreCase), "托盘动作完成后前台是" + MessengerIdentity.Name(client) + "正常窗口，未出现内部空白宿主");
+            Console.WriteLine($"All {_checks} live messenger activation checks passed."); return;
+        }
+        if (args.Contains("--messenger-activation-only")) { MessengerActivationChecks(); MessengerTrayInvocationChecks(); Console.WriteLine($"All {_checks} messenger activation checks passed."); return; }
+        if (args.Contains("--messenger-jump-only")) { MessengerWindowJumpChecks(); Console.WriteLine($"All {_checks} messenger window jump checks passed."); return; }
+        if (args.Contains("--external-agent-only")) { await ExternalAgentChecks(); Console.WriteLine($"All {_checks} external agent checks passed."); return; }
+        if (args.Contains("--agent-lifetime-only")) { await ExternalAgentLifetimeChecks(); Console.WriteLine($"All {_checks} agent lifetime checks passed."); return; }
+        if (args.Contains("--volume-native-only")) { NativeAppVolumeChecks(); Console.WriteLine($"All {_checks} native application volume checks passed."); return; }
+        if (args.Contains("--agent-rpc-fixture")) { await AgentRpcFixture(args[1]); return; }
+        if (args.Contains("--cold-plugin-resource-check")){ColdPluginResourceChecks();Console.WriteLine($"All {_checks} cold WPF plugin checks passed.");return;}
         if (args.Contains("--traffic-producer")) { NativeTrafficProducer(); return; }
         if (args.Contains("--package-assets")) { PackageAssets(); return; }
+        if (args.Contains("--background-window-live-check")) { BackgroundWindowLiveCheck(); return; }
+        if (args.Contains("--shortcut-native-check"))
+        {
+            Exception? error = null;
+            var thread = new Thread(() => { try { ShortcutNativeReceiverCheck(); } catch (Exception ex) { error = ex; } });
+            thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
+            if (error != null) throw error;
+            Console.WriteLine($"All {_checks} native shortcut checks passed."); return;
+        }
+        if (args.Contains("--messenger-jump-probe"))
+        {
+            var processes = new alpha_island.Interop.MessengerWindowReader().ReadProcesses().Where(p => p.Client == MessengerClient.WeChat);
+            IntPtr selected = alpha_island.Interop.MessengerWindowReader.FindPrimaryWindow(MessengerClient.WeChat, processes.Select(p => p.Id).ToHashSet());
+            bool found = selected != IntPtr.Zero;
+            string type = alpha_island.Interop.MessengerWindowReader.ReadClass(selected);
+            Console.WriteLine("Selected WeChat window class: " + type);
+            Check(found && selected != IntPtr.Zero && !type.Contains("TrayIconMessageWindow", StringComparison.OrdinalIgnoreCase),
+                "微信通知跳转不会选择内部托盘消息窗口");
+            Console.WriteLine($"All {_checks} live WeChat target checks passed."); return;
+        }
+        if (args.Contains("--messenger-api-probe"))
+        {
+            var snapshot = await Task.Run(() => new alpha_island.Interop.MessengerWindowReader().Read(new HashSet<MessengerClient>(Enum.GetValues<MessengerClient>())));
+            foreach (var client in Enum.GetValues<MessengerClient>())
+                Console.WriteLine($"{MessengerIdentity.Name(client)}: processes={snapshot.Processes.Count(p => p.Client == client)}, unreadCounter={snapshot.Unread.ContainsKey(client)}, trayIcons={snapshot.TrayIcons.Count(i => i.Client == client)}, notificationPopups={snapshot.Popups.Count(p => p.Client == client)}");
+            return;
+        }
+        if (args.Contains("--toast-api-probe"))
+        {
+            Console.WriteLine("Package identity: " + SystemToastService.HasPackageIdentity);
+            try
+            {
+                var listener = Windows.UI.Notifications.Management.UserNotificationListener.Current;
+                Console.WriteLine("Notification access: " + listener.GetAccessStatus());
+                if (listener.GetAccessStatus() == Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus.Allowed)
+                {
+                    var notifications = await listener.GetNotificationsAsync(Windows.UI.Notifications.NotificationKinds.Toast);
+                    Console.WriteLine("Readable notification count: " + notifications.Count);
+                    if (args.Contains("--logo"))
+                    {
+                        var sample = notifications.LastOrDefault(n => n.AppInfo.AppUserModelId == "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe");
+                        if (sample != null)
+                        {
+                            try
+                            {
+                                var logo = sample.AppInfo.DisplayInfo.GetLogo(new Windows.Foundation.Size(32, 32));
+                                if (logo == null) Console.WriteLine("PowerShell AppDisplayInfo logo: unavailable");
+                                else
+                                {
+                                    using var random = await logo.OpenReadAsync();
+                                    Console.WriteLine($"PowerShell logo stream: {random.Size} bytes, position {random.Position}");
+                                }
+                            }
+                            catch (Exception logoError) { Console.WriteLine("PowerShell logo: " + logoError.GetType().Name + ": 0x" + logoError.HResult.ToString("X8") + " " + logoError.Message); }
+                            var shellLogo = await alpha_island.Interop.NotificationAppIcon.ReadAsync(sample.AppInfo.AppUserModelId);
+                            Console.WriteLine($"Registered shell logo bytes: {shellLogo?.Length ?? 0}");
+                            if (shellLogo != null)
+                            {
+                                Directory.CreateDirectory("bin/launch-previews");
+                                File.WriteAllBytes("bin/launch-previews/windows-powershell-notification-logo.png", shellLogo);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception error) { Console.WriteLine(error.GetType().Name + ": 0x" + error.HResult.ToString("X8") + " " + error.Message); }
+            return;
+        }
+        if (args.Contains("--notification-assets-live-check")) { await NotificationAssetLiveChecks(); return; }
+        if (args.Contains("--toast-live-check")) { RealWindowsNotificationChecks(); return; }
+        if (args.Contains("--read-browser-downloads")) { Console.WriteLine(JsonSerializer.Serialize(BrowserDownloadProbe.ScanWindows())); return; }
+        if (args.Contains("--inspect-browser-partial")) { Console.WriteLine(JsonSerializer.Serialize(new { Owner = BrowserPartialOwner.Read(args[1]), Readings = BrowserDownloadProbe.Read() })); return; }
+        if (args.Contains("--toast-popup-race-check")) { await ToastPopupRaceChecks(); return; }
+        if (args.Contains("--toast-popup-control-check")) { await ToastPopupRaceChecks(nativeOnly: true); return; }
+        if (args.Contains("--local-agent-handshake")) {await LocalAgentHandshakeChecks();Console.WriteLine($"All {_checks} local protocol handshake checks passed.");return;}
+        if (args.Contains("--v42-lyrics-album")) { await V42LyricsAlbumChecks(); return; }
+        if (args.Contains("--playback-order-only")) { await PlaybackOrderChecks(); Console.WriteLine($"All {_checks} playback order checks passed."); return; }
+        if (args.Contains("--playback-order-latency-live")) { await PlaybackOrderLatencyLiveCheck(args.Contains("--long-readback")); return; }
+        if (args.Contains("--v42-mode-live")) { await V42ModeLiveCheck(); return; }
+        if (args.Contains("--v42-assets-live")) { V42NotificationAssetLiveCheck(); return; }
+        if (args.Contains("--v42-media-trace")) { await V42MediaTrace(args.Contains("--exercise-pause")); return; }
         if (args.Contains("--inspect-media")) { await InspectMedia(); return; }
+        if (args.Contains("--inspect-agent-windows"))
+        {
+            var windows = new AgentAppNavigationService.NativeAgentWindowAccess().ReadWindows();
+            foreach (string provider in new[] { "codex", "antigravity", "deepseek-harness" })
+                Console.WriteLine($"{provider}: matching open windows={windows.Count(w => AgentAppNavigationService.Matches(provider, w))}");
+            return;
+        }
         if (args.Contains("--inspect-steam"))
         {
             var monitor = new DownloadMonitorService(Path.Combine(AppContext.BaseDirectory, "no-browser-profile"));
@@ -47,11 +190,200 @@ internal static partial class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (args.Contains("--agent-startup-latency-only")) { IslandUi(root, iconEntryProbe: "agent-startup-latency"); Console.WriteLine($"All {_checks} agent startup latency checks passed."); return; }
+            if (args.Contains("--agent-window-responsiveness-only")) { IslandUi(root, iconEntryProbe: "agent-window-responsiveness"); Console.WriteLine($"All {_checks} agent window responsiveness checks passed."); return; }
+            if (args.Contains("--handoff-responsiveness-only")) { IslandUi(root, iconEntryProbe: "handoff-responsiveness"); Console.WriteLine($"All {_checks} handoff responsiveness checks passed."); return; }
+            if (args.Contains("--clipboard-history-preferences-only")) { IslandUi(root, iconEntryProbe: "clipboard-history-preferences"); Console.WriteLine($"All {_checks} clipboard history preference checks passed."); return; }
+            if (args.Contains("--ai-settings-layout-only")) { IslandUi(root, iconEntryProbe: "ai-settings-layout"); Console.WriteLine($"All {_checks} AI settings layout checks passed."); return; }
+            if (args.Contains("--plugin-settings-surface-only")) { IslandUi(root, iconEntryProbe: "plugin-settings-surface"); Console.WriteLine($"All {_checks} plugin settings surface checks passed."); return; }
+            if (args.Contains("--codex-status-recovery-only")) { IslandUi(root, iconEntryProbe: "codex-status-recovery"); Console.WriteLine($"All {_checks} Codex state recovery checks passed."); return; }
+            if (args.Contains("--codex-terminal-only")) { await CodexTerminalChecks(root); Console.WriteLine($"All {_checks} Codex terminal checks passed."); return; }
+            if (args.Contains("--island-zorder-only")) { IslandUi(root, iconEntryProbe: "island-zorder"); Console.WriteLine($"All {_checks} island z-order checks passed."); return; }
+            if (args.Contains("--agent-session-identity-only")) { await AgentConversationStateChecks(root); Console.WriteLine($"All {_checks} agent identity checks passed."); return; }
+            if (args.Contains("--browser-downloads-only")) { BrowserDownloadChecks(root); Console.WriteLine($"All {_checks} browser download checks passed."); return; }
+            if (args.Contains("--notification-visual-stack-only")) { IslandUi(root, iconEntryProbe: "notification-visual-stack"); Console.WriteLine($"All {_checks} notification visual stack checks passed."); return; }
+            if (args.Contains("--notification-stack-only")) { IslandUi(root, iconEntryProbe: "notification-stack"); Console.WriteLine($"All {_checks} notification stack checks passed."); return; }
+            if (args.Contains("--notification-presentation-only")) { IslandUi(root, iconEntryProbe: "notification-presentation"); Console.WriteLine($"All {_checks} notification presentation checks passed."); return; }
+            if (args.Contains("--downloads-regression-only")) { BrowserDownloadChecks(root); Downloads(root); DownloadIdleQueryChecks(root); IslandUi(root, iconEntryProbe: "browser-download"); Console.WriteLine($"All {_checks} download regression checks passed."); return; }
+            if (args.Contains("--file-transfer-out-only")) { IslandUi(root, iconEntryProbe: "file-transfer-out"); Console.WriteLine($"All {_checks} file transfer export checks passed."); return; }
+            if (args.Contains("--file-transfer-ole-live")) { IslandUi(root, iconEntryProbe: "file-transfer-ole"); Console.WriteLine($"All {_checks} native file transfer export checks passed."); return; }
+            if (args.Contains("--volume-flash-baseline")) { IslandUi(root, iconEntryProbe: "volume-flash-baseline"); return; }
+            if (args.Contains("--volume-flash-live")) { IslandUi(root, iconEntryProbe: "volume-flash-live"); Console.WriteLine($"All {_checks} volume flash checks passed."); return; }
+            if (args.Contains("--volume-game-quiet-live")) { IslandUi(root, iconEntryProbe: "volume-game-quiet-live"); Console.WriteLine($"All {_checks} game volume feedback checks passed."); return; }
+            if (args.Contains("--game-quiet-only")) { await GameActivityChecks(); IslandUi(root, iconEntryProbe: "game-quiet"); Console.WriteLine($"All {_checks} game quiet checks passed."); return; }
+            if (args.Contains("--agent-avatar-only")) { IslandUi(root, iconEntryProbe: "agent-avatar"); Console.WriteLine($"All {_checks} agent avatar checks passed."); return; }
+            if (args.Contains("--agent-avatar-routing-only")) { IslandUi(root, iconEntryProbe: "agent-avatar-routing"); Console.WriteLine($"All {_checks} agent avatar routing checks passed."); return; }
+            if (args.Contains("--agent-avatar-loop-only")) { IslandUi(root, iconEntryProbe: "agent-avatar-loop"); Console.WriteLine($"All {_checks} agent avatar loop checks passed."); return; }
+            if (args.Contains("--agent-multi-session-only")) { IslandUi(root, iconEntryProbe: "agent-multi-session"); Console.WriteLine($"All {_checks} multi-session agent checks passed."); return; }
+            if (args.Contains("--agent-background-resume-only")) { IslandUi(root, iconEntryProbe: "agent-background-resume"); Console.WriteLine($"All {_checks} agent background resume checks passed."); return; }
+            if (args.Contains("--background-agent-visibility-only")) { IslandUi(root, iconEntryProbe: "background-agent"); Console.WriteLine($"All {_checks} background agent visibility checks passed."); return; }
+            if (args.Contains("--background-music-visibility-only")) { IslandUi(root, iconEntryProbe: "background-music"); Console.WriteLine($"All {_checks} background music visibility checks passed."); return; }
+            if (args.Contains("--messenger-direct-open-only")) { IslandUi(root, iconEntryProbe: "messenger-direct-open"); Console.WriteLine($"All {_checks} messenger direct open checks passed."); return; }
+            if (args.Contains("--messenger-notifications-only")) { MessengerNotificationStateChecks(); IslandUi(root, iconEntryProbe: "messenger-notifications"); Console.WriteLine($"All {_checks} QQ and WeChat notification checks passed."); return; }
+            if (args.Contains("--status-split-only")) { IslandUi(root, iconEntryProbe: "status-split"); Console.WriteLine($"All {_checks} status split checks passed."); return; }
+            if (args.Contains("--power-frame-stall-only")) { IslandUi(root, iconEntryProbe: "power-frame-stall"); Console.WriteLine($"All {_checks} power frame stall checks passed."); return; }
+            if (args.Contains("--charger-type-only")) { await ChargerTypeChecks(); IslandUi(root, iconEntryProbe: "charger-type"); Console.WriteLine($"All {_checks} charger type checks passed."); return; }
+            if (args.Contains("--smart-charging-only")) { await SmartChargingReaderChecks(); IslandUi(root, iconEntryProbe: "smart-charging"); Console.WriteLine($"All {_checks} smart charging checks passed."); return; }
+            if (args.Contains("--energy-saver-only")) { IslandUi(root, iconEntryProbe: "energy-saver"); Console.WriteLine($"All {_checks} energy saver checks passed."); return; }
+            if (args.Contains("--power-island-lifecycle-only")) { IslandUi(root, iconEntryProbe: "power-island-lifecycle"); Console.WriteLine($"All {_checks} power island lifecycle checks passed."); return; }
+            if (args.Contains("--music-layout-preview-only")) { IslandUi(root, iconEntryProbe: "music-layout-preview"); Console.WriteLine("Music layout previews saved."); return; }
+            if (args.Contains("--battery-text-layout-preview-only")) { IslandUi(root, iconEntryProbe: "battery-text-layout-preview"); Console.WriteLine("Battery text layout previews saved."); return; }
+            if (args.Contains("--bluetooth-transition-only")) { IslandUi(root, iconEntryProbe: "bluetooth-transition"); Console.WriteLine($"All {_checks} Bluetooth transition checks passed."); return; }
+            if (args.Contains("--charging-island-preview-only")) { IslandUi(root, iconEntryProbe: "charging-island-preview"); Console.WriteLine($"All {_checks} charging island preview checks passed."); return; }
+            if (args.Contains("--charging-corners-only")) { IslandUi(root, iconEntryProbe: "charging-corners"); Console.WriteLine($"All {_checks} charging compact corner checks passed."); return; }
+            if (args.Contains("--all-island-corners-only")) { IslandUi(root, iconEntryProbe: "all-island-corners"); Console.WriteLine($"All {_checks} compact island outline checks passed."); return; }
+            if (args.Contains("--network-curves-only")) { IslandUi(root, iconEntryProbe: "network-curves"); Console.WriteLine($"All {_checks} network menu and curve checks passed."); return; }
+            if (args.Contains("--screen-tools-theme-only")) { IslandUi(root, iconEntryProbe: "screen-tools-theme"); Console.WriteLine($"All {_checks} screen tools theme checks passed."); return; }
+            if (args.Contains("--media-traffic-only")) { MediaAndTrafficChecks(root); IslandUi(root, iconEntryProbe: "media-events"); Console.WriteLine($"All {_checks} media, traffic and download checks passed."); return; }
+            if (args.Contains("--bundled-plugin-isolation-only")) { IslandUi(root, iconEntryProbe: "bundled-isolation"); Console.WriteLine($"All {_checks} bundled process checks passed."); return; }
+            if (args.Contains("--maintenance-only")) { IslandUi(root, iconEntryProbe: "maintenance"); Console.WriteLine($"All {_checks} maintenance checks passed."); return; }
+            if (args.Contains("--plugin-isolation-only")) { IslandUi(root, iconEntryProbe: "plugin-isolation"); Console.WriteLine($"All {_checks} process isolation checks passed."); return; }
+            if (args.Contains("--plugin-lifecycle-only")) { IslandUi(root, iconEntryProbe: "plugin-lifecycle"); Console.WriteLine($"All {_checks} plugin lifecycle checks passed."); return; }
+            if (args.Contains("--optimization-ui-only")) { IslandUi(root, iconEntryProbe: "optimization"); Console.WriteLine($"All {_checks} optimization UI checks passed."); return; }
+            if (args.Contains("--liquid-glass-ui-only")) { IslandUi(root, iconEntryProbe: "liquid-glass"); Console.WriteLine($"All {_checks} liquid glass UI checks passed."); return; }
+            if (args.Contains("--productivity-corners-only")) { IslandUi(root, iconEntryProbe: "productivity-corners"); Console.WriteLine($"All {_checks} productivity corner checks passed."); return; }
+            if (args.Contains("--liquid-glass-live-only")) { IslandUi(root, iconEntryProbe: "liquid-glass-live"); Console.WriteLine($"All {_checks} live liquid glass checks passed."); return; }
+            if (args.Contains("--battery-ripple-only")) { IslandUi(root, iconEntryProbe: "battery-ripple"); Console.WriteLine($"All {_checks} battery ripple checks passed."); return; }
+            if (args.Contains("--battery-connector-only")) { IslandUi(root, iconEntryProbe: "battery-connector"); Console.WriteLine($"All {_checks} battery connector checks passed."); return; }
+            if (args.Contains("--welcome-power-preview-only")) { IslandUi(root, iconEntryProbe: "welcome-power-preview"); Console.WriteLine($"All {_checks} welcome and power preview checks passed."); return; }
+            if (args.Contains("--compact-status-alerts-only")) { IslandUi(root, iconEntryProbe: "compact-status-alerts"); Console.WriteLine($"All {_checks} compact status alert checks passed."); return; }
+            if (args.Contains("--v41-issues-only"))
+            {
+                IslandUi(root, iconEntryProbe: "v41-issues");
+                Console.WriteLine($"All {_checks} current issue checks passed."); return;
+            }
+            if (args.Contains("--redesigned-icons-only"))
+            {
+                IslandUi(root, iconEntryProbe: "redesign");
+                Console.WriteLine($"All {_checks} redesigned icon checks passed.");
+                return;
+            }
+            if (args.Contains("--sidebubble-icon-only") || args.Contains("--icon-actions-only"))
+            {
+                IslandUi(root, iconEntryProbe: args.Contains("--sidebubble-icon-only") ? "sidebubble" : "actions");
+                Console.WriteLine($"All {_checks} action entry checks passed.");
+                return;
+            }
+            if (args.Contains("--icon-presentation-only"))
+            {
+                IslandUi(root, iconPresentationOnly: true);
+                Console.WriteLine($"All {_checks} icon presentation checks passed.");
+                return;
+            }
+            if (args.Contains("--short-icons-only") || args.Contains("--semantic-icons-only"))
+            {
+                IslandUi(root, iconsOnly: true);
+                Console.WriteLine($"All {_checks} short icon checks passed."); return;
+            }
+            if (args.Contains("--page-restore-only"))
+            {
+                IslandUi(root, pageRestoreOnly: true);
+                Console.WriteLine($"All {_checks} page restore checks passed."); return;
+            }
+            if (args.Contains("--notification-content-only"))
+            {
+                IslandUi(root, notificationContentOnly: true);
+                Console.WriteLine($"All {_checks} notification content checks passed."); return;
+            }
+            if (args.Contains("--notification-full-only"))
+            {
+                IslandUi(root, iconEntryProbe: "notification-full");
+                Console.WriteLine($"All {_checks} notification full content checks passed."); return;
+            }
+            if (args.Contains("--theme-controls-only"))
+            {
+                IslandUi(root, iconEntryProbe: "theme-controls");
+                Console.WriteLine($"All {_checks} theme controls checks passed."); return;
+            }
+            if (args.Contains("--volume-wheel-only"))
+            {
+                IslandUi(root, iconEntryProbe: "volume-wheel");
+                Console.WriteLine($"All {_checks} volume wheel checks passed."); return;
+            }
+            if (args.Contains("--volume-mixer-only"))
+            {
+                IslandUi(root, iconEntryProbe: "volume-mixer");
+                Console.WriteLine($"All {_checks} volume mixer checks passed."); return;
+            }
+            if (args.Contains("--volume-growth-only"))
+            {
+                IslandUi(root, iconEntryProbe: "volume-growth");
+                Console.WriteLine($"All {_checks} volume growth checks passed."); return;
+            }
+            if (args.Contains("--outside-card-only"))
+            {
+                IslandUi(root, iconEntryProbe: "outside-card");
+                Console.WriteLine($"All {_checks} outside card checks passed."); return;
+            }
+            if (args.Contains("--clipboard-domains-only"))
+            {
+                ClipboardDomainChecks(); IslandUi(root, iconEntryProbe: "clipboard-domains");
+                Console.WriteLine($"All {_checks} clipboard domain checks passed."); return;
+            }
+            if (args.Contains("--agent-foreground-click-only")) { IslandUi(root, iconEntryProbe: "agent-foreground-click"); Console.WriteLine($"All {_checks} agent foreground click checks passed."); return; }
+            if (args.Contains("--agent-window-handoff-only"))
+            {
+                IslandUi(root, iconEntryProbe: "agent-window-handoff"); Console.WriteLine($"All {_checks} agent window handoff checks passed."); return;
+            }
+            if (args.Contains("--agent-handoff-only"))
+            {
+                IslandUi(root, iconEntryProbe: "agent-handoff"); Console.WriteLine($"All {_checks} agent handoff checks passed."); return;
+            }
+            if (args.Contains("--agent-navigation-only"))
+            {
+                IslandUi(root, iconEntryProbe: "agent-navigation");
+                Console.WriteLine($"All {_checks} agent navigation checks passed."); return;
+            }
+            if (args.Contains("--startup-morph-only"))
+            {
+                IslandUi(root, iconEntryProbe: "startup-morph");
+                Console.WriteLine($"All {_checks} startup morph checks passed."); return;
+            }
+            if (args.Contains("--tray-popup-only")) { IslandUi(root, iconEntryProbe: "tray-popup"); Console.WriteLine($"All {_checks} tray popup checks passed."); return; }
+            if (args.Contains("--island-corners-only")) { IslandUi(root, iconEntryProbe: "island-corners"); Console.WriteLine($"All {_checks} island corner checks passed."); return; }
+            if (args.Contains("--backdrop-opacity-only")) { IslandUi(root, iconEntryProbe: "backdrop-opacity"); Console.WriteLine($"All {_checks} native backdrop opacity checks passed."); return; }
+            if (args.Contains("--component-native-hit-only")) { IslandUi(root, iconEntryProbe: "component-native-hit"); Console.WriteLine($"All {_checks} component native hit checks passed."); return; }
+            if (args.Contains("--component-hit-area-only"))
+            {
+                IslandUi(root, componentHitAreaOnly: true);
+                Console.WriteLine($"All {_checks} component hit area checks passed."); return;
+            }
+            if (args.Contains("--local-agents-only"))
+            {
+                await LocalAgentProtocolChecks(root);
+                Console.WriteLine($"All {_checks} local agent checks passed."); return;
+            }
+            if (args.Contains("--ai-conversations-only"))
+            {
+                AiConversationStoreChecks(root);
+                IslandUi(root, aiConversationsOnly: true);
+                Console.WriteLine($"All {_checks} AI conversation checks passed."); return;
+            }
+            if (args.Contains("--portable-setup-only"))
+            {
+                PortableSetupChecks(root);
+                Console.WriteLine($"All {_checks} portable setup checks passed."); return;
+            }
+            if (args.Contains("--performance-only"))
+            {
+                PerformanceAllocationChecks();
+                DownloadIdleQueryChecks(root);
+                Downloads(root);
+                IslandUi(root, performanceOnly: true);
+                System.Console.WriteLine($"All {_checks} performance checks passed.");
+                return;
+            }
             if (args.Contains("--agent-ui-only"))
             {
                 IslandUi(root, agentOnly: true);
                 System.Console.WriteLine($"All {_checks} agent interaction checks passed.");
                 return;
+            }
+            if (args.Contains("--external-translation-only"))
+            {
+                await ShortcutSimulationChecks(root);
+                IslandUi(root, externalTranslationOnly: true);
+                Console.WriteLine($"All {_checks} external translation checks passed."); return;
             }
             if (args.Contains("--action-icon-probe"))
             {
@@ -73,6 +405,10 @@ internal static partial class Program
                 IslandUi(root, focusOnly: true);
                 System.Console.WriteLine($"All {_checks} card pin and pomodoro checks passed.");
                 return;
+            }
+            if (args.Contains("--vivo-ip-only"))
+            {
+                VivoIpChecks(root); Console.WriteLine($"All {_checks} vivo IP checks passed."); return;
             }
             if (args.Contains("--vivo-plugin-only"))
             {
@@ -98,6 +434,41 @@ internal static partial class Program
                 NativeClipboardReadChecks();
                 IslandUi(root, coverClipboardOnly: true);
                 System.Console.WriteLine($"All {_checks} cover and clipboard checks passed.");
+                return;
+            }
+            if (args.Contains("--launch-links-only"))
+            {
+                Directory.CreateDirectory("bin/launch-previews");
+                LaunchAndLinksPolicyChecks(root);
+                IslandUi(root, launchLinksOnly: true);
+                Console.WriteLine($"All {_checks} startup and web link checks passed.");
+                return;
+            }
+            if (args.Contains("--notification-startup-only"))
+            {
+                DesktopNotifications();
+                IslandUi(root, notificationStartupOnly: true);
+                Console.WriteLine($"All {_checks} notification and boot popup checks passed.");
+                return;
+            }
+            if (args.Contains("--background-window-only"))
+            {
+                IslandUi(root, backgroundWindowOnly: true);
+                Console.WriteLine($"All {_checks} background window checks passed.");
+                return;
+            }
+            if (args.Contains("--weather-only"))
+            {
+                await Weather(root);
+                await WeatherReminderChecks(root);
+                IslandUi(root, weatherOnly: true);
+                Console.WriteLine($"All {_checks} weather checks passed.");
+                return;
+            }
+            if (args.Contains("--weather-live-check"))
+            {
+                await WeatherLiveChecks(root);
+                Console.WriteLine($"All {_checks} live weather checks passed.");
                 return;
             }
             if (args.Contains("--agent-media-ui-only"))
@@ -134,11 +505,11 @@ internal static partial class Program
                 System.Console.WriteLine($"All {_checks} CPU sampling checks passed.");
                 return;
             }
-            if (args.Contains("--hardware-power-only") || args.Contains("--hardware-power-elevated"))
+            if (args.Contains("--hardware-power-only"))
             {
                 StatusDisplayPolicyChecks();
-                await HardwarePowerArchitectureChecks(args.Contains("--hardware-power-elevated"));
-                Console.WriteLine($"All {_checks} independent hardware power checks passed.");
+                await HardwarePowerArchitectureChecks();
+                Console.WriteLine($"All {_checks} native hardware power checks passed.");
                 return;
             }
             if (args.Contains("--status-display-only"))
@@ -158,6 +529,21 @@ internal static partial class Program
                 System.Console.WriteLine($"All {_checks} AI and configuration checks passed.");
                 return;
             }
+            if (args.Contains("--settings-appearance-only"))
+            {
+                IslandUi(root, settingsAppearanceOnly: true);
+                Console.WriteLine($"All {_checks} settings appearance checks passed."); return;
+            }
+            if (args.Contains("--volume-flyout-only") || args.Contains("--volume-flyout-live"))
+            {
+                IslandUi(root, iconEntryProbe: args.Contains("--volume-flyout-live") ? "volume-flyout-live" : "volume-flyout");
+                Console.WriteLine($"All {_checks} native volume flyout checks passed."); return;
+            }
+            if (args.Contains("--native-toast-banners-only"))
+            {
+                IslandUi(root, nativeBannersOnly: true);
+                Console.WriteLine($"All {_checks} native notification banner checks passed."); return;
+            }
             Notifications();
             SatelliteCycles();
             PinDismissal();
@@ -165,12 +551,15 @@ internal static partial class Program
             MediaAndTrafficChecks(root);
             MediaHandoffPolicyChecks();
             await MediaSynchronizationChecks();
+            await PlaybackOrderChecks();
             DesktopNotifications();
             CpuSamplingPolicyChecks();
+            await ShortcutSimulationChecks(root);
             NativeClipboardReadChecks();
             IslandUi(root);
             Storage(root);
             AiConfigurationChecks(root);
+            await LocalAgentProtocolChecks(root);
             await AiIntegrationChecks();
             await AiModelConnectionChecks();
             Conversations();
@@ -183,6 +572,7 @@ internal static partial class Program
             RenderTools();
             await Approvals();
             await ExternalAgentChecks();
+            await ExternalAgentLifetimeChecks();
             if (args.Contains("--online-weather"))
             {
                 using var online = new WeatherService(cachePath: Path.Combine(root, "online-weather.json"));
@@ -438,7 +828,7 @@ internal static partial class Program
             "CPU 重置或无采样间隔显示未知而非假数值");
     }
 
-    private static void IslandUi(string testRoot, bool agentOnly = false, bool pausedMedia = false, bool focusOnly = false, bool vivoOnly = false, bool uninstallOnly = false, bool batteryOnly = false, bool coverClipboardOnly = false, bool pausedOnly = false, bool aiConfigOnly = false, bool handoffOnly = false, bool cpuOnly = false, bool statusOnly = false)
+    private static void IslandUi(string testRoot, bool agentOnly = false, bool pausedMedia = false, bool focusOnly = false, bool vivoOnly = false, bool uninstallOnly = false, bool batteryOnly = false, bool coverClipboardOnly = false, bool pausedOnly = false, bool aiConfigOnly = false, bool handoffOnly = false, bool cpuOnly = false, bool statusOnly = false, bool launchLinksOnly = false, bool notificationStartupOnly = false, bool weatherOnly = false, bool backgroundWindowOnly = false, bool performanceOnly = false, bool externalTranslationOnly = false, bool aiConversationsOnly = false, bool settingsAppearanceOnly = false, bool nativeBannersOnly = false, bool notificationContentOnly = false, bool componentHitAreaOnly = false, bool pageRestoreOnly = false, bool iconsOnly = false, bool iconPresentationOnly = false, string? iconEntryProbe = null)
     {
         Exception? error = null;
         var thread = new Thread(() =>
@@ -456,6 +846,13 @@ internal static partial class Program
                 app.Resources.MergedDictionaries.Add(new System.Windows.ResourceDictionary
                 { Source = new Uri("pack://application:,,,/alpha-island;component/Themes/Win11Settings.xaml") });
                 alpha_island.Animation.MotionPolicy.Apply(true, false);
+                if (settingsAppearanceOnly)
+                {
+                    var appearanceSettings = new alpha_island.Settings.SettingsWindow(false);
+                    try { SettingsForegroundChecks(appearanceSettings); SettingsAppearanceMotionChecks(appearanceSettings); SettingsCategoryChecks(); }
+                    finally { appearanceSettings.ForceClose = true; appearanceSettings.Close(); }
+                    return;
+                }
                 if (aiConfigOnly) { AiSettingsConfigurationUiChecks(testRoot); AiModelPickerUiChecks(testRoot); return; }
                 var options = new IslandOptions { LyricsEnabled = true, GlassOpacity = 0.08, GreetingEnabled = false, FileTransferEnabled = true };
                 window = new alpha_island.MainWindow(options);
@@ -466,16 +863,100 @@ internal static partial class Program
                     var args = parameters.Select((p, i) => i < values.Length ? values[i] : p.DefaultValue).ToArray();
                     return method.Invoke(window, args);
                 }
-                T Field<T>(string name) => (T)typeof(alpha_island.MainWindow).GetField(name,
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!;
-                void SetField(string name, object? value) => typeof(alpha_island.MainWindow).GetField(name,
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(window, value);
+                T Field<T>(string name) => (T)ReadWindowMember(window, name)!;
+                void SetField(string name, object? value) => WriteWindowMember(window, name, value);
                 var root = (System.Windows.Controls.Grid)window.Content;
+                if (iconEntryProbe == "clipboard-history-preferences") { ClipboardHistoryPreferencesChecks(window, testRoot); return; }
+                if (iconEntryProbe == "ai-settings-layout") { AiSettingsLayoutChecks(window, testRoot); return; }
+                if (iconEntryProbe == "plugin-settings-surface") { PluginSettingsSurfaceChecks(window, testRoot); return; }
+                if (iconEntryProbe == "island-zorder") { IslandZOrderChecks(window, testRoot); return; }
+                if (iconEntryProbe == "productivity-corners") { ProductivityCornersChecks(window); return; }
+                if (iconEntryProbe == "liquid-glass-live") { LiquidGlassLiveSceneChecks(window); return; }
+                if (iconEntryProbe == "file-transfer-ole") { FileTransferOleChecks(window, root, testRoot); return; }
                 window.Content = null;
                 using var source = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("Alpha Island pin and geometry regression")
                 { Width = 1200, Height = 340, PositionX = -32000, PositionY = -32000, WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle = 0x08000080 });
                 source.RootVisual = root;
                 root.UpdateLayout();
+                if (iconEntryProbe == "liquid-cell-motion") { LiquidCellMotionChecks(window, root); return; }
+                if (iconEntryProbe == "codex-status-recovery") { CodexStatusRecoveryChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "agent-startup-latency") { AgentStartupLatencyChecks(window, root); return; }
+                if (iconEntryProbe == "notification-presentation") { NotificationPresentationChecks(window, root); return; }
+                if (iconEntryProbe == "browser-download") { BrowserDownloadUiChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "file-transfer-out") { FileTransferExportChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "volume-flash-baseline") { VolumeFlashLiveChecks(window, root, false); return; }
+                if (iconEntryProbe == "volume-flash-live") { VolumeFlashLiveChecks(window, root); return; }
+                if (iconEntryProbe == "volume-game-quiet-live") { VolumeFlashLiveChecks(window, root, gameQuiet: true); return; }
+                if (iconEntryProbe == "game-quiet") { GameQuietUiChecks(window, root); return; }
+                if (iconEntryProbe == "status-split") { StatusSplitUiChecks(window, root); return; }
+                if (iconEntryProbe == "power-frame-stall") { PowerFrameStallChecks(window, root); return; }
+                if (iconEntryProbe == "charger-type") { ChargerTypeUiChecks(window, root); return; }
+                if (iconEntryProbe == "smart-charging") { SmartChargingUiChecks(window, root); return; }
+                if (iconEntryProbe == "energy-saver") { EnergySaverUiChecks(window, root); return; }
+                if (iconEntryProbe == "power-island-lifecycle") { PowerIslandLifecycleChecks(window, root); return; }
+                if (iconEntryProbe == "music-layout-preview") { MusicLayoutPreviews(window, root); return; }
+                if (iconEntryProbe == "battery-text-layout-preview") { BatteryTextLayoutPreviews(window, root); return; }
+                if (iconEntryProbe == "bluetooth-transition") { BluetoothTransitionChecks(window, root); BluetoothArtworkUiChecks(window, root); return; }
+                if (iconEntryProbe == "tray-popup") { TrayPopupChecks(); return; }
+                if (iconEntryProbe == "island-corners") { IslandCornerChecks(window, root); return; }
+                if (iconEntryProbe == "backdrop-opacity") { BackdropOpacityChecks(); return; }
+                if (iconEntryProbe == "component-native-hit") { ComponentNativeHitChecks(); ComponentNativeHitChecks(includeBody: true); ComponentNativeHitChecks(includeBody: true, contourHeight: 214); return; }
+                if (iconEntryProbe == "charging-island-preview") { ChargingIslandPreviewChecks(window, root); return; }
+                if (iconEntryProbe == "charging-corners") { ChargingCompactCornerChecks(window, root); return; }
+                if (iconEntryProbe == "all-island-corners") { AllCompactIslandCornerChecks(window, root); return; }
+                if (iconEntryProbe == "network-curves") { NetworkMenuAndCurveChecks(window, root); return; }
+                if (iconEntryProbe == "screen-tools-theme") { ScreenToolsThemeChecks(window, root); return; }
+                if (iconEntryProbe == "media-events") { DownloadAndMediaEventUiChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "bundled-isolation") { BundledPluginIsolationChecks(window, testRoot); return; }
+                if (iconEntryProbe == "maintenance") { MaintenanceChecks(window, testRoot); return; }
+                if (iconEntryProbe == "plugin-isolation") { PluginIsolationChecks(window, testRoot); return; }
+                if (iconEntryProbe == "plugin-lifecycle") { PluginAndSettingsChecks(window, testRoot); return; }
+                if (iconEntryProbe == "optimization") { OptimizationUiChecks(window, testRoot); return; }
+                if (iconEntryProbe == "liquid-glass") { LiquidGlassUiChecks(window, root); return; }
+                if (iconEntryProbe == "messenger-direct-open") { MessengerDirectOpenChecks(window, root); return; }
+                if (iconEntryProbe == "messenger-notifications") { MessengerNotificationUiChecks(window, root); return; }
+                if (iconEntryProbe == "battery-ripple") { BatteryRippleChecks(window, root); return; }
+                if (iconEntryProbe == "battery-connector") { BatteryConnectorChecks(window, root); return; }
+                if (iconEntryProbe == "welcome-power-preview") { WelcomePowerPreviewChecks(window, root); return; }
+                if (iconEntryProbe == "compact-status-alerts") { CompactStatusAlertChecks(window, root); return; }
+                if (iconEntryProbe == "v41-issues") { V41IssueChecks(window, root); return; }
+                if (iconEntryProbe == "sidebubble") { SideBubbleIconMotionUiChecks(window, root); return; }
+                if (iconEntryProbe == "actions") { IconActionEntryUiChecks(window, root); return; }
+                if (iconEntryProbe == "redesign") { RedesignedIconChecks(); return; }
+                if (iconEntryProbe == "notification-visual-stack") { NotificationVisualStackChecks(window, root); return; }
+                if (iconEntryProbe == "notification-stack") { NotificationStackChecks(window, root); return; }
+                if (iconEntryProbe == "notification-full") { NotificationFullContentUiChecks(window, root); return; }
+                if (iconEntryProbe == "startup-morph") { StartupMorphUiChecks(window, root); return; }
+                if (iconEntryProbe == "volume-growth") { VolumeGrowthUiChecks(window, root); return; }
+                if (iconEntryProbe == "theme-controls") { ThemeControls(window, root, source); return; }
+                if (iconEntryProbe == "volume-flyout") { VolumeFlyoutUiChecks(window, root); return; }
+                if (iconEntryProbe == "volume-flyout-live") { VolumeFlyoutLiveChecks(window, root); return; }
+                if (iconEntryProbe == "volume-wheel") { VolumeWheelUiChecks(window, root); return; }
+                if (iconEntryProbe == "volume-mixer") { VolumeMixerUiChecks(window, root); return; }
+                if (iconEntryProbe == "outside-card") { OutsideCardClickUiChecks(window, root); return; }
+                if (iconEntryProbe == "agent-navigation") { AgentAppNavigationUiChecks(window, root); return; }
+                if (iconEntryProbe == "agent-window-responsiveness") { AgentWindowResponsivenessChecks(window, root); return; }
+                if (iconEntryProbe == "handoff-responsiveness") { HandoffResponsivenessChecks(window, root); return; }
+                if (iconEntryProbe == "agent-handoff") { AgentHandoffUiChecks(window, root); return; }
+                if (iconEntryProbe == "agent-avatar") { AgentAvatarChecks(window, root); return; }
+                if (iconEntryProbe == "agent-avatar-routing") { AgentAvatarRoutingChecks(window, root); return; }
+                if (iconEntryProbe == "agent-avatar-loop") { AgentAvatarLoopChecks(window, root); return; }
+                if (iconEntryProbe == "agent-multi-session") { AgentMultiSessionChecks(window, root); return; }
+                if (iconEntryProbe == "agent-background-resume") { AgentBackgroundResumeChecks(window, root); return; }
+                if (iconEntryProbe == "background-agent") { BackgroundVisibilityChecks(window, root, false); return; }
+                if (iconEntryProbe == "background-music") { BackgroundVisibilityChecks(window, root, true); return; }
+                if (iconEntryProbe == "agent-foreground-click") { AgentForegroundClickChecks(window, root); return; }
+                if (iconEntryProbe == "agent-window-handoff") { AgentForegroundVisibilityChecks(window, root); return; }
+                if (iconEntryProbe == "clipboard-domains") { ClipboardDomainUiChecks(window, root, testRoot); return; }
+                if (iconPresentationOnly) { IconPresentationUiChecks(window, root); return; }
+                if (iconsOnly) { SemanticIconControlChecks(); ShortIconMotionChecks(window, root); IconPresentationUiChecks(window, root); BluetoothArtworkUiChecks(window, root); ActionIconIntegrationChecks(window, root); SideBubbleIconMotionUiChecks(window, root); IconActionEntryUiChecks(window, root); SemanticIconEntryUiChecks(window, root); SemanticNotificationUiChecks(window, root); SaveBluetoothArtworkGallery(); SaveSemanticIconPreview(Environment.CurrentDirectory); return; }
+                if (pageRestoreOnly) { PageRestoreUiChecks(window, root); return; }
+                if (notificationContentOnly) { NotificationContentUiChecks(window, root); return; }
+                if (componentHitAreaOnly) { ComponentHitAreaUiChecks(window, root); return; }
+                if (nativeBannersOnly) { NativeToastBannerUiChecks(window, root); return; }
+                if (performanceOnly) { PerformanceUiChecks(window); return; }
+                if (aiConversationsOnly) { AiConversationUiChecks(window, root, testRoot); ConversationPluginLifecycleChecks(window,testRoot); return; }
+                if (externalTranslationOnly) { ExternalTranslationUiChecks(window, root, testRoot); return; }
                 if (agentOnly)
                 {
                     if (pausedMedia) PausedMediaVisibilityChecks(window, root);
@@ -488,6 +969,10 @@ internal static partial class Program
                 if (pausedOnly) { PausedMediaVisibilityChecks(window, root); return; }
                 if (cpuOnly) { CpuSamplingUiChecks(window); return; }
                 if (statusOnly) { StatusDisplayUiChecks(window, root); return; }
+                if (launchLinksOnly) { LaunchAndLinksUiChecks(window, root, testRoot); return; }
+                if (notificationStartupOnly) { NotificationStartupUiChecks(window, root); return; }
+                if (weatherOnly) { WeatherUiChecks(window, root); WeatherIconUiChecks(window, root); return; }
+                if (backgroundWindowOnly) { BackgroundWindowChecks(window); return; }
                 if (handoffOnly) { SettingsCategoryChecks(); MediaHandoffUiChecks(window, root); PausedMediaVisibilityChecks(window, root); return; }
                 if (coverClipboardOnly) { RoundedCoverChecks(window, root); ClipboardMusicChecks(window, root, testRoot); return; }
                 ThemeControls(window, root, source);
@@ -495,13 +980,39 @@ internal static partial class Program
                 MediaAndCompactUiChecks(window, root);
                 DownloadAndMediaEventUiChecks(window, root, testRoot);
                 PluginAndSettingsChecks(window, testRoot);
+                ConversationPluginLifecycleChecks(window,testRoot);
                 SettingsCategoryChecks();
+                var appearanceCheck = new alpha_island.Settings.SettingsWindow(false);
+                try { SettingsForegroundChecks(appearanceCheck); SettingsAppearanceMotionChecks(appearanceCheck); }
+                finally { appearanceCheck.ForceClose = true; appearanceCheck.Close(); }
                 CpuSamplingUiChecks(window);
                 AiSettingsConfigurationUiChecks(testRoot);
                 AiModelPickerUiChecks(testRoot);
+                ExternalTranslationUiChecks(window, root, testRoot);
                 PluginUninstallChecks(window, testRoot);
                 DeviceBatteryUiChecks(window, root);
                 RoundedCoverChecks(window, root);
+                NativeToastBannerUiChecks(window, root);
+                NotificationContentUiChecks(window, root);
+                NotificationFullContentUiChecks(window, root);
+                StartupMorphUiChecks(window, root);
+                OutsideCardClickUiChecks(window, root);
+                AgentAppNavigationUiChecks(window, root);
+                AgentHandoffUiChecks(window, root);
+                VolumeMixerUiChecks(window, root);
+                ComponentHitAreaUiChecks(window, root);
+                PageRestoreUiChecks(window, root);
+                ShortIconMotionChecks(window, root);
+                BluetoothArtworkUiChecks(window, root);
+                ActionIconIntegrationChecks(window, root);
+                IconPresentationUiChecks(window, root);
+                SideBubbleIconMotionUiChecks(window, root);
+                IconActionEntryUiChecks(window, root);
+                SemanticIconControlChecks();
+                VolumeGrowthUiChecks(window, root);
+                SemanticIconEntryUiChecks(window, root);
+                SemanticNotificationUiChecks(window, root);
+                WeatherIconUiChecks(window, root);
                 // 多岛测试使用真实的媒体快照，空播放器不应再凭默认主岛键制造卫星。
                 using var pinMedia = new SmtcService(System.Windows.Threading.Dispatcher.CurrentDispatcher);
                 pinMedia.SetDebugNowPlaying(new NowPlayingInfo { Title = "双岛回归示例", State = PlaybackState.Playing });
@@ -714,7 +1225,7 @@ internal static partial class Program
                     foreach (double lyricWidth in new[] { 344.0, 450.0, 560.0 })
                     {
                         SetField("_pillLyricWidth", lyricWidth); Call("TryMorphPillWidth");
-                        double expected = key == "netspeed" ? IslandSizing.SystemPillWidth : IslandMetrics.PillWidth;
+                        double expected = key == "netspeed" ? StatusDisplayOptions.Width(StatusDisplayOptions.NetworkSelected(options).Length) : IslandMetrics.PillWidth;
                         fixedWidths &= Math.Abs(window.IslandBody.Width - expected) < 0.5;
                     }
                 }
@@ -725,13 +1236,12 @@ internal static partial class Program
                 var netOrb = satellites["netspeed"];
                 var netRates = ((System.Windows.Controls.Grid)netOrb.Child).Children.OfType<alpha_island.Controls.NetworkSpeedPill>().Single();
                 netRates.SetRates(263900, 50400);
-                netRates.SetResources(88, 88);
                 Check(netRates.UploadValue.Text == "257.7KB/s" && netRates.DownloadValue.Text == "49.2KB/s"
                     && netRates.UploadValue.FontSize >= 10 && netRates.UploadValue.FontWeight == System.Windows.FontWeights.Bold
                     && netRates.ToolTip.ToString()!.Contains("257.7 KB/s") && netRates.ToolTip.ToString()!.Contains("49.2 KB/s"),
                     "状态卫星显示完整网速单位与加粗字体");
-                Check(netOrb.Width <= 160 && netOrb.Height <= 40,
-                    "合并后的四项状态卫星保持紧凑尺寸");
+                Check(netOrb.Width <= IslandSizing.NetworkSatelliteWidth && netOrb.Height <= IslandSizing.NetworkSatelliteHeight,
+                    "包含功耗的系统状态卫星保持既定紧凑尺寸");
                 Check(ReferenceEquals(netOrb.Background, window.IslandBody.Background), "网速卫星共用主岛透明度画刷");
                 var fill = (System.Windows.Media.LinearGradientBrush)netOrb.Background;
                 byte lowAlpha = fill.GradientStops[0].Color.A;
@@ -745,9 +1255,8 @@ internal static partial class Program
                 var downloadPoint = netRates.DownloadValue.TranslatePoint(new System.Windows.Point(), netRates);
                 Check(uploadPoint.Y < downloadPoint.Y && Math.Abs(uploadPoint.X - downloadPoint.X) < 10,
                     "大速率时上传与下载仍按参考图上下排列");
-                Check(netRates.CpuValue.Text == "88%" && netRates.RamValue.Text == "88%"
-                    && ((System.Windows.Media.SolidColorBrush)netRates.RamValue.Foreground).Color.R == 255,
-                    "CPU 与 RAM 同屏显示且高内存占用以红色强调");
+                Check(netRates.DisplayedItems.SequenceEqual(new[] { "upload", "download" }) && !netRates.ToolTip.ToString()!.Contains("CPU"),
+                    "独立网速卫星仅显示上传下载，不混入 CPU 或内存");
                 netRates.SetRates(263900, 50400);
                 root.UpdateLayout();
                 var preview = new System.Windows.Media.Imaging.RenderTargetBitmap(1200, 110, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
@@ -779,7 +1288,7 @@ internal static partial class Program
                 Check(window.NetSpeedRates.UploadValue.Text == "976.6KB/s" && window.NetSpeedRates.DownloadValue.Text == "1.9MB/s"
                     && window.NetSpeedRates.SessionDescription.Contains("上传 1.9MB、下载 3.8MB") && window.NetSpeedRates.SessionDescription.Contains("下载峰值 1.9 MB/s")
                     && window.NetSpeedNotifyLayer.Visibility == System.Windows.Visibility.Visible
-                    && window.IslandBody.Width == IslandSizing.SystemPillWidth,
+                    && window.IslandBody.Width == StatusDisplayOptions.Width(StatusDisplayOptions.NetworkSelected(options).Length),
                     "合并状态主岛以紧凑宽度显示速率且悬停保留真实累计峰值");
                 var history = Field<List<double>>("_netSpeedDownHistory");
                 for (int i = 0; i < 70; i++) Call("UpdateNetSpeedSample", telemetry.Current);
@@ -793,24 +1302,23 @@ internal static partial class Program
                 history.Clear();
                 for (int i = 0; i < 60; i++) history.Add(50_400 + 500_000 * Math.Pow(Math.Sin(i * 0.21), 2));
                 Call("UpdateNetSpeedPrimary", telemetry.Current);
-                window.NetSpeedRates.SetResources(88, 88);
                 root.UpdateLayout();
                 var mainDetail = new System.Windows.Media.DrawingVisual();
                 using (var draw = mainDetail.RenderOpen())
                 {
                     draw.DrawRectangle(new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x64, 0x74, 0x85)), null,
-                        new System.Windows.Rect(0, 0, IslandSizing.SystemPillWidth + 40, IslandMetrics.PillHeight + 24));
+                        new System.Windows.Rect(0, 0, StatusDisplayOptions.Width(StatusDisplayOptions.NetworkSelected(options).Length) + 40, IslandMetrics.PillHeight + 24));
                     draw.DrawRectangle(new System.Windows.Media.VisualBrush(window.IslandBody), null,
-                        new System.Windows.Rect(20, 12, IslandSizing.SystemPillWidth, IslandMetrics.PillHeight));
+                        new System.Windows.Rect(20, 12, StatusDisplayOptions.Width(StatusDisplayOptions.NetworkSelected(options).Length), IslandMetrics.PillHeight));
                 }
-                var mainBitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)IslandSizing.SystemPillWidth + 40, (int)IslandMetrics.PillHeight + 24,
+                var mainBitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)StatusDisplayOptions.Width(StatusDisplayOptions.NetworkSelected(options).Length) + 40, (int)IslandMetrics.PillHeight + 24,
                     96, 96, System.Windows.Media.PixelFormats.Pbgra32);
                 mainBitmap.Render(mainDetail);
                 var mainEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
                 mainEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(mainBitmap));
                 using (var stream = File.Create(Path.GetFullPath("docs/screens/network-speed-main.png"))) mainEncoder.Save(stream);
-                Check(window.NetSpeedRates.CpuValue.ActualWidth > 0 && window.NetSpeedRates.RamValue.ActualWidth > 0,
-                    "合并状态主岛 CPU 与 RAM 实际排版可见");
+                Check(window.NetSpeedRates.UploadValue.ActualWidth > 0 && window.NetSpeedRates.DownloadValue.ActualWidth > 0,
+                    "独立网速主岛上传与下载实际排版可见");
                 Call("StopNetworkSpeedService");
                 Check(window.NetSpeedRates.DownloadValue.Text == "—" && window.NetSpeedRates.SessionDescription == "" && history.Count == 0,
                     "关闭网速监测移除旧速率和会话数据");
@@ -823,13 +1331,19 @@ internal static partial class Program
                 Check(Field<DesktopNotification?>("_desktopCurrent") == null && Field<IslandState>("_state") == IslandState.Pill,
                     "实际窗口首轮同步通知不补弹旧消息");
                 Call("OnSystemToastsReceived", new[] { message }, false); PumpAnimations(400); root.UpdateLayout();
+                Check(Field<IslandState>("_state") == IslandState.Pill
+                    && Field<DesktopNotification?>("_desktopCurrent")?.Key == message.Key,
+                    "新系统消息自动展示紧凑小岛，完整卡片由点击打开");
+                Call("IslandBody_MouseLeftButtonDown", window.IslandBody,
+                    new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left));
+                PumpAnimations(400); root.UpdateLayout();
                 var notificationView = Field<System.Windows.Controls.Grid>("_notificationsView");
                 var notificationList = Field<System.Windows.Controls.StackPanel>("_notificationList");
                 var messageCard = notificationList.Children.OfType<alpha_island.Controls.DesktopNotificationCard>().First();
                 var buttonBottom = messageCard.OpenButton!.TranslatePoint(new System.Windows.Point(0, messageCard.OpenButton.ActualHeight), notificationView);
                 Check(Field<IslandState>("_state") == IslandState.Card && pages.ActiveId == IslandPageIds.Notifications
                     && Field<DesktopNotification?>("_desktopCurrent")?.Key == message.Key && buttonBottom.Y <= notificationView.ActualHeight,
-                    "新系统消息自动展开岛内卡片且打开应用按钮在首屏可见");
+                    "点击消息小岛后打开通知卡片且打开应用按钮在首屏可见");
                 Check(messageCard.TitleText.Text == message.Title && messageCard.BodyText.Text == message.Body && messageCard.OpenButton.IsHitTestVisible,
                     "消息卡片保留应用标题正文并可点击打开应用");
                 Field<System.Windows.Controls.TextBlock>("_notificationAccessText").Text = "界面预览 · 使用示例消息";
@@ -852,8 +1366,9 @@ internal static partial class Program
                     { RoutedEvent = System.Windows.Input.Mouse.PreviewMouseWheelEvent });
                 Check(pages.ActiveIndex == pageBeforeWheel, "消息正文滚轮用于阅读且不触发岛内翻页");
                 SetField("_desktopExpires", DateTimeOffset.Now.AddSeconds(-1)); Call("TickDesktopNotifications");
-                Check(Field<DesktopNotification?>("_desktopCurrent") == null && Field<IslandState>("_state") == IslandState.Pill,
-                    "消息展示到期后恢复原置顶状态岛");
+                Check(Field<DesktopNotification?>("_desktopCurrent") == null && Field<IslandState>("_state") == IslandState.Card,
+                    "消息到期不会自动关闭手动打开的通知卡片");
+                Call("SetState", IslandState.Pill);
                 SettingsRegistry.Write(options, "NotificationQuietMode", true); Call("OnDesktopNotificationOptionsChanged");
                 Call("OnSystemToastsReceived", new[] { message with { Key = "ui-quiet-message" } }, false);
                 Check(Field<DesktopNotification?>("_desktopCurrent") == null && Field<DesktopNotificationInbox>("_desktopInbox").History.Any(x => x.Key == "ui-quiet-message"),
@@ -875,7 +1390,7 @@ internal static partial class Program
                     "解锁恢复岛并记录独立系统事件");
                 Call("ClearDesktopInbox");
                 using var toast = new SystemToastService(System.Windows.Threading.Dispatcher.CurrentDispatcher); toast.Start();
-                if (!SystemToastService.HasPackageIdentity) Check(!toast.Allowed && toast.Status.Contains("MSIX"), "普通 exe 明确提示通知读取需要安装版而不伪装已授权");
+                Check(!toast.Status.Contains("MSIX"), "普通 exe 按 Windows 实际权限监听，不以包身份提前拒绝");
                 var settings = new alpha_island.Settings.SettingsWindow(persistSettings: false); settings.LoadFrom(options);
                 Check(settings.FindName("SystemToastToggle") is System.Windows.Controls.CheckBox
                     && settings.FindName("NotificationBlockedAppsBox") is System.Windows.Controls.TextBox
@@ -884,7 +1399,7 @@ internal static partial class Program
                 settings.ForceClose = true; settings.Close();
                 Call("SetMusicPinned", false); layers.SetPinned("netspeed", false); layers.HideAll(); Call("SetState", IslandState.Bar);
                 Call("OnSystemToastsReceived", new[] { message with { Key = "ui-idle-message" } }, false);
-                Check(Field<IslandState>("_state") == IslandState.Card, "细条待机收到新消息时自动展开卡片");
+                Check(Field<IslandState>("_state") == IslandState.Pill, "细条待机收到新消息时只展开小岛");
                 SetField("_desktopExpires", DateTimeOffset.Now.AddSeconds(-1)); Call("TickDesktopNotifications");
                 Check(Field<IslandState>("_state") == IslandState.Bar && Field<string>("_activeMainIslandKey") == "music",
                     "待机消息到期缩回细条并清理已结束的消息主岛键");
@@ -942,7 +1457,7 @@ internal static partial class Program
                 Check(!(bool)Call("IsPointInsideIsland", hx, hy)! && (bool)Call("IsPointInsideInteractiveZone", hx, hy)!
                     && (IntPtr)Call("WndProc", IntPtr.Zero, 0x0084, IntPtr.Zero, packedPoint, false)! != new IntPtr(-1),
                     "岛外线条属于原生交互热区而不被判为桌面穿透或岛外点击");
-                Check(!window.ComponentHandle.ContainsHandlePoint(new System.Windows.Point(22, 2))
+                Check(!window.ComponentHandle.ContainsHandlePoint(new System.Windows.Point(80, 2))
                     && !(bool)Call("IsPointOnComponentHandle", hx + 40, hy + 100)!,
                     "外置切换层的空白区域保持鼠标穿透");
                 window.ComponentHandle.RaiseEvent(new System.Windows.Input.MouseWheelEventArgs(System.Windows.Input.Mouse.PrimaryDevice, Environment.TickCount, -120)
@@ -1083,7 +1598,7 @@ internal static partial class Program
                     Call("CloseComponentSwitcher");
                 }
                 Call("SetState", IslandState.Pill); Call("SwitchMainIsland", "netspeed"); root.UpdateLayout();
-                window.NetSpeedRates.SetRates(263900, 50400); window.NetSpeedRates.SetResources(88, 88);
+                window.NetSpeedRates.SetRates(263900, 50400);
                 SaveSwitcherPreview("docs/screens/component-switcher-pill.png");
                 Call("SelectComponent", IslandPageIds.Clipboard); root.UpdateLayout();
                 Check(Field<IslandState>("_state") == IslandState.Card && pages.ActiveId == IslandPageIds.Clipboard,
@@ -1110,14 +1625,18 @@ internal static partial class Program
                 Call("OpenComponentMenu", false); window.ApplySessionNotification(true);
                 Check(!Field<bool>("_componentMenuVisible") && !Field<bool>("_componentPressActive"), "锁屏立即关闭圆形菜单并清理长按状态");
                 window.ApplySessionNotification(false); Call("ClearDesktopInbox");
+                pages.Register(new DelegateIslandPage("regression.dynamic", "动态测试页", new System.Windows.Controls.Grid(), 99,
+                    IslandMetrics.CardHeightLyrics, available: o => SettingsRegistry.GetBool(o, "AiEnabled", false)));
+                pages.Sync(options);
                 Call("OpenComponentMenu", false); int previousCount = pages.Count;
                 SettingsRegistry.Write(options, "AiEnabled", true); pages.Sync(options);
                 Check(!Field<bool>("_componentMenuVisible") && pages.Count == previousCount + 1,
                     "组件可用性改变时关闭旧菜单避免图标索引串页");
                 Call("OpenComponentMenu", false);
                 Check(Field<alpha_island.Controls.ComponentRadialMenu>("_componentMenu").ItemIds.SequenceEqual(pages.Pages.Select(x => x.Id))
-                    && Field<alpha_island.Controls.ComponentRadialMenu>("_componentMenu").ItemIds.Contains(IslandPageIds.Ai),
-                    "重新展开圆形菜单保留全部原有卡片并包含刚启用的组件");
+                    && Field<alpha_island.Controls.ComponentRadialMenu>("_componentMenu").ItemIds.Contains("regression.dynamic"),
+                    "重新展开圆形菜单保留全部可用卡片并包含刚启用的动态组件");
+                pages.Unregister("regression.dynamic");
                 Call("CloseComponentSwitcher");
                 var nativeMenu = Field<alpha_island.Controls.ComponentRadialMenu>("_componentMenu");
                 nativeMenu.Visibility = System.Windows.Visibility.Hidden; nativeMenu.IsHitTestVisible = false;
@@ -1254,7 +1773,7 @@ internal static partial class Program
                     "后台歌词有无变化不抢走用户当前卡片");
                 Call("ApplyLyrics", new LyricsDocument(lyricLines, true, true, "离线示例"));
                 Call("SelectComponent", IslandPageIds.Music); Call("ApplyLyrics", (object?)null); root.UpdateLayout();
-                Check(window.IslandBody.Height == IslandMetrics.CardHeight && Bounds(window.TitleText).Top >= 8
+                Check(window.IslandBody.Height == IslandMetrics.MusicCardHeight && Bounds(window.TitleText).Top >= 8
                     && Bounds(window.ProgressTrack).Bottom <= window.IslandBody.Height - 8,
                     "纯音乐恢复紧凑卡片且封面信息与进度条不被裁切");
 
@@ -1359,7 +1878,7 @@ internal static partial class Program
                         contourMenu.Measure(contourMenu.Layout.Size); contourMenu.Arrange(new System.Windows.Rect(contourMenu.Layout.Size)); contourMenu.UpdateLayout();
                         root.UpdateLayout();
                         contourMenu.Reveal(); PumpAnimations(65);
-                        var circles = contourMenu.Children.OfType<System.Windows.Controls.Border>().Where(b => b.Child is System.Windows.Controls.TextBlock t && t.FontSize == 17).ToArray();
+                        var circles = contourMenu.Children.OfType<System.Windows.Controls.Border>().Where(b => b.Child is AlphaIsland.PluginSdk.GlyphIcon t && t.FontSize == 17).ToArray();
                         var firstCircle = circles[0];
                         double scale = ((System.Windows.Media.ScaleTransform)((System.Windows.Media.TransformGroup)firstCircle.RenderTransform).Children[0]).ScaleX;
                         Check(scale > .65 && scale < 1 && circles[^1].Opacity < firstCircle.Opacity,
@@ -1449,6 +1968,11 @@ internal static partial class Program
         try { AtomicJsonFile.Write(path, "{"); } catch (JsonException) { }
         Check(File.ReadAllText(path) == before, "无效 JSON 写入不破坏旧文件");
         Check(!Directory.EnumerateFiles(root, "*.tmp").Any(), "保存后没有临时残留");
+        AtomicJsonFile.Write(path, "{\"Extras\":{\"MemoryTrimEnabled\":true,\"WeatherAutoRefresh\":false}}");
+        var migrated = IslandOptions.Load(path);
+        Check(!migrated.Extras.ContainsKey("MemoryTrimEnabled") && migrated.Extras["WeatherAutoRefresh"].ValueKind == JsonValueKind.False
+            && !File.ReadAllText(path).Contains("MemoryTrimEnabled", StringComparison.Ordinal),
+            "升级移除旧整理内存配置并持久化，其他用户设置保持原值");
     }
 
     private static void Conversations()

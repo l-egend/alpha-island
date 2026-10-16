@@ -34,16 +34,52 @@ namespace alpha_island
     public partial class MainWindow
     {
         // ================= 剪切板通知与右键粘贴 =================
+        private bool _clipboardIsCut;
+        private (Point Start, Uri Link)? _clipboardOpenPointer;
+        private Action<Uri> _openClipboardWebLink = DefaultBrowserLauncher.Open;
 
+        private bool IsClipboardLinkOpenSurface(DependencyObject? source)
+            => !_exiting && _approvalCurrent == null && _state == IslandState.Pill && _activeMainIslandKey == "clipboard"
+                && _clipboardLocked && SettingsRegistry.GetBool(_options, "ClipboardLinkDetectionEnabled", true)
+                && _clipboard?.CurrentWebLink != null && !IsDescendantOf(source, ComponentHandle);
+
+        private bool TryOpenClipboardWebLink(Uri expected)
+        {
+            if (!IsClipboardLinkOpenSurface(IslandBody) || _clipboard?.TryGetPendingWebLink(out var current) != true
+                || current?.AbsoluteUri != expected.AbsoluteUri) return false;
+            try
+            {
+                _openClipboardWebLink(current);
+                _clipboard.DismissCopiedPending();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ClipboardStatusTitle.Text = "打开失败，请重试";
+                IslandLog.Warn("Clipboard", "默认浏览器打开链接失败：" + ex.Message);
+                return true;
+            }
+        }
+
+        private void UpdateClipboardLinkAppearance()
+        {
+            var link = SettingsRegistry.GetBool(_options, "ClipboardLinkDetectionEnabled", true) ? _clipboard?.CurrentWebLink : null;
+            ClipboardStatusTitle.Text = link != null ? "点击打开链接" : _clipboardIsCut ? "已剪切" : "已复制";
+            ClipboardModeBadgeText.Text = link != null ? "链接" : _clipboardIsCut ? "剪切" : "文本";
+            ClipboardIcon.Text = link != null ? "\uE71B" : "\uE8C8";
+            ClipboardNotifyLayer.ToolTip = link != null ? "使用默认浏览器打开\n" + link.AbsoluteUri : null;
+        }
+
+        private bool _copyingClipboardHistory;
         private void OnClipboardContentCopied(object? sender, (string Summary, bool IsCut) e)
         {
-            if (_exiting || !_options.ClipboardNotifyEnabled) return;
+            if (_exiting || GameDoNotDisturbActive || !_options.ClipboardNotifyEnabled) return;
 
             _clipboardLocked = true;
+            _clipboardIsCut = e.IsCut;
             _clipboardPastedUntil = DateTime.MinValue;
 
-            ClipboardStatusTitle.Text = e.IsCut ? "已剪切" : "已复制";
-            ClipboardModeBadgeText.Text = e.IsCut ? "剪切" : "文本";
+            UpdateClipboardLinkAppearance();
             ClipboardPreviewText.Text = string.IsNullOrWhiteSpace(e.Summary) ? "剪切板内容" : e.Summary;
 
             var cyan = (System.Windows.Media.Brush)FindResource("AccentCyan");
@@ -53,14 +89,16 @@ namespace alpha_island
 
             // 与其它通知共用接管主岛的入口；只要尚未粘贴就常驻，不借用音乐置顶状态。
             ShowPillNotification(IslandNotification.While("clipboard", () => _clipboardLocked,
-                deferredInCard: false) with { Title = ClipboardStatusTitle.Text, Detail = ClipboardPreviewText.Text });
+                deferredInCard: _copyingClipboardHistory) with { Title = ClipboardStatusTitle.Text, Detail = ClipboardPreviewText.Text });
         }
 
         private void OnClipboardContentPasted(object? sender, EventArgs e)
         {
-            if (_exiting || !_options.ClipboardNotifyEnabled) return;
+            if (_exiting || GameDoNotDisturbActive || !_options.ClipboardNotifyEnabled) return;
 
             _clipboardLocked = false;
+            _clipboardOpenPointer = null;
+            ClipboardNotifyLayer.ToolTip = null;
             _clipboardPastedUntil = DateTime.UtcNow.AddSeconds(_options.ClipboardAutoCollapseSeconds);
 
             ClipboardStatusTitle.Text = "已粘贴";
@@ -82,6 +120,8 @@ namespace alpha_island
         private void OnClipboardCopiedDismissed(object? sender, EventArgs e)
         {
             _clipboardLocked = false;
+            _clipboardOpenPointer = null;
+            ClipboardNotifyLayer.ToolTip = null;
             _clipboardPastedUntil = DateTime.MinValue;
             _layers.Hide("clipboard");
             if (_state == IslandState.Pill && !HasVisibleMusicPin && !_layers.AnyPinned && !HasActiveNotification
@@ -114,6 +154,7 @@ namespace alpha_island
 
         private void SyncClipboardContent()
         {
+            if (_clipboardLocked) UpdateClipboardLinkAppearance();
             if (!ClipboardNotifyActive)
             {
                 _layers.Hide("clipboard");
@@ -132,10 +173,13 @@ namespace alpha_island
                 if (_hotkey == null)
                 {
                     _hotkey = new HotkeyService(Dispatcher);
+                    _hotkey.PreviewKeyPressed += OnVolumeKeyPreview;
+                    _hotkey.KeyPressed += OnVolumeKeyPressed;
                     _hotkey.Start();
                 }
 
                 _clipboard = new ClipboardService(Dispatcher, _hotkey);
+                _clipboard.SetHistoryLimit(SettingsRegistry.GetInt(_options, "ClipboardHistoryLimit", ClipboardService.DefaultHistoryLimit));
                 _clipboard.ContentCopied += OnClipboardContentCopied;
                 _clipboard.ContentPasted += OnClipboardContentPasted;
                 _clipboard.CopiedDismissed += OnClipboardCopiedDismissed;
@@ -154,10 +198,17 @@ namespace alpha_island
             return _clipboard != null;
         }
 
+        private void OnClipboardOptionsChanged()
+        {
+            if (_clipboard == null) return;
+            _clipboard.SetHistoryLimit(SettingsRegistry.GetInt(_options, "ClipboardHistoryLimit", ClipboardService.DefaultHistoryLimit));
+            if (_state == IslandState.Card && _pages.ActiveId == "clipboard") SyncClipboardHistoryList();
+        }
         private void SyncClipboardHistoryList()
         {
             EnsureClipboardInitialized();
 
+            ClipboardHistoryHint.Text = "点击复制，再到目标位置粘贴";
             var history = _clipboard?.History;
             int count = history?.Count ?? 0;
             ClipboardCountBadge.Text = $"{count}条";
@@ -183,7 +234,7 @@ namespace alpha_island
 
         private void ClipboardHistoryItem_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            // 如果用户点击的是项内部的具体按钮（例如“粘贴”按钮或“删除”按钮），忽略外层整行点击
+            // 如果用户点击的是项内部的具体按钮（例如“复制”按钮或“删除”按钮），忽略外层整行点击
             if (e.OriginalSource is DependencyObject dep)
             {
                 var parent = dep;
@@ -200,57 +251,36 @@ namespace alpha_island
             if (sender is FrameworkElement elem && elem.DataContext is ClipboardItemViewModel vm)
             {
                 e.Handled = true;
-                ExecuteClipboardItemPaste(vm.Entry.Text);
+                ExecuteClipboardItemCopy(vm.Entry.Text);
             }
         }
 
-        private void PasteClipboardItem_Click(object sender, RoutedEventArgs e)
+        private void CopyClipboardItem_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
             if (sender is FrameworkElement elem && elem.DataContext is ClipboardItemViewModel vm)
             {
-                ExecuteClipboardItemPaste(vm.Entry.Text);
+                ExecuteClipboardItemCopy(vm.Entry.Text);
             }
         }
 
-        private void ExecuteClipboardItemPaste(string text)
+        private void ExecuteClipboardItemCopy(string text)
         {
-            if (string.IsNullOrEmpty(text)) return;
-
+            if (string.IsNullOrWhiteSpace(text) || !EnsureClipboardInitialized()) return;
+            _copyingClipboardHistory = true;
             try
             {
-                if (_clipboard == null) return;
-                _clipboard.SetTextForPaste(text);
+                _clipboard!.CopyFromHistory(text);
+                SyncClipboardHistoryList();
+                ClipboardHistoryHint.Text = "已复制，可到目标位置粘贴";
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("[Clipboard] SetText 异常: " + ex.Message);
-                return;
+                ClipboardHistoryHint.Text = "复制失败，请重试";
+                IslandLog.Warn("Clipboard", "历史条目复制失败：" + ex.GetType().Name);
             }
-
-            _clipboard?.NotifyPasted();
-            SetState(IslandState.Pill);
-
-            // 关键：把输入焦点交还给原本正在打字/工作的宿主软件窗口，90~120ms 后模拟 Ctrl+V
-            IntPtr targetHwnd = _lastExternalForegroundHwnd;
-            if (targetHwnd != IntPtr.Zero)
-            {
-                NativeMethods.SetForegroundWindow(targetHwnd);
-            }
-
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
-            timer.Tick += (s, args) =>
-            {
-                timer.Stop();
-                if (targetHwnd != IntPtr.Zero)
-                {
-                    NativeMethods.SetForegroundWindow(targetHwnd);
-                }
-                HotkeyService.SimulatePaste();
-            };
-            timer.Start();
+            finally { _copyingClipboardHistory = false; }
         }
-
         private void DeleteClipboardItem_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;

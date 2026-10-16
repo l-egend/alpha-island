@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using alpha_island.Services;
+using alpha_island.Core;
 using Button = System.Windows.Controls.Button;
 using TextBox = System.Windows.Controls.TextBox;
 using Color = System.Windows.Media.Color;
@@ -23,6 +24,9 @@ internal sealed class ScreenToolsWindow : Window
         SetWindowDisplayAffinity(new System.Windows.Interop.WindowInteropHelper(window).Handle, 0x11);
     private readonly ScreenTextService _screen = new();
     private readonly Func<ChatConfig> _configuration;
+    private readonly Func<ExternalTranslationOptions> _externalConfiguration;
+    private readonly ShortcutSimulationService _shortcutSimulation;
+    private readonly Button _externalButton;
     private readonly TextBox _original = Box();
     private readonly TextBox _result = Box();
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 4) };
@@ -37,9 +41,12 @@ internal sealed class ScreenToolsWindow : Window
     private Window? _subtitle;
     private TextBlock? _subtitleText;
 
-    internal ScreenToolsWindow(Func<ChatConfig> configuration)
+    internal ScreenToolsWindow(Func<ChatConfig> configuration, Func<ExternalTranslationOptions>? externalConfiguration = null,
+        Action? openExternalSettings = null, ShortcutSimulationService? shortcutSimulation = null)
     {
         _configuration = configuration;
+        _externalConfiguration = externalConfiguration ?? (() => ExternalTranslationOptions.From(new IslandOptions()));
+        _shortcutSimulation = shortcutSimulation ?? new ShortcutSimulationService();
         Resources.MergedDictionaries.Add(new ResourceDictionary
         { Source = new Uri("pack://application:,,,/alpha-island;component/Themes/LiquidGlass.xaml") });
         Title = "屏幕翻译 / 字幕 / 扫码";
@@ -65,6 +72,9 @@ internal sealed class ScreenToolsWindow : Window
         actions.Children.Add(ActionButton("翻译文字", async () => await TranslateOriginalAsync()));
         _liveButton = ActionButton("开始字幕", ToggleSubtitles); actions.Children.Add(_liveButton);
         actions.Children.Add(ActionButton("屏幕扫码", async () => await ScanAsync()));
+        _externalButton = ActionButton("调用外部翻译", async () => await InvokeExternalTranslationAsync());
+        actions.Children.Add(_externalButton);
+        if (openExternalSettings != null) actions.Children.Add(ActionButton("外部翻译设置", openExternalSettings));
         root.Children.Add(actions);
         Grid.SetRow(_status, 1); root.Children.Add(_status);
         var body = new Grid { Margin = new Thickness(0, 8, 0, 8) };
@@ -77,13 +87,14 @@ internal sealed class ScreenToolsWindow : Window
         resultActions.Children.Add(ActionButton("复制结果", CopyResult));
         resultActions.Children.Add(ActionButton("打开识别链接", OpenResultLink));
         footer.Children.Add(resultActions);
-        footer.Children.Add(new TextBlock { Text = "识别在本机完成；翻译将文字发送到设置中的 AI 接口。字幕每 3 秒检查选区，停止或关窗即结束。",
+        footer.Children.Add(new TextBlock { Text = "识别在本机完成；“翻译文字”和字幕使用设置中的 AI 接口。外部翻译只发送快捷键，需在对应软件中框选并查看译文。字幕每 3 秒检查选区，停止或关窗即结束。",
             TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7, Margin = new Thickness(0, 8, 0, 0) });
         Grid.SetRow(footer, 3); root.Children.Add(footer); Content = root;
         _result.IsReadOnly = true;
         _timer.Tick += async (_, _) => { if (!_busy) await ReadAndTranslateAsync(); };
         Closed += (_, _) => { _closed = true; StopSubtitles(); _operation?.Cancel(); };
         _status.Text = "框选文字后可翻译；先框选字幕区域，再开始持续字幕。";
+        RefreshExternalTranslation();
     }
 
     private static TextBox Box() => new()
@@ -129,6 +140,32 @@ internal sealed class ScreenToolsWindow : Window
         if (_busy || string.IsNullOrWhiteSpace(_original.Text)) return;
         StopSubtitles();
         await RunAsync(async ct => { _result.Text = await _screen.TranslateAsync(_original.Text, _configuration(), ct); _status.Text = "翻译完成"; });
+    }
+    internal void RefreshExternalTranslation()
+    {
+        var options = _externalConfiguration();
+        _externalButton.IsEnabled = options.Enabled && !_busy;
+        _externalButton.ToolTip = options.DisplayName + " · " + options.Shortcut;
+    }
+    private async Task InvokeExternalTranslationAsync()
+    {
+        if (_busy || _closed) return;
+        var options = _externalConfiguration();
+        if (!options.Enabled) { _status.Text = "请先在设置中启用外部翻译快捷键。"; return; }
+        if (!ShortcutSimulationService.TryParse(options.Shortcut, out _)) { _status.Text = "外部翻译快捷键无效，请在设置中修改。"; return; }
+        StopSubtitles();
+        await RunAsync(async ct =>
+        {
+            Hide();
+            try
+            {
+                await Task.Delay(150, ct);
+                var result = await ExternalTranslationLauncher.SendAsync(options, _shortcutSimulation, ct);
+                _status.Text = result.Message;
+                if (!result.Sent && !_closed) { Show(); Activate(); }
+            }
+            catch { if (!_closed) { Show(); Activate(); } throw; }
+        });
     }
     private async Task ScanAsync()
     {
@@ -176,7 +213,7 @@ internal sealed class ScreenToolsWindow : Window
         try { await action(cts.Token); }
         catch (OperationCanceledException) { if (!_closed) _status.Text = "操作已停止或超时"; }
         catch (Exception ex) { if (!_closed) _status.Text = ex.Message; }
-        finally { if (ReferenceEquals(_operation, cts)) _operation = null; _busy = false; }
+        finally { if (ReferenceEquals(_operation, cts)) _operation = null; _busy = false; RefreshExternalTranslation(); }
     }
     private void StopSubtitles()
     {

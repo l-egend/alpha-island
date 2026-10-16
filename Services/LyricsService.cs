@@ -41,16 +41,15 @@ namespace alpha_island.Services
         private readonly ConcurrentDictionary<string, LyricsDocument?> _cache = new();
 
         /// <summary>低于这个匹配分就不显示歌词，避免张冠李戴。</summary>
-        public double MinScore { get; set; } = 42.0;
+        public double MinScore { get; set; } = 80.0;
 
         public bool Enabled { get; set; } = true;
 
-        public LyricsService()
+        public LyricsService() : this(new HttpClientHandler
+        { AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate }) { }
+
+        internal LyricsService(HttpMessageHandler handler)
         {
-            var handler = new HttpClientHandler
-            {
-                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-            };
             _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(12) };
             // 网易云对空 UA 会返回 403/HTML
             _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
@@ -59,22 +58,22 @@ namespace alpha_island.Services
             _http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
         }
 
-        public bool TryGetCached(string title, string artist, TimeSpan duration, out LyricsDocument? doc)
-            => _cache.TryGetValue(CacheKey(title, artist, duration), out doc);
+        public bool TryGetCached(string title, string artist, TimeSpan duration, out LyricsDocument? doc, string album = "")
+            => _cache.TryGetValue(CacheKey(title, artist, duration, album), out doc);
 
-        internal static string CacheKey(string title, string artist, TimeSpan duration)
+        internal static string CacheKey(string title, string artist, TimeSpan duration, string album = "")
             => title.Trim().ToUpperInvariant() + "|" + artist.Trim().ToUpperInvariant() + "|" +
-                Math.Round(duration.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                Math.Round(duration.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + album.Trim().ToUpperInvariant();
 
         /// <summary>
         /// 取歌词。任何失败（无网络 / 匹配不上 / 纯音乐）都返回 null，不抛异常。
         /// </summary>
-        public async Task<LyricsDocument?> GetLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct)
+        public async Task<LyricsDocument?> GetLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct, string album = "")
         {
             if (!Enabled) return null;
             if (string.IsNullOrWhiteSpace(title)) return null;
 
-            string key = CacheKey(title, artist, duration);
+            string key = CacheKey(title, artist, duration, album);
             if (_cache.TryGetValue(key, out var cached)) return cached;
 
             LyricsDocument? doc = null;
@@ -88,9 +87,9 @@ namespace alpha_island.Services
             using var gate = CancellationTokenSource.CreateLinkedTokenSource(ct);
             gate.CancelAfter(TimeSpan.FromSeconds(20));
 
-            var neteaseTask = FetchNetEaseAsync(title, artist, duration, gate.Token);
-            var lrclibTask = FetchLrclibLyricsAsync(title, artist, duration, gate.Token);
-            var kugouTask = FetchKugouLyricsAsync(title, artist, duration, gate.Token);
+            var neteaseTask = FetchNetEaseAsync(title, artist, duration, gate.Token, album);
+            var lrclibTask = FetchLrclibLyricsAsync(title, artist, duration, gate.Token, album);
+            var kugouTask = FetchKugouLyricsAsync(title, artist, duration, gate.Token, album);
 
             var neteaseFirst = await Task.WhenAny(neteaseTask, Task.Delay(1200, gate.Token)).ConfigureAwait(false);
             if (neteaseFirst == neteaseTask)
@@ -168,8 +167,14 @@ namespace alpha_island.Services
         /// 返回最高置信度得分，彻底解决 SMTC 标题包含歌手时得分被严重稀释导致歌词不匹配的问题。
         /// </summary>
         private static double EvaluateCandidateScore(string title, string clean, string? artist, TimeSpan duration,
-            string hitName, string hitArtists, long hitDurationMs)
+            string hitName, string hitArtists, long hitDurationMs, string album = "", string hitAlbum = "")
         {
+            string wantedAlbum = LrcParser.Normalize(album), candidateAlbum = LrcParser.Normalize(hitAlbum);
+            if (wantedAlbum.Length > 0 && candidateAlbum.Length > 0 && wantedAlbum != candidateAlbum
+                && !wantedAlbum.Contains(candidateAlbum) && !candidateAlbum.Contains(wantedAlbum)) return -100;
+            bool wantedLive = System.Text.RegularExpressions.Regex.IsMatch(title + " " + album, @"\blive\b|现场|演唱会|ライブ", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            bool candidateLive = System.Text.RegularExpressions.Regex.IsMatch(hitName + " " + hitAlbum, @"\blive\b|现场|演唱会|ライブ", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (wantedLive != candidateLive) return -100;
             double best = ScoreCandidate(title, artist, duration, hitName, hitArtists, hitDurationMs);
             if (clean.Length > 0 && clean != title)
             {
@@ -204,7 +209,7 @@ namespace alpha_island.Services
             return best;
         }
 
-        private async Task<long> SearchSongIdAsync(string title, string artist, TimeSpan duration, CancellationToken ct)
+        private async Task<long> SearchSongIdAsync(string title, string artist, TimeSpan duration, CancellationToken ct, string album = "")
         {
             string clean = CleanTitle(title);
             var artistList = LrcParser.SplitArtists(artist);
@@ -278,7 +283,7 @@ namespace alpha_island.Services
 
                     foreach (var s in songs)
                     {
-                        double score = EvaluateCandidateScore(title, clean, artist, duration, s.Name, s.Artists, s.DurationMs);
+                        double score = EvaluateCandidateScore(title, clean, artist, duration, s.Name, s.Artists, s.DurationMs, album, s.Album);
 
                         if (score > globalBestScore)
                         {
@@ -310,6 +315,7 @@ namespace alpha_island.Services
             public string Name = "";
             public string Artists = "";
             public long DurationMs;
+            public string Album = "";
         }
 
         private async Task<System.Collections.Generic.List<SongHit>> SearchAsync(string query, CancellationToken ct)
@@ -349,6 +355,8 @@ namespace alpha_island.Services
                     hit.Artists = string.Join("/", names);
                 }
 
+                if ((s.TryGetProperty("al", out var albumInfo) || s.TryGetProperty("album", out albumInfo)) && albumInfo.ValueKind == JsonValueKind.Object)
+                    hit.Album = GetStr(albumInfo, "name");
                 if (hit.Id > 0) list.Add(hit);
             }
             return list;
@@ -389,11 +397,14 @@ namespace alpha_island.Services
             {
                 // 按字数长度比加权，防止"爱"匹配"爱如潮水"这类短串混淆
                 double ratio = (double)Math.Min(nt.Length, nh.Length) / Math.Max(nt.Length, nh.Length);
+                if (ratio < .88 || Math.Min(nt.Length, nh.Length) < 2) return -100;
                 score += 15.0 + 30.0 * ratio;
             }
             else
             {
-                score += 30.0 * Similarity(nt, nh);
+                double titleSimilarity = Similarity(nt, nh);
+                if (titleSimilarity < .9) return -100;
+                score += 30.0 * titleSimilarity;
             }
 
             // 4. 艺术家重叠比对
@@ -421,7 +432,7 @@ namespace alpha_island.Services
                 else
                 {
                     // 目标明确指定了歌手，但候选完全对不上时严厉惩罚，防同名翻唱
-                    score -= 35.0;
+                    return -100;
                 }
             }
             else
@@ -439,7 +450,7 @@ namespace alpha_island.Services
                 else if (deltaSec <= 10.0) score += 8;
                 else if (deltaSec <= 18.0) score -= 8;
                 else if (deltaSec <= 30.0) score -= 18;
-                else if (deltaSec > 30.0) score -= 35; // 时长差异过大通常为不同版本或不同曲目
+                else if (deltaSec > 30.0) return -100; // Reject a different version even if title/artist match.
             }
 
             return score;
@@ -466,9 +477,9 @@ namespace alpha_island.Services
         // ---------------- 取歌词 ----------------
 
         /// <summary>网易云：先搜 id 再取歌词。单包一层是为了让三个源能并发竞速。</summary>
-        private async Task<LyricsDocument?> FetchNetEaseAsync(string title, string artist, TimeSpan duration, CancellationToken ct)
+        private async Task<LyricsDocument?> FetchNetEaseAsync(string title, string artist, TimeSpan duration, CancellationToken ct, string album = "")
         {
-            long songId = await SearchSongIdAsync(title, artist, duration, ct).ConfigureAwait(false);
+            long songId = await SearchSongIdAsync(title, artist, duration, ct, album).ConfigureAwait(false);
             if (songId <= 0) return null;
             return await FetchLyricAsync(songId, duration, ct).ConfigureAwait(false);
         }
@@ -542,7 +553,7 @@ namespace alpha_island.Services
         /// 不易串歌），若一无所获再用自由文本 q= 兜底。
         /// 候选一律过 <see cref="EvaluateCandidateScore"/>，低于 <see cref="MinScore"/> 的一律不采纳。
         /// </summary>
-        private async Task<LyricsDocument?> FetchLrclibLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct)
+        private async Task<LyricsDocument?> FetchLrclibLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct, string album = "")
         {
             try
             {
@@ -591,7 +602,7 @@ namespace alpha_island.Services
                             && instEl.ValueKind == JsonValueKind.True && !targetIsInst)
                             continue;
 
-                        double score = EvaluateCandidateScore(title, clean, artist, duration, hitName, hitArtists, hitDurationMs);
+                        double score = EvaluateCandidateScore(title, clean, artist, duration, hitName, hitArtists, hitDurationMs, album, GetStr(item, "albumName"));
                         if (score <= bestScore) continue;
 
                         TimeSpan hitDuration = hitDurationMs > 0 ? TimeSpan.FromMilliseconds(hitDurationMs) : duration;
@@ -672,7 +683,7 @@ namespace alpha_island.Services
             return artist.Trim();
         }
 
-        private async Task<LyricsDocument?> FetchKugouLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct)
+        private async Task<LyricsDocument?> FetchKugouLyricsAsync(string title, string artist, TimeSpan duration, CancellationToken ct, string album = "")
         {
             try
             {

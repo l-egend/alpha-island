@@ -88,22 +88,34 @@ public partial class SettingsWindow
                 toggle.Checked += (_, _) => SetPluginValue(PluginHost.EnabledKey(id), true);
                 toggle.Unchecked += (_, _) => SetPluginValue(PluginHost.EnabledKey(id), false);
                 if (entry.Running && entry.Context != null)
+                {
                     foreach (var setting in entry.Context.Settings) content.Children.Add(CreatePluginSettingRow(id, setting));
+                    if (entry.Context.SettingsView != null)
+                    {
+                        try { content.Children.Add(entry.Context.SettingsView()); }
+                        catch (Exception ex) { content.Children.Add(PluginText("无法打开插件设置：" + ex.Message, "W11RowHint")); }
+                    }
+                }
             }
             PluginRows.Children.Add(card);
         }
     }
-    private void UninstallPlugin(PluginHost.Entry entry)
+    private async void UninstallPlugin(PluginHost.Entry entry)
     {
-        if (_pluginHost == null || _suppress) return;
-        bool removed = _pluginHost.Uninstall(entry, out _);
-        if (entry.Manifest != null)
+        var host = _pluginHost;
+        if (host == null || _suppress) return;
+        bool removed = await host.UninstallAsync(entry).ConfigureAwait(false);
+        if (Dispatcher.HasShutdownStarted) return;
+        await Dispatcher.InvokeAsync(() =>
         {
-            if (removed) PluginHost.ForgetSettings(_options, entry.Manifest.Id);
-            else _options.Extras[PluginHost.EnabledKey(entry.Manifest.Id)] = JsonSerializer.SerializeToElement(false);
-        }
-        ApplyChanges();
-        RebuildPluginRows();
+            if (!ReferenceEquals(_pluginHost, host)) return;
+            if (entry.Manifest != null)
+            {
+                if (removed) PluginHost.ForgetSettings(_options, entry.Manifest.Id);
+                else _options.Extras[PluginHost.EnabledKey(entry.Manifest.Id)] = JsonSerializer.SerializeToElement(false);
+            }
+            ApplyChanges(); RebuildPluginRows();
+        });
     }
     private FrameworkElement CreatePluginSettingRow(string id, PluginSetting setting)
     {
@@ -147,6 +159,13 @@ public partial class SettingsWindow
         _settingsEdited = true; ApplyChanges();
     }
     private void RefreshPlugins_Click(object sender, RoutedEventArgs e) => _pluginHost?.Discover();
+    private void OpenAiPluginSettings_Click(object sender, RoutedEventArgs e) => SelectPageByTag("plugins");
+    internal void OpenPluginSettings() => SelectPageByTag("plugins");
+    internal void SynchronizePluginConfiguration(IslandOptions source)
+    {
+        foreach (var pair in source.Extras.Where(p => p.Key.StartsWith("plugin/", StringComparison.Ordinal) || p.Key.StartsWith("Ai", StringComparison.Ordinal)))
+            _options.Extras[pair.Key] = pair.Value;
+    }
     private void OpenPluginsFolder_Click(object sender, RoutedEventArgs e)
     {
         try

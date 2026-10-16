@@ -7,8 +7,12 @@
 		<SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- Nested modules' build caches must never be compiled into the WPF application. -->
+		<DefaultItemExcludes>$(DefaultItemExcludes);**/bin/**;**/obj/**</DefaultItemExcludes>
 		<UseWPF>true</UseWPF>
 		<UseWindowsForms>true</UseWindowsForms>
+		<!-- 只在 Windows x64 Release 发布时预编译；开发构建继续使用普通 IL。 -->
+		<PublishReadyToRun Condition="'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' == 'win-x64'">true</PublishReadyToRun>
 		<!-- 项目/程序集名带连字符，C# 命名空间不允许 '-'，必须显式指定根命名空间 -->
 		<RootNamespace>alpha_island</RootNamespace>
 		<!-- C 组①：exe 的 Win32 图标（多尺寸 16/24/32/48/64/256，由 tools\make-icon.ps1 生成） -->
@@ -18,44 +22,42 @@
 		<Product>Alpha Island</Product>
 		<Company>Alpha Island</Company>
 		<Description>灵动岛风格的桌面状态面板与 AI 助手</Description>
-		<Version>0.1.12</Version>
-		<FileVersion>0.1.12.0</FileVersion>
+		<Version>0.1.114</Version>
+		<FileVersion>0.1.114.0</FileVersion>
 		<Copyright>© Alpha Island</Copyright>
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="NAudio" Version="2.2.1" />
+	  <!-- Pin runtime packs for installers without overriding the Windows SDK projection pack. -->
+	  <FrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App;Microsoft.WindowsDesktop.App.WPF;Microsoft.WindowsDesktop.App.WindowsForms"
+	                      RuntimeFrameworkVersion="$(InstallerRuntimeVersion)" Condition="'$(InstallerRuntimeVersion)' != ''" />
+	  <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+      <PackageReference Include="NAudio" Version="2.2.1" />
 	  <PackageReference Include="ZXing.Net" Version="0.16.11" />
 	  <Compile Remove="tools\RegressionTests\**\*.cs" />
 	  <Compile Remove="tools\PluginFixture\**\*.cs" />
 	  <Compile Remove="PluginSdk\**\*.cs;examples\**\*.cs" />
-	  <Compile Remove="Hardware\**\*.cs;HardwareWorker\**\*.cs" />
+	  <Compile Remove="Hardware\**\*.cs;ConversationCore\**\*.cs" />
+      <Page Remove="ConversationCore\**\*.xaml" />
+      <ProjectReference Include="ConversationCore\AlphaIsland.ConversationCore.csproj" />
 	  <Page Remove="PluginSdk\**\*.xaml;examples\**\*.xaml" />
 	  <ProjectReference Include="PluginSdk\AlphaIsland.PluginSdk.csproj" />
 	  <ProjectReference Include="Hardware\AlphaIsland.Hardware.csproj" />
-	  <ProjectReference Include="HardwareWorker\AlphaIsland.HardwareWorker.csproj" ReferenceOutputAssembly="false" Private="false" GlobalPropertiesToRemove="OutputPath" />
 	  <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
 	</ItemGroup>
 
-	<!-- Keep the privileged reader and its runtime dependencies together, outside the UI assembly. -->
-	<Target Name="CopyHardwareWorker" AfterTargets="Build">
-	  <ItemGroup>
-	    <HardwareWorkerFiles Include="$(MSBuildProjectDirectory)\HardwareWorker\bin\$(Configuration)\net8.0-windows\**\*" />
-	  </ItemGroup>
-	  <Copy SourceFiles="@(HardwareWorkerFiles)" DestinationFiles="@(HardwareWorkerFiles->'$(OutDir)hardware\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-	</Target>
-
-  <Target Name="PublishHardwareWorker" AfterTargets="ComputeFilesToPublish" DependsOnTargets="CopyHardwareWorker">
-    <ItemGroup>
-      <ResolvedFileToPublish Include="@(HardwareWorkerFiles)">
-        <RelativePath>hardware\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
-        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      </ResolvedFileToPublish>
-    </ItemGroup>
-  </Target>
 	<!-- WPF 资源：窗口 Icon 与托盘图标都从这里按 pack URI 取（用户可在 exe 旁替换同名文件重编译，或直接放 user 覆盖图标） -->
 	<ItemGroup>
 	  <Resource Include="Assets\alpha-island.ico" />
+	  <Resource Include="Assets\alpha-island-source.png" />
+	  <Resource Include="Assets\Bluetooth\*.svg" />
+  <Resource Include="Assets\Messengers\*.png" />
+  <Content Include="Assets\Messengers\SOURCES.md" CopyToOutputDirectory="PreserveNewest" />
+	  <Resource Include="Assets\Agents\Gemini\*.png;Assets\Agents\Gemini\manifest.json" />
+	  <Resource Include="Assets\Agents\Codex\*.png;Assets\Agents\Codex\manifest.json" />
+	  <Resource Include="Assets\Agents\DeepSeek\*.png;Assets\Agents\DeepSeek\manifest.json" />
+	  <Resource Include="Assets\Agents\Claude\*.png;Assets\Agents\Claude\manifest.json" />
+	  <Content Include="Assets\Bluetooth\LICENSE.bootstrap-icons.txt;Assets\Bluetooth\SOURCES.md" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 </Project>

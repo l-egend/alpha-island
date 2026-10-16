@@ -137,12 +137,14 @@ namespace alpha_island.Core
                 using var fs = new FileStream(zip, FileMode.Create, FileAccess.Write, FileShare.None);
                 using (var archive = new ZipArchive(fs, ZipArchiveMode.Create))
                 {
+                    IslandLog.Flush(TimeSpan.FromSeconds(1));
                     AddText(archive, "report.txt", BuildText());
+                    AddText(archive, "logging-status.txt", IslandLog.FileDiagnostics);
                     AddText(archive, "options.masked.json", ReadOptionsMasked());
 
                     foreach (string log in Directory.EnumerateFiles(AppPaths.Root, "error*.log"))
                     {
-                        try { archive.CreateEntryFromFile(log, Path.GetFileName(log), CompressionLevel.Optimal); }
+                        try { AddSharedLog(archive, log); }
                         catch (Exception ex) { IslandLog.Debug("Diagnostics", "打包日志失败 " + Path.GetFileName(log) + "：" + ex.Message); }
                     }
                 }
@@ -154,6 +156,20 @@ namespace alpha_island.Core
             {
                 IslandLog.Error("Diagnostics.Export", ex);
                 return null;
+            }
+        }
+
+        internal static void AddSharedLog(ZipArchive archive, string path)
+        {
+            using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            long remaining = source.Length;
+            using var target = archive.CreateEntry(Path.GetFileName(path), CompressionLevel.Optimal).Open();
+            var buffer = new byte[8192];
+            while (remaining > 0)
+            {
+                int count = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+                if (count == 0) break;
+                target.Write(buffer, 0, count); remaining -= count;
             }
         }
 

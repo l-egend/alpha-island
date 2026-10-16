@@ -8,6 +8,15 @@ namespace alpha_island.Plugins;
 
 internal sealed partial class PluginHost
 {
+    internal async Task<bool> UninstallAsync(Entry entry)
+    {
+        _dispatcher.VerifyAccess();
+        if (_disposed || !_entries.Contains(entry)) return false;
+        entry.UninstallPending = true;
+        if (entry.Manifest != null) _options.Extras[EnabledKey(entry.Manifest.Id)] = JsonSerializer.SerializeToElement(false);
+        Stop(entry); await entry.Teardown.ConfigureAwait(false);
+        return await _dispatcher.InvokeAsync(() => Uninstall(entry, out _));
+    }
     internal bool Uninstall(Entry entry, out string error)
     {
         _dispatcher.VerifyAccess();

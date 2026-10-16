@@ -1,0 +1,1 @@
+{"id":"ai.api-chat","name":"API 对话","version":"0.1.27","apiVersion":2,"wpfResources":true,"assembly":"AlphaIsland.Plugins.ApiChat.dll","entryType":"AlphaIsland.Plugins.ApiChat.ApiChatPlugin","description":"模型连接、流式对话和本地历史管理；密钥使用 Windows DPAPI 加密。"}

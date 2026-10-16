@@ -79,28 +79,27 @@ internal static partial class Program
     {
         PrivateCall(window, "StartCpuService");
         var ticker = AgentField<IslandTicker>(window, "_ticker");
-        Check(ticker.IsRegistered("cpu") && CpuUsageService.SampleInterval == TimeSpan.FromSeconds(1), "CPU 监测注册每秒采样");
+        var windowMonitor = AgentField<SystemResourceMonitor>(window, "_resourceMonitor");
+        Check(ticker.IsRegistered("cpu"), "CPU 监测仍由统一心跳调度");
         PrivateCall(window, "StopCpuService");
-        PumpUntil(() => !AgentField<bool>(window, "_cpuSampling"));
+        PumpUntil(() => !windowMonitor.CpuSampling);
         using var started = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
         var counter = new CpuCounterFixture { Started = started, Release = release };
-        var service = new CpuUsageService(true, () => counter, () => (0, 100, 0));
-        SetAgentField(window, "_cpu", service);
+        using var isolatedTicker = new IslandTicker(window.Dispatcher);
+        using var monitor = new SystemResourceMonitor(window.Dispatcher, isolatedTicker,
+            () => new CpuUsageService(true, () => counter, () => (0, 100, 0)));
         try
         {
-            PrivateCall(window, "SampleCpu");
-            PumpUntil(() => started.IsSet);
-            PrivateCall(window, "SampleCpu");
-            Check(counter.Reads == 1 && AgentField<bool>(window, "_cpuSampling"), "CPU 采集在后台执行且慢采样不会重叠");
-            var watch = Stopwatch.StartNew(); PrivateCall(window, "StopCpuService");
-            Check(watch.ElapsedMilliseconds < 500 && !ticker.IsRegistered("cpu") && AgentField<CpuUsageService?>(window, "_cpu") == null,
-                "关闭监测立刻清除界面，不等待后台性能采集");
-            release.Set();
-            PumpUntil(() => !AgentField<bool>(window, "_cpuSampling") && counter.Disposals == 1);
-            Check(AgentField<System.Windows.Controls.TextBlock>(window, "_cpuCardText").Text.Contains("未开启 / 等待采样"),
-                "关闭后迟到的后台 CPU 结果不会回填界面");
+            monitor.SetCpuEnabled(true); PumpUntil(() => started.IsSet);
+            monitor.SampleCpu();
+            Check(counter.Reads == 1 && monitor.CpuSampling, "CPU 采集在后台执行且慢采样不会重叠");
+            var watch = Stopwatch.StartNew(); monitor.SetCpuEnabled(false);
+            Check(watch.ElapsedMilliseconds < 500 && !isolatedTicker.IsRegistered("cpu") && !monitor.CpuEnabled,
+                "关闭监测立刻清除状态，不等待后台性能采集");
+            release.Set(); PumpUntil(() => !monitor.CpuSampling && counter.Disposals == 1);
+            Check(monitor.Values.Snapshot.CpuPercent == null, "关闭后迟到的后台 CPU 结果不会回填状态或界面");
         }
-        finally { release.Set(); service.Dispose(); SetAgentField(window, "_cpu", null); }
+        finally { release.Set(); }
     }
     private static void PumpUntil(Func<bool> completed)
     {

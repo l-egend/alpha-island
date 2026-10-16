@@ -192,50 +192,53 @@ internal static partial class Program
     private static void TrafficPluginHostChecks(string root, string mapName)
     {
         Exception? failure = null;
+        PluginHost? cleanup = null;
         var thread = new Thread(() =>
         {
             try
             {
                 string pluginRoot = Path.Combine(root, "traffic-plugin"), pluginDir = Path.Combine(pluginRoot, "tm"); Directory.CreateDirectory(pluginDir);
-                string source = Path.GetFullPath("examples/TrafficMonitorPlugin/bin/Debug/net8.0-windows");
+                string source = Path.GetFullPath($"examples/TrafficMonitorPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
                 foreach (string file in Directory.GetFiles(source).Where(f => f.EndsWith(".dll") || f.EndsWith(".deps.json") || f.EndsWith("plugin.json")))
                     File.Copy(file, Path.Combine(pluginDir, Path.GetFileName(file)), true);
                 var options = new IslandOptions(); var pages = new List<IIslandPage>();
-                using var host = new PluginHost(System.Windows.Threading.Dispatcher.CurrentDispatcher, options, new[] { pluginRoot }, pages.Add, p => pages.Remove(p), _ => { });
+                using var host = new PluginHost(System.Windows.Threading.Dispatcher.CurrentDispatcher, options, new[] { pluginRoot }, pages.Add, p => pages.Remove(p), _ => { }); cleanup = host;
                 host.Discover();
+                options.Extras["plugin/alpha.trafficmonitor/mapping-name"] = JsonSerializer.SerializeToElement(mapName);
                 options.Extras[PluginHost.EnabledKey("alpha.trafficmonitor")] = JsonSerializer.SerializeToElement(true); host.Sync(options);
-                var entry = host.Entries.Single();
+                var entry = host.Entries.Single(); PumpUntilState(() => entry.Running || entry.Error.Length>0);
                 Check(entry.Running && pages.Count == 0 && entry.Context!.NetworkSources.Count == 1, "实际接收插件 DLL 仅注册网络数据源，不增加卡片或组件菜单页");
-                // Use isolated mapping through the live plugin object, keeping production namespace untouched.
-                var readerField = entry.Instance!.GetType().GetField("_reader", BindingFlags.Instance | BindingFlags.NonPublic)!;
-                ((IDisposable?)readerField.GetValue(entry.Instance))?.Dispose();
-                readerField.SetValue(entry.Instance, Activator.CreateInstance(readerField.FieldType, mapName));
+                PumpUntilState(() => host.ReadNetwork(DateTimeOffset.UtcNow)?.Sample.DownBytesPerSecond == 234567);
                 var reading = host.ReadNetwork(DateTimeOffset.UtcNow);
                 Check(reading?.Sample.DownBytesPerSecond == 234567 && reading?.Title == "TrafficMonitor", "没有独立卡片时仍取得真实桥接数据并提供来源名称");
                 options.Extras[PluginHost.SettingKey("alpha.trafficmonitor", "network")] = JsonSerializer.SerializeToElement(false); host.Sync(options);
+                PumpUntilState(() => host.ReadNetwork(DateTimeOffset.UtcNow) == null);
                 Check(host.ReadNetwork(DateTimeOffset.UtcNow) == null && entry.Running, "关闭数据接管后撤销网络来源，插件仍可重新启用接管");
                 options.Extras[PluginHost.EnabledKey("alpha.trafficmonitor")] = JsonSerializer.SerializeToElement(false); host.Sync(options);
                 Check(!entry.Running && pages.Count == 0 && host.ReadNetwork(DateTimeOffset.UtcNow) == null, "禁用接收插件撤销数据源、卡片和读取资源");
                 string fixtureDir = Path.Combine(pluginRoot, "fixture"); Directory.CreateDirectory(fixtureDir);
-                foreach (string file in Directory.GetFiles(Path.GetFullPath("tools/PluginFixture/bin/Debug/net8.0-windows")).Where(f => f.EndsWith(".dll") || f.EndsWith(".deps.json")))
+                foreach (string file in Directory.GetFiles(Path.GetFullPath($"tools/PluginFixture/bin/{TestBuildConfiguration}/net8.0-windows")).Where(f => f.EndsWith(".dll") || f.EndsWith(".deps.json")))
                     File.Copy(file, Path.Combine(fixtureDir, Path.GetFileName(file)), true);
                 File.WriteAllText(Path.Combine(fixtureDir, "plugin.json"), JsonSerializer.Serialize(new { id = "fixture.network", name = "网络检查", version = "1.0.0", apiVersion = 1,
                     assembly = "AlphaIsland.PluginFixture.dll", entryType = "AlphaIsland.PluginFixture.ProbePlugin" }));
                 host.Discover(); options.Extras[PluginHost.EnabledKey("fixture.network")] = JsonSerializer.SerializeToElement(true); host.Sync(options);
-                var fixture = host.Entries.Single(e => e.Manifest?.Id == "fixture.network");
+                var fixture = host.Entries.Single(e => e.Manifest?.Id == "fixture.network"); PumpUntilState(() => fixture.Running || fixture.Error.Length>0);
                 Check(host.ReadNetwork(DateTimeOffset.UtcNow)?.Sample.DownBytesPerSecond == 77, "宿主优先读取声明优先级最高的网络来源");
-                var mode = fixture.Instance!.GetType().GetProperty("NetworkMode")!;
+                var proxy = (alpha_island.Plugins.Isolation.IsolatedPlugin)fixture.Instance!;
                 string[] cases = { "空数据", "负速率", "NaN", "过期数据", "未来时间", "负累计计数" };
                 for (int i = 1; i <= 6; i++)
                 {
-                    mode.SetValue(fixture.Instance, i);
+                    options.Extras["plugin/fixture.network/mode"] = JsonSerializer.SerializeToElement(i); host.Sync(options);
+                    long version = proxy.ConfigurationVersion; PumpUntilState(() => proxy.AppliedConfigurationVersion >= version);
                     Check(host.ReadNetwork(DateTimeOffset.UtcNow)?.Sample.DownBytesPerSecond == 11, "网络数据源拒绝" + cases[i - 1] + "并回退备用来源");
                 }
-                mode.SetValue(fixture.Instance, 7);
+                options.Extras["plugin/fixture.network/mode"] = JsonSerializer.SerializeToElement(7); host.Sync(options); PumpUntilState(() => !fixture.Running);
                 Check(host.ReadNetwork(DateTimeOffset.UtcNow) == null && !fixture.Running && pages.Count == 0,
                     "网络来源抛出异常时停用故障插件，不再调用它的备用来源");
+                host.Dispose(); AwaitPlugin(host.ShutdownCompletion.ContinueWith(_=>true));
             }
             catch (Exception ex) { failure = ex; }
+            finally { if (cleanup != null) { cleanup.Dispose(); AwaitPlugin(cleanup.ShutdownCompletion.ContinueWith(_ => true)); } }
         });
         thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
         if (failure != null) throw failure;
@@ -243,10 +246,10 @@ internal static partial class Program
 
     private static void MediaAndCompactUiChecks(alpha_island.MainWindow window, Grid root)
     {
-        var type = window.GetType(); object? Get(string name) => type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window);
+        var type = window.GetType(); object? Get(string name) => ReadWindowMember(window, name);
         var oldSmtc = (SmtcService?)Get("_smtc");
         using var smtc = new SmtcService(window.Dispatcher);
-        type.GetField("_smtc", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, smtc);
+        WriteWindowMember(window, "_smtc", smtc);
         var pages = (IslandPageHost)Get("_pages")!; var layers = (IslandLayerHost)Get("_layers")!;
         var oldState = (IslandState)Get("_state")!; string previous = pages.ActiveId;
         try
@@ -307,7 +310,7 @@ internal static partial class Program
             var external = (ExternalNetworkState)Get("_externalNetwork")!;
             try
             {
-                type.GetField("_netSpeed", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, network);
+                WriteWindowMember(window, "_netSpeed", network);
                 external.Apply("test/tm", "TrafficMonitor", new PluginNetworkSample(DateTimeOffset.UtcNow, 2048, 1024, 8192, 4096, "test", 8192, 4096, "桥接网卡"));
                 PrivateCall(window, "SyncNetSpeedCard");
                 PrivateCall(window, "UpdateNetSpeedPrimary", external.Current);
@@ -326,7 +329,7 @@ internal static partial class Program
             }
             finally
             {
-                external.Reset(); type.GetField("_netSpeed", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, oldNetwork);
+                external.Reset(); WriteWindowMember(window, "_netSpeed", oldNetwork);
                 PrivateCall(window, "UpdateSideBubbleHint");
             }
             SaveThemePreview(window.IslandBody, "docs/screens/media-player-edge.png");
@@ -334,7 +337,7 @@ internal static partial class Program
         finally
         {
             PrivateCall(window, "SetMusicPinned", false); layers.SetPinned("netspeed", false); layers.HideAll();
-            type.GetField("_smtc", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, oldSmtc);
+            WriteWindowMember(window, "_smtc", oldSmtc);
             PrivateCall(window, "SetState", oldState, false, previous); PumpAnimations(300);
         }
     }

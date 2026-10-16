@@ -183,6 +183,7 @@ namespace alpha_island.Controls
             UseLayoutRounding = false;
             Loaded += (_, __) => { if (IsActive) StartRendering(); };
             Unloaded += (_, __) => StopRendering();
+            IsVisibleChanged += (_, _) => { if (IsActive && IsVisible) StartRendering(); else StopRendering(); };
         }
 
         private static void OnBarCountChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -221,11 +222,17 @@ namespace alpha_island.Controls
         /// <summary>推入一帧频谱（取值 0..1，长度任意，会重采样到 BarCount）。线程安全。</summary>
         public void PushFrame(float[] bands)
         {
-            if (bands == null || bands.Length == 0) return;
+            if (bands == null) return;
+            PushFrame(bands.AsSpan());
+        }
+
+        internal void PushFrame(ReadOnlySpan<float> bands)
+        {
+            if (bands.IsEmpty) return;
             lock (_gate)
             {
                 if (_incoming.Length != bands.Length) _incoming = new float[bands.Length];
-                Array.Copy(bands, _incoming, bands.Length);
+                bands.CopyTo(_incoming);
                 _pending = true;
             }
         }
@@ -244,7 +251,7 @@ namespace alpha_island.Controls
 
         private void StartRendering()
         {
-            if (_rendering) return;
+            if (_rendering || !IsLoaded || !IsVisible) return;
             _rendering = true;
             _lastTick = -1;
             CompositionTarget.Rendering += OnRendering;

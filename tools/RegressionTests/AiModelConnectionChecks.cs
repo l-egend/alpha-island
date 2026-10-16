@@ -112,11 +112,12 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
-        using var http = new HttpClient(new AiTestHandler((req, _) => Task.FromResult(req.Method == HttpMethod.Get
+        bool failConnection = false;
+        using var http = new HttpClient(new AiTestHandler((req, _) => Task.FromResult(failConnection ? ModelResponse("unauthorized", HttpStatusCode.Unauthorized) : req.Method == HttpMethod.Get
             ? ModelResponse("{\"data\":[{\"id\":\"model-a\"},{\"id\":\"model-b\"}]}")
             : ModelResponse("{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}"))));
         using var service = new ChatService(http, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
-        var settings = new alpha_island.Settings.SettingsWindow(false, System.IO.Path.Combine(root, "picker", "key.dat"), service);
+        var settings = new AlphaIsland.Plugins.ApiChat.ApiSettingsView(false, System.IO.Path.Combine(root, "picker", "key.dat"), service);
         void Complete(Task task) { var limit = System.Diagnostics.Stopwatch.StartNew(); while (!task.IsCompleted && limit.ElapsedMilliseconds < 5000) PumpAnimations(15); task.GetAwaiter().GetResult(); }
         try
         {
@@ -129,25 +130,48 @@ internal static partial class Program
             Check(settings.AiModelBox.IsEnabled && settings.AiModelBox.Items.Count == 2 && settings.TestAiModelButton.IsEnabled
                 && settings.AiConnectionStatus.Text.Contains("已连接"), "AI 开关关闭时也可连接并自动填充可用模型");
             settings.AiModelBox.SelectedItem = "model-b";
-            var current = (IslandOptions)typeof(alpha_island.Settings.SettingsWindow).GetField("_options", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(settings)!;
+            var current = (IslandOptions)typeof(AlphaIsland.Plugins.ApiChat.ApiSettingsView).GetField("_options", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(settings)!;
+            Check(SettingsRegistry.GetBool(current, "AiEnabled", false) && settings.AiEnabledToggle.IsChecked == true
+                && settings.AiApiKeyBox.Password == "" && AiSecretStore.Load(System.IO.Path.Combine(root, "picker", "key.dat")) == TestApiKey,
+                "输入完整密钥并连接成功后自动加密保存且启用对话");
             Check(SettingsRegistry.GetText(current, "AiModel", "") == "model-b", "从下拉选择模型即时更新配置");
             Complete(settings.TestAiModelAsync());
             Check(settings.AiConnectionStatus.Text.Contains("测试成功：model-b"), "模型测试显示所选模型和成功结果");
             settings.LoadFrom(current);
-            Check(settings.AiModelBox.SelectedItem as string == "model-b" && !settings.TestAiModelButton.IsEnabled,
-                "未保存的密钥重新打开会清空输入并使原列表失效");
+            Check(settings.AiModelBox.SelectedItem as string == "model-b" && settings.TestAiModelButton.IsEnabled && settings.AiEnabledToggle.IsChecked == true,
+                "连接后重新打开设置保留密钥、模型和自动开启状态");
             settings.AiApiKeyBox.Password = TestApiKey; Complete(settings.ConnectAiModelsAsync());
             settings.SaveAiKeyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             settings.LoadFrom(current);
             Check(settings.AiModelBox.IsEnabled && settings.AiModelBox.SelectedItem as string == "model-b", "保存密钥后重新打开保持对应的模型选择");
             settings.AiBaseUrlBox.Text = "https://another.invalid/v1";
             Check(!settings.AiModelBox.IsEnabled && !settings.TestAiModelButton.IsEnabled, "更换接口地址立即禁用旧模型列表");
+            Check(settings.AiEnabledToggle.IsChecked == false, "更换接口后自动关闭 AI 对话");
             Complete(settings.ConnectAiModelsAsync()); settings.AiApiKeyBox.Password = "different-test-key";
             Check(!settings.AiModelBox.IsEnabled && !settings.TestAiModelButton.IsEnabled, "更换输入密钥立即使旧列表失效");
+            Check(settings.AiEnabledToggle.IsChecked == false, "更换输入密钥后自动关闭 AI 对话");
+            Complete(settings.ConnectAiModelsAsync());
+            Check(settings.AiEnabledToggle.IsChecked == true, "新密钥重新连接成功后自动恢复对话");
+            failConnection = true; Complete(settings.TestAiModelAsync());
+            Check(settings.AiEnabledToggle.IsChecked == false && settings.AiConnectionStatus.Text.Contains("测试失败"), "模型测试连接失败后自动关闭对话");
+            failConnection = false; Complete(settings.ConnectAiModelsAsync());
+            string savedKey = System.IO.Path.Combine(root, "picker", "key.dat");
+            settings.AiApiKeyBox.Password = "unsaved-replacement";
+            using (var locked = new System.IO.FileStream(savedKey, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.None))
+            {
+                Complete(settings.ConnectAiModelsAsync());
+                Check(settings.AiEnabledToggle.IsChecked == false && settings.AiConnectionStatus.Text.Contains("保存失败")
+                    && settings.AiApiKeyBox.Password == "unsaved-replacement", "接口连接成功但密钥无法保存时不启用对话并保留输入");
+            }
+            Complete(settings.ConnectAiModelsAsync());
+            settings.ClearAiKeyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Check(settings.AiEnabledToggle.IsChecked == false, "删除密钥立即关闭对话");
+            Complete(settings.ConnectAiModelsAsync());
+            Check(settings.AiEnabledToggle.IsChecked == false, "接口允许匿名连接时没有密钥也保持对话关闭");
             using var slowHttp = new HttpClient(new AiTestHandler(async (_, token) =>
                 { await Task.Delay(Timeout.Infinite, token); return ModelResponse("{}"); }));
             using var slowService = new ChatService(slowHttp, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
-            var pendingSettings = new alpha_island.Settings.SettingsWindow(false, null, slowService);
+            var pendingSettings = new AlphaIsland.Plugins.ApiChat.ApiSettingsView(false, null, slowService);
             try
             {
                 pendingSettings.LoadFrom(new IslandOptions().Normalized());
@@ -159,11 +183,11 @@ internal static partial class Program
                 pending = pendingSettings.ConnectAiModelsAsync();
                 pendingSettings.AiBaseUrlBox.Text = "https://changed.invalid/v1"; Complete(pending);
                 Check(!pendingSettings.AiModelBox.IsEnabled && pendingSettings.AiConnectionStatus.Text.Contains("请先连接"), "请求中更换地址会取消旧请求且不回填旧结果");
-                pending = pendingSettings.ConnectAiModelsAsync(); pendingSettings.ForceClose = true; pendingSettings.Close(); Complete(pending);
+                pending = pendingSettings.ConnectAiModelsAsync(); pendingSettings.Dispose(); Complete(pending);
                 Check(pending.IsCompleted, "关闭设置会及时取消未完成的模型连接");
             }
-            finally { if (!pendingSettings.ForceClose) { pendingSettings.ForceClose = true; pendingSettings.Close(); } }
+            finally { pendingSettings.Dispose(); }
         }
-        finally { settings.ForceClose = true; settings.Close(); SynchronizationContext.SetSynchronizationContext(previous); }
+        finally { settings.Dispose(); SynchronizationContext.SetSynchronizationContext(previous); }
     }
 }

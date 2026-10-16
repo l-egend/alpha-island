@@ -128,7 +128,7 @@ internal static partial class Program
         try
         {
             settings.LoadFrom(new IslandOptions());
-            typeof(alpha_island.Settings.SettingsWindow).GetMethod("SelectPageByTag", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(settings, new object[] { "system" });
+            typeof(alpha_island.Settings.SettingsWindow).GetMethod("SelectPageByTag", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(settings, new object[] { alpha_island.Core.SettingsPageIds.Notifications });
             var settingsRoot = (FrameworkElement)settings.Content;
             settings.Content = null; settingsRoot.Resources = settings.Resources;
             using var settingsSource = new HwndSource(new HwndSourceParameters("Alpha Island theme settings regression")
@@ -181,6 +181,8 @@ internal static partial class Program
         }
         bitmap.Render(drawing);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var stream = File.Create(Path.GetFullPath(file)); encoder.Save(stream);
+        string output = Path.GetFullPath(file);
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        using var stream = File.Create(output); encoder.Save(stream);
     }
 }

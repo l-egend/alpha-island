@@ -48,6 +48,7 @@ namespace alpha_island
             // 置顶提示也挂在岛体宽度上：岛被歌词撑宽时气泡要一起往外挪，否则会被压在岛上。
             SyncPinBubbleOffset();
             SyncSideBubbleOffset();
+            SyncSatelliteOrbOffsets();
             SyncComponentHandle();
 
             // 只改宽度的形变（歌词伸缩）不能再跑一遍内容揭示：_reveal 从 0 重跑会让
@@ -70,11 +71,14 @@ namespace alpha_island
         {
             if (_animator == null) return;
 
+            ReserveIslandHost(to);
+            if (via is { } waypoint) ReserveIslandHost(waypoint);
             _widthOnlyMorph = false;
             _animator.MorphTo(to, _options.GelAnimation, duration, ease, () =>
             {
                 // 形变结束：通知图层的淡化窗口关闭，透明度归一化回 1（S3）。
                 // 放在这里是因为所有形变都走这个出口 —— 包括蓝牙塌回收细条（见 CollapseToBar）。
+                FitIslandHost(to);
                 _layers.EndMorph();
                 completed?.Invoke();
                 FlushPendingPillWidth();

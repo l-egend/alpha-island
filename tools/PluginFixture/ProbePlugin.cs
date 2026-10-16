@@ -15,12 +15,37 @@ public sealed class ProbePlugin : IIslandPlugin
     public void Initialize(IPluginContext context)
     {
         _context = context;
+        if (context.PluginId.StartsWith("fixture.isolation", StringComparison.Ordinal))
+        {
+            var input = new TextBox { Name = "IsolationInput", Text = "初始内容", Height = 30 };
+            var label = new TextBlock { Name = "IsolationLabel", Text = "正常", FontSize = 16 };
+            var button = new Button { Name = "IsolationButton", Content = "提交", Height = 30 };
+            button.Click += (_, _) => label.Text = input.Text;
+            Token = context.Lifetime;
+            context.RegisterService(new("lifecycle", _ => WriteLifecycle("start;"), () => WriteLifecycle("stop;")));
+            var panel = new StackPanel { Width = 350 }; panel.Children.Add(input); panel.Children.Add(button); panel.Children.Add(label);
+            context.RegisterPage(new("probe", "隔离测试", () => panel));
+            context.RegisterAction(new("failfast", "进程故障", () => Environment.FailFast("isolated fixture failure")));
+            context.RegisterAction(new("hang", "挂起测试", () => Thread.Sleep(Timeout.Infinite)));
+            context.RegisterAction(new("child", "子进程回收", () =>
+            {
+                var info = new System.Diagnostics.ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true };
+                info.ArgumentList.Add("/c"); info.ArgumentList.Add("ping -n 90 127.0.0.1 > nul");
+                using var child = System.Diagnostics.Process.Start(info) ?? throw new InvalidOperationException("fixture child failed");
+                context.WriteConfiguration("fixtureChildPid", child.Id);
+            }));
+            return;
+        }
+        if (context.PluginId.StartsWith("fixture.action", StringComparison.Ordinal) || context.PluginId == "fixture.available-fails")
+            context.RegisterAction(new(context.PluginId, "测试操作", () =>
+            { if (context.PluginId == "fixture.action-fails") throw new InvalidOperationException("action failed"); }, () =>
+            { if (context.PluginId == "fixture.available-fails") throw new InvalidOperationException("availability failed"); return true; }));
         if (context.PluginId == "fixture.network")
         {
             context.RegisterNetworkSource(new("primary", "高优先级测试数据", () =>
             {
                 var sample = new PluginNetworkSample(DateTimeOffset.UtcNow, 77, 55, 100, 200, "test");
-                return NetworkMode switch
+                return context.ReadConfiguration("plugin/fixture.network/mode", NetworkMode) switch
                 {
                     1 => null, 2 => sample with { DownBytesPerSecond = -1 }, 3 => sample with { UpBytesPerSecond = double.NaN },
                     4 => sample with { Timestamp = sample.Timestamp.AddSeconds(-6) }, 5 => sample with { Timestamp = sample.Timestamp.AddSeconds(2) },
@@ -45,5 +70,11 @@ public sealed class ProbePlugin : IIslandPlugin
         Updates++;
         if (_context?.PluginId == "fixture.settings-fails") throw new InvalidOperationException("settings failed");
     }
-    public void Dispose() => Disposed = true;
+    private void WriteLifecycle(string text)
+    {
+        if (_context?.PluginId.StartsWith("fixture.isolation", StringComparison.Ordinal) != true) return;
+        System.IO.Directory.CreateDirectory(_context.DataDirectory);
+        System.IO.File.AppendAllText(System.IO.Path.Combine(_context.DataDirectory, _context.PluginId + ".txt"), text);
+    }
+    public void Dispose() { Disposed = true; WriteLifecycle("dispose:" + Token.IsCancellationRequested + ";"); }
 }

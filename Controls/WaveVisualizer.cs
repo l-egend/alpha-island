@@ -340,6 +340,7 @@ namespace alpha_island.Controls
 
             Loaded += (_, __) => { if (IsActive) StartRendering(); };
             Unloaded += (_, __) => StopRendering();
+            IsVisibleChanged += (_, _) => { if (IsActive && IsVisible) StartRendering(); else StopRendering(); };
         }
 
         private static void OnIsActiveChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -370,7 +371,13 @@ namespace alpha_island.Controls
         /// <summary>推入一帧频谱（取值 0..1，长度任意）。线程安全。</summary>
         public void PushFrame(float[] bands)
         {
-            if (bands == null || bands.Length == 0) return;
+            if (bands == null) return;
+            PushFrame(bands.AsSpan());
+        }
+
+        internal void PushFrame(ReadOnlySpan<float> bands)
+        {
+            if (bands.IsEmpty) return;
 
             float sens = _sensitivity;
 
@@ -417,7 +424,7 @@ namespace alpha_island.Controls
 
         private void StartRendering()
         {
-            if (_rendering) return;
+            if (_rendering || !IsLoaded || !IsVisible) return;
             _rendering = true;
             _lastTick = -1;
             CompositionTarget.Rendering += OnRendering;

@@ -15,19 +15,52 @@ namespace alpha_island
     {
         /// <summary>异常日志路径：%LOCALAPPDATA%\alpha-island\error.log</summary>
         public static string LogPath => AppPaths.ErrorLogFile;
+        internal static bool IsAutoStartup { get; private set; }
+        private Plugins.Isolation.PluginWorkerServer? _pluginWorker;
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            if (e.Args.FirstOrDefault() == "--plugin-worker")
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                if (e.Args.Length != 3 || !System.Text.RegularExpressions.Regex.IsMatch(e.Args[1], "^AlphaIsland\\.Plugin\\.[a-f0-9]{32}$")
+                    || !System.Text.RegularExpressions.Regex.IsMatch(e.Args[2], "^[A-F0-9]{48}$")) { Shutdown(2); return; }
+                DispatcherUnhandledException += (_, args) => { Console.Error.WriteLine(args.Exception); args.Handled = true; Shutdown(94); };
+                _pluginWorker = new(this, e.Args[1], e.Args[2]);
+                _ = _pluginWorker.RunAsync(); return;
+            }
+            if (e.Args.FirstOrDefault() == "--read-browser-downloads")
+            {
+                var readings = System.Threading.Tasks.Task.Run(Services.BrowserDownloadProbe.ScanWindows).GetAwaiter().GetResult();
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(readings));
+                Console.Out.Flush();
+                // This is a command-line helper, so stop before WPF loads StartupUri.
+                Environment.Exit(0);
+                return;
+            }
+            if (e.Args.FirstOrDefault() == "--grant-boot-log-read")
+            {
+                int result = e.Args.Length == 2 && int.TryParse(e.Args[1], out int parent) && parent > 0
+                    ? Services.BootLogAccess.GrantReadToParent(parent) : 1;
+                Shutdown(result);
+                return;
+            }
+            StartupUri = new Uri("MainWindow.xaml", UriKind.Relative);
+            IsAutoStartup = e.Args.Contains("--startup", StringComparer.OrdinalIgnoreCase);
             base.OnStartup(e);
 
             // 正常退出不是异常。旧实现在这里塞一个 new Exception(..)，导致每次关程序
             // error.log 末尾都多一条假的 "Application.Exit fired!" 堆栈。
-            Exit += (_, args) => IslandLog.Info("AppExit", $"Application.Exit code={args.ApplicationExitCode}");
+            Exit += (_, args) => { IslandLog.Info("AppExit", $"Application.Exit code={args.ApplicationExitCode}"); IslandLog.Flush(TimeSpan.FromSeconds(2)); };
 
             // 服务层既有的上百处 Debug.WriteLine 经由这个监听器统一落盘（Debug 构建）。
             // .NET Core 里 Debug.WriteLine 会转发到 Trace.Listeners；
             // Debug.Listeners 在 .NET Core 已被移除，只能挂在 Trace 上。
+#if DEBUG
             System.Diagnostics.Trace.Listeners.Add(new IslandLogTraceListener(IslandLogLevel.Debug));
+#endif
+            if (Enum.TryParse<IslandLogLevel>(Environment.GetEnvironmentVariable("ALPHA_ISLAND_LOG_LEVEL"), true, out var logLevel)
+                && Enum.IsDefined(logLevel)) IslandLog.MinLevel = logLevel;
 
             IslandLog.Info("App", $"启动 v{typeof(App).Assembly.GetName().Version} pid={Environment.ProcessId}");
 
@@ -41,7 +74,7 @@ namespace alpha_island
             };
 
             AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-                Log(args.ExceptionObject as Exception, "AppDomain");
+            { Log(args.ExceptionObject as Exception, "AppDomain"); IslandLog.Flush(TimeSpan.FromSeconds(1)); };
 
             try
             {

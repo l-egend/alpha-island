@@ -10,8 +10,11 @@ namespace alpha_island.Core
     /// 加一个开关要改四处；现在集中成一个可序列化对象。
     /// 所有字段都必须有合理的默认值 —— 配置文件缺失/损坏时直接吃默认值。
     /// </summary>
-    public sealed class IslandOptions
+    public sealed class IslandOptions : alpha_island.Conversations.IChatSettings
     {
+        public string GetText(string key, string fallback) => SettingsRegistry.GetText(this, key, fallback);
+        public void SetValue(string key, object value) => SettingsRegistry.SetExtra(this, key, value);
+
         // ---------- 外观 ----------
         /// <summary>液态玻璃通透度 0.05~0.98。</summary>
         public double GlassOpacity { get; set; } = 0.08;
@@ -77,8 +80,6 @@ namespace alpha_island.Core
         public bool BatteryNotifyEnabled { get; set; } = true;
         /// <summary>电池通知停留秒数，2~10。</summary>
         public int BatteryNotifySeconds { get; set; } = 4;
-        /// <summary>充放电时是否播放光波纹特效。</summary>
-        public bool BatteryRippleEnabled { get; set; } = true;
 
         // ---------- 剪切板与热键 ----------
         /// <summary>复制内容时是否弹出剪切板通知。</summary>
@@ -103,6 +104,7 @@ namespace alpha_island.Core
         /// <summary>把其它实例的值全部拷贝进来（用于"恢复默认"后再回填）。</summary>
         public void CopyFrom(IslandOptions other)
         {
+            IsFreshInstallation = false;
             GlassOpacity = other.GlassOpacity;
             LiquidGlassBackdrop = other.LiquidGlassBackdrop;
             GelAnimation = other.GelAnimation;
@@ -128,7 +130,6 @@ namespace alpha_island.Core
             BluetoothNotifySeconds = other.BluetoothNotifySeconds;
             BatteryNotifyEnabled = other.BatteryNotifyEnabled;
             BatteryNotifySeconds = other.BatteryNotifySeconds;
-            BatteryRippleEnabled = other.BatteryRippleEnabled;
             ClipboardNotifyEnabled = other.ClipboardNotifyEnabled;
             ClipboardRightClickPaste = other.ClipboardRightClickPaste;
             ClipboardAutoCollapseSeconds = other.ClipboardAutoCollapseSeconds;
@@ -158,6 +159,7 @@ namespace alpha_island.Core
         }
 
         private bool _loadFailed;
+        internal bool IsFreshInstallation { get; private set; }
 
         internal static IslandOptions Load(string path)
         {
@@ -166,13 +168,16 @@ namespace alpha_island.Core
                 try
                 {
                     if (!File.Exists(candidate)) continue;
-                    var loaded = AtomicJsonFile.Read<IslandOptions>(candidate, JsonOptions)?.Normalized();
+                    var loaded = AtomicJsonFile.Read<IslandOptions>(candidate, JsonOptions);
+                    bool retiredPreference = loaded?.Extras?.ContainsKey("HardwarePowerElevatedReader") == true
+                        || loaded?.Extras?.ContainsKey("MemoryTrimEnabled") == true;
+                    loaded = loaded?.Normalized();
                     if (loaded == null) continue;
-                    if (candidate != path)
+                    if (candidate != path || retiredPreference)
                     {
-                        IslandLog.Warn("Options", "已从设置备份恢复");
-                        try { AtomicJsonFile.Write(path, JsonSerializer.Serialize(loaded, JsonOptions), keepBackup: false); }
-                        catch (Exception ex) { IslandLog.Warn("Options", "备份已读取，原文件恢复失败: " + ex.Message); }
+                        if (candidate != path) IslandLog.Warn("Options", "已从设置备份恢复");
+                        try { AtomicJsonFile.Write(path, JsonSerializer.Serialize(loaded, JsonOptions), keepBackup: candidate == path); }
+                        catch (Exception ex) { IslandLog.Warn("Options", "设置已读取，配置迁移或恢复写入失败: " + ex.Message); }
                     }
                     return loaded;
                 }
@@ -182,7 +187,16 @@ namespace alpha_island.Core
                 }
             }
             // 无有效备份时，退出不能把临时默认值覆盖到用户的损坏文件上。
-            return new IslandOptions { _loadFailed = File.Exists(path) || File.Exists(path + ".bak") };
+            bool hasSettings = File.Exists(path) || File.Exists(path + ".bak");
+            var defaults = new IslandOptions { _loadFailed = hasSettings, IsFreshInstallation = !hasSettings };
+            if (!hasSettings)
+            {
+                // Only a genuinely new profile receives automatic integration defaults.
+                // Persist them even without external apps so later installation works after a restart.
+                foreach (string key in new[] { "AgentBridgeEnabled", "plugin/oppo.pods/enabled", "plugin/vivo.office/enabled", "plugin/oppo.pods/setting/auto-connect" })
+                    defaults.Extras[key] = JsonSerializer.SerializeToElement(true);
+            }
+            return defaults;
         }
 
         public void Save(bool allowRecovery = false)
@@ -200,6 +214,7 @@ namespace alpha_island.Core
                 SettingsRegistry.SetExtra(this, "AiApiKey", string.Empty);
                 AtomicJsonFile.Write(path, JsonSerializer.Serialize(this, JsonOptions));
                 _loadFailed = false;
+                IsFreshInstallation = false;
             }
             catch (Exception ex)
             {
@@ -229,6 +244,9 @@ namespace alpha_island.Core
             // 注册表里的设置项（含 Extras 里新功能的项）统一夹取 + 补齐缺的键。
             // 上面那些逐项夹取保持原样：它们是历史行为，改动风险大于收益。
             Extras ??= new Dictionary<string, JsonElement>();
+            // Retired privileged reader preference must not survive old configuration imports.
+            Extras.Remove("HardwarePowerElevatedReader");
+            Extras.Remove("MemoryTrimEnabled");
             SettingsRegistry.Normalize(this);
             SettingsRegistry.SetExtra(this, "AiApiKey", string.Empty);
 

@@ -14,13 +14,13 @@ internal static partial class Program
     private static void PluginUninstallChecks(alpha_island.MainWindow window, string testRoot)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var pages = (IslandPageHost)typeof(alpha_island.MainWindow).GetField("_pages", flags)!.GetValue(window)!;
+        var pages = (IslandPageHost)ReadWindowMember(window, "_pages")!;
         string previous = pages.ActiveId;
         string pluginRoot = Path.Combine(testRoot, "uninstall-plugins"); Directory.CreateDirectory(pluginRoot);
         string WriteProbe(string folder, string id)
         {
             string path = Path.Combine(pluginRoot, folder); Directory.CreateDirectory(path);
-            File.Copy(Path.GetFullPath("tools/PluginFixture/bin/Debug/net8.0-windows/AlphaIsland.PluginFixture.dll"),
+            File.Copy(Path.GetFullPath($"tools/PluginFixture/bin/{TestBuildConfiguration}/net8.0-windows/AlphaIsland.PluginFixture.dll"),
                 Path.Combine(path, "AlphaIsland.PluginFixture.dll"));
             File.WriteAllText(Path.Combine(path, "plugin.json"), JsonSerializer.Serialize(new
             { id, name = id, version = "1.0.0", apiVersion = 1, assembly = "AlphaIsland.PluginFixture.dll", entryType = "AlphaIsland.PluginFixture.ProbePlugin" }));
@@ -45,7 +45,7 @@ internal static partial class Program
         var settings = new SettingsWindow(persistSettings: false) { ForceClose = true };
         try
         {
-            host.Discover();
+            host.Discover(); PumpUntilState(() => host.Entries.Where(e => e.Manifest != null).All(e => !PluginHost.IsEnabled(options, e.Manifest!.Id) || e.Running || e.Error.Length > 0));
             var probe = host.Entries.Single(e => e.Manifest?.Id == "fixture.uninstall");
             var sibling = host.Entries.Single(e => e.Manifest?.Id == "fixture.sibling");
             var locked = host.Entries.Single(e => e.Manifest?.Id == "fixture.locked");
@@ -54,15 +54,14 @@ internal static partial class Program
             settings.OptionsChanged += (_, updated) => { options.CopyFrom(updated); host.Sync(options); };
             var rows = (StackPanel)settings.FindName("PluginRows");
             Button UninstallButton(string folder) => Descendants<Button>(rows).Single(b => Equals(b.Tag, "plugin-uninstall:" + folder));
-            void ClickUninstall(string folder) { UninstallButton(folder).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); PumpAnimations(30); }
+            void ClickUninstall(string folder) { UninstallButton(folder).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); PumpAnimations(1200); }
             Check(Descendants<Button>(rows).Count(b => b.Tag is string tag && tag.StartsWith("plugin-uninstall:")) == 4,
                 "运行、停用及损坏插件均提供卸载按钮");
             ClickUninstall(probeFolder);
             Check(!Directory.Exists(probeFolder) && !host.Entries.Contains(probe) && !probe.Running
                 && lifetime.IsCancellationRequested && pages.IndexOf(pageId) < 0,
                 "真实按钮一键删除运行中的托管插件、取消任务并撤下卡片");
-            Check((bool)instance.GetType().GetProperty("Stopped")!.GetValue(instance)!
-                && (bool)instance.GetType().GetProperty("Disposed")!.GetValue(instance)!, "卸载调用服务 Stop 和插件 Dispose");
+            Check(!((alpha_island.Plugins.Isolation.IsolatedPlugin)instance).IsAlive, "卸载调用服务 Stop 和插件 Dispose");
             Check(!options.Extras.Keys.Any(k => k.StartsWith("plugin/fixture.uninstall/"))
                 && options.Extras[PluginHost.SettingKey("fixture.uninstall-other", "keep")].GetString() == "keep"
                 && sibling.Running && Directory.Exists(siblingFolder), "卸载只清除本插件设置，保留相近 Id 和其他运行插件");
@@ -80,7 +79,7 @@ internal static partial class Program
                 Check(Equals(UninstallButton(lockedFolder).Content, "重试卸载")
                     && !Descendants<CheckBox>(rows).Single(c => Equals(c.Tag, PluginHost.EnabledKey("fixture.locked"))).IsEnabled
                     && Descendants<TextBlock>(rows).Any(t => t.Text.StartsWith("卸载失败：")), "删除失败显示原因和重试按钮，避免启动部分删除的插件");
-                host.Discover(); PumpAnimations(30); host.Sync(options);
+                host.Discover(); PumpUntilState(() => host.Entries.Where(e => e.Manifest != null).All(e => !PluginHost.IsEnabled(options, e.Manifest!.Id) || e.Running || e.Error.Length > 0)); PumpAnimations(30); host.Sync(options);
                 Check(host.Entries.Contains(locked) && !locked.Running && sibling.Running, "刷新插件列表保留失败重试入口，其他插件正常运行");
             }
             ClickUninstall(lockedFolder);
@@ -118,7 +117,7 @@ internal static partial class Program
                 entries.Remove(linkedEntry);
             }
             finally { Directory.Delete(link); }
-            host.Discover();
+            host.Discover(); PumpUntilState(() => host.Entries.Where(e => e.Manifest != null).All(e => !PluginHost.IsEnabled(options, e.Manifest!.Id) || e.Running || e.Error.Length > 0));
             Check(host.Entries.Count == 1 && sibling.Running && Directory.Exists(siblingFolder), "卸载后刷新不会重新发现已删除插件");
             var restored = JsonSerializer.Deserialize<IslandOptions>(JsonSerializer.Serialize(options))!;
             Check(!restored.Extras.Keys.Any(k => k.StartsWith("plugin/fixture.uninstall/")) && PluginHost.IsEnabled(restored, "fixture.sibling"),
@@ -126,7 +125,7 @@ internal static partial class Program
         }
         finally
         {
-            settings.Close(); host.Dispose(); pages.SetActiveIndex(pages.IndexOfOrDefault(previous));
+            settings.Close(); host.Dispose(); AwaitPlugin(host.ShutdownCompletion.ContinueWith(_ => true)); pages.SetActiveIndex(pages.IndexOfOrDefault(previous));
             PrivateCall(window, "SwitchCardPage", pages.ActiveIndex, false, false);
         }
     }

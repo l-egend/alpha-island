@@ -9,6 +9,7 @@ namespace alpha_island.Interop
     /// </summary>
     internal static partial class NativeMethods
     {
+        public const int VK_RBUTTON = 0x02;
         // ---- 低级鼠标钩子 ----
         public const int WH_MOUSE_LL = 14;
 
@@ -183,6 +184,7 @@ namespace alpha_island.Interop
         // ---- 模拟按键与鼠标 (SendInput) ----
         public const int INPUT_MOUSE = 0;
         public const int INPUT_KEYBOARD = 1;
+        internal static readonly IntPtr ExternalShortcutInputTag = new(0x41495343);
         public const uint KEYEVENTF_KEYUP = 0x0002;
         public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         public const uint MOUSEEVENTF_LEFTUP = 0x0004;
@@ -280,24 +282,12 @@ namespace alpha_island.Interop
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
 
-        // ---- 能力探测：内存整理（psapi）----
-        // EmptyWorkingSet 把自己（或别人的）工作集挤出去；自身免提权，别人需要 PROCESS_SET_QUOTA。
-        public const uint PROCESS_QUERY_INFORMATION = 0x0400;
-        public const uint PROCESS_SET_QUOTA = 0x0100;
-
-        [DllImport("kernel32.dll")]
-        public static extern IntPtr GetCurrentProcess();
-
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool CloseHandle(IntPtr hObject);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, int dwProcessId);
-
-        [DllImport("psapi.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool EmptyWorkingSet(IntPtr hProcess);
 
         // ---- A 组②：物理内存占用（kernel32）----
         // 一次调用拿总量/可用量/占用率；dwMemoryLoad 这个整数百分比就是任务管理器里的那个数。
@@ -348,6 +338,7 @@ namespace alpha_island.Interop
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_TRANSPARENT = 0x00000020;
         public const int WS_EX_TOOLWINDOW = 0x00000080;
+        public const int WS_EX_APPWINDOW = 0x00040000;
         public const int WS_EX_NOACTIVATE = 0x08000000;
 
         [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]

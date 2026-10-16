@@ -17,11 +17,11 @@ public partial class MainWindow
         var plugin = _plugins?.ReadNetwork(DateTimeOffset.UtcNow);
         if (plugin.HasValue)
         {
-            if (_externalNetwork.Apply(plugin.Value.Id, plugin.Value.Title, plugin.Value.Sample)) _netSpeedDownHistory.Clear();
+            if (_externalNetwork.Apply(plugin.Value.Id, plugin.Value.Title, plugin.Value.Sample)) ClearNetSpeedHistory();
         }
         else if (_externalNetwork.Active)
         {
-            _externalNetwork.Reset(); service.ResetSession(); _netSpeedDownHistory.Clear();
+            _externalNetwork.Reset(); service.ResetSession(); ClearNetSpeedHistory();
         }
         service.Sample();
         return CurrentNetworkSample;

@@ -130,6 +130,7 @@ internal static partial class Program
             try
             {
                 var playing = animation.PlayAsync();
+                Check(ReferenceEquals(playing, animation.PlayAsync()), "重复播放调用复用同一任务且不重复订阅渲染" );
                 var handle = new System.Windows.Interop.WindowInteropHelper(animation).Handle;
                 int style = alpha_island.Interop.NativeMethods.GetWindowLong(handle, alpha_island.Interop.NativeMethods.GWL_EXSTYLE);
                 var transitionLease = alpha_island.Interop.DwmTransitionLease.TryAcquire(handle);
@@ -170,6 +171,7 @@ internal static partial class Program
             var canceled = new alpha_island.Animation.MediaHandoffOverlay(new Rect(740, 12, 344, 48), new Rect(200, 120, 800, 600), art, art,
                 "动画取消回归", opening: true);
             var cancelTask = canceled.PlayAsync(); canceled.Close();
+            Check(ReferenceEquals(cancelTask, canceled.PlayAsync()), "已关闭过渡窗口不能再次启动渲染" );
             Check(cancelTask.IsCompletedSuccessfully && !cancelTask.Result, "取消动画立即释放等待任务和过渡窗口");
         }
         finally

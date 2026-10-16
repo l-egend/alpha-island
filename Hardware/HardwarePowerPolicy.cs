@@ -1,19 +1,12 @@
-using LibreHardwareMonitor.Hardware;
 using System.Text.RegularExpressions;
 
 namespace AlphaIsland.Hardware;
 
-/// <summary>Power aggregation rules are independent of process privileges and the UI.</summary>
+/// <summary>Aggregation and energy conversion are independent of native handles and the UI.</summary>
 public static class HardwarePowerPolicy
 {
-    public static bool? DiscreteGpu(HardwareType type, string implementation, string name, bool amdCpu) => type switch
-    {
-        HardwareType.GpuNvidia => true,
-        HardwareType.GpuIntel when implementation == "IntelIntegratedGpu" => false,
-        HardwareType.GpuIntel when implementation == "IntelDiscreteGpu" => true,
-        HardwareType.GpuAmd when !amdCpu || Regex.IsMatch(name, @"Radeon(?:\(TM\))?\s+RX\s+\d{3,4}\b", RegexOptions.IgnoreCase) => true,
-        _ => null
-    };
+    private static readonly Regex PackageChannel = new(@"\ARAPL_Package\d+_PKG\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    public static bool IsCpuPackageChannel(string name) => PackageChannel.IsMatch(name);
     public static double? ValidWatts(double? value) => value is >= 0 && double.IsFinite(value.Value) ? value : null;
     public static double? SumComplete(IEnumerable<double?> values)
     {
@@ -21,14 +14,10 @@ public static class HardwarePowerPolicy
         foreach (double? value in values) { if (ValidWatts(value) is not double watts) return null; total += watts; }
         return ValidWatts(total);
     }
-    public static double? Package(IHardware hardware, params string[] names)
+    // EMI picowatt-hours / 100 ns = 0.036 W. Reject resets and gaps after sleep instead of inventing spikes.
+    public static double? EnergyWatts(ulong energy0, ulong time0, ulong energy1, ulong time1)
     {
-        foreach (string name in names)
-        {
-            var sensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Power && s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-            // A named but unavailable sensor must not hide another valid whole-package sensor.
-            if (sensor != null && ValidWatts(sensor.Value) is double watts) return watts;
-        }
-        return null;
+        if (energy1 <= energy0 || time1 <= time0 || time1 - time0 > (ulong)HardwarePowerReading.MaximumAge.Ticks) return null;
+        return ValidWatts((energy1 - energy0) * 0.036 / (time1 - time0));
     }
 }

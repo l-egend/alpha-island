@@ -44,7 +44,7 @@ namespace alpha_island
             string artist = info.Artist ?? "";
             if (title.Length == 0) return;
 
-            string key = LyricsService.CacheKey(title, artist, info.Duration) + "|" + info.Album + "|" + info.SourceApp + "|" + info.SessionId + "|" + info.ContentKind;
+            string key = LyricsIdentity(info);
             // 同一首歌只发一次请求：已经有文档，或者上一次请求还在飞，都直接早退。
             // 有两条触发路径（ApplyOptions 里补抓 与 SMTC 首帧）会在几毫秒内各调一次本方法，
             // 不早退的话第二次会把第一次的 CTS 取消掉 —— 等于白跑一遍、歌词白等一轮。
@@ -59,27 +59,28 @@ namespace alpha_island
 
             ApplyLyrics(null);
 
-            if (service.TryGetCached(title, artist, info.Duration, out var cached))
-            {
-                ApplyLyrics(cached);
-                return;
-            }
-
             try
             {
+                // SMTC often delivers the new title before its album/duration. Let that
+                // short burst settle, and reject results for any superseded metadata.
+                await Task.Delay(250, cts.Token);
+                if (_smtc?.Current is not { } stable || LyricsIdentity(stable) != key) return;
+                if (service.TryGetCached(title, artist, info.Duration, out var cached, info.Album))
+                {
+                    ApplyLyrics(cached); return;
+                }
                 // 首次拿不到歌词 ≠ 这首歌没有歌词：网络抖动、某个源临时超时、换曲瞬间 SMTC 给的时长
                 // 不可靠（可能是 0 或上一首的）都会导致一次失败。这里最多再重试 2 次、间隔 5s，
                 // 期间一旦换歌或被取消就放弃（旧实现一次失败就整首歌不再重试）。
                 var duration = info.Duration;
                 for (int attempt = 0; ; attempt++)
                 {
-                    var doc = await service.GetLyricsAsync(title, artist, duration, cts.Token);
+                    var doc = await service.GetLyricsAsync(title, artist, duration, cts.Token, info.Album);
                     if (cts.IsCancellationRequested) return;
 
                     // 回来时可能已经换歌了，核对一下再应用
                     var current = _smtc?.Current;
-                    if (current == null || current.Title != title || current.Artist != artist ||
-                        current.Album != info.Album || current.SourceApp != info.SourceApp || current.SessionId != info.SessionId || !current.SupportsLyrics || _lyricsKey != key) return;
+                    if (current == null || !current.SupportsLyrics || LyricsIdentity(current) != key || _lyricsKey != key) return;
 
                     if (doc != null && doc.HasLyrics)
                     {
@@ -108,9 +109,13 @@ namespace alpha_island
             {
                 // 请求收尾（成功 / 失败 / 换歌被取消）都要放开"在飞"标记，
                 // 否则这首歌后续再也发不出请求（比如第一次没命中、需要靠 _lyricsDoc == null 再补抓的场景）。
-                if (_lyricsFetchingKey == key) _lyricsFetchingKey = "";
+                if (ReferenceEquals(_lyricsCts, cts) && _lyricsFetchingKey == key) _lyricsFetchingKey = "";
             }
         }
+
+        private static string LyricsIdentity(NowPlayingInfo info) =>
+            LyricsService.CacheKey(info.Title, info.Artist, info.Duration, info.Album)
+                + "|" + info.SourceApp + "|" + info.SessionId + "|" + info.ContentKind;
 
         /// <summary>
         /// 应用歌词文档。
@@ -131,7 +136,7 @@ namespace alpha_island
 
             if (show && doc != null)
             {
-                OnKaraokeTick(this, EventArgs.Empty);
+                RefreshLyricPosition();
             }
             else
             {
@@ -180,12 +185,21 @@ namespace alpha_island
 
         private void StopKaraoke()
         {
-            if (!_karaokeHooked) return;
-            CompositionTarget.Rendering -= OnKaraokeTick;
-            _karaokeHooked = false;
+            if (_karaokeHooked)
+            {
+                CompositionTarget.Rendering -= OnKaraokeTick;
+                _karaokeHooked = false;
+            }
+            ResetLyricPresentation(); ResetPillLyricRoll();
         }
 
         private void OnKaraokeTick(object? sender, EventArgs e)
+        {
+            if (_smtc?.Current?.IsPlaying != true) return;
+            RefreshLyricPosition();
+        }
+
+        private void RefreshLyricPosition()
         {
             var doc = _lyricsDoc;
             var media = _smtc;

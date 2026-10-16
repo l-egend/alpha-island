@@ -83,8 +83,9 @@ internal static partial class Program
     private static void DownloadAndMediaEventUiChecks(alpha_island.MainWindow window, Grid root, string testRoot)
     {
         var type = window.GetType();
-        object? Get(string name) => type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window);
-        void Set(string name, object? value) => type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, value);
+        object? Get(string name) => ReadWindowMember(window, name);
+        void Set(string name, object? value) => WriteWindowMember(window, name, value);
+        var workspace = (alpha_island.ViewModels.IslandWorkspaceViewModel)ReadWindowMember(window, "_workspace")!;
         var oldDownloads = Get("_downloads"); var oldSmtc = Get("_smtc"); var oldState = (IslandState)Get("_state")!;
         var pages = (IslandPageHost)Get("_pages")!; string oldPage = pages.ActiveId;
         var layers = (IslandLayerHost)Get("_layers")!; var options = (IslandOptions)Get("_options")!;
@@ -102,13 +103,12 @@ internal static partial class Program
                 "真实下载卡完整收起 Steam 轨道和填充，无虚假百分比与剩余时间");
             Check(!window.DownloadNotifyDetail.Text.Contains("B/s") && !window.DownloadNotifyDetail.Text.Contains("总大小"),
                 "Steam 提示不借整机网速或合并下载与落盘大小");
-            ((Dictionary<string, double>)Get("_dlSpeed")!)[monitor.Current.Single().Key] = 27_000_000;
             File.AppendAllText(log, SteamEvent("update canceled : Disabled (Suspended)", -9)); monitor.Sample();
             PrivateCall(window, "ApplyDownloadSample", monitor.Current.ToList(), now.AddSeconds(2));
             Check(window.DownloadNotifyTitle.Text == "Steam 已暂停" && window.DlMeta1.Text.StartsWith("已暂停")
-                && window.DownloadCardSummaryText.Text.Contains("0 个进行中") && Get("_dlPendingFinish") == null,
+                && window.DownloadCardSummaryText.Text.Contains("0 个进行中"),
                 "暂停立即更新提示和卡片计数，不误报完成");
-            Check(((Dictionary<string, double>)Get("_dlSpeed")!).Count == 0, "暂停清除之前的平滑速度");
+            Check(!window.DlMeta1.Text.Contains("B/s") && !window.DownloadNotifyDetail.Text.Contains("B/s"), "暂停清除之前的平滑速度显示");
             PrivateCall(window, "SelectComponent", IslandPageIds.System); PrivateCall(window, "UpdateSideBubbleHint");
             Check(window.SideBubbleText.Text == "Steam 已暂停" && window.SideBubbleIcon.Text == "\uE769"
                 && window.SideBubbleDetail.Text.Contains("Apex Legends"), "旁侧下载缩略岛同步暂停标题、图标和游戏名");
@@ -138,14 +138,14 @@ internal static partial class Program
             Check(pages.ActiveId == IslandPageIds.Music && (IslandState)Get("_state")! == IslandState.Card,
                 "其他卡片展开时媒体暂停切到播放器详情，并保持卡片展开");
             PrivateCall(window, "SelectComponent", IslandPageIds.System); PrivateCall(window, "SwitchMainIsland", "netspeed");
-            options.PauseNotifyEnabled = false; Set("_lastIsPlaying", true); PrivateCall(window, "ApplyMedia", paused);
+            options.PauseNotifyEnabled = false; workspace.Media.Commit(media); PrivateCall(window, "ApplyMedia", paused);
             Check(pages.ActiveId == IslandPageIds.System && (string)Get("_activeMainIslandKey")! == "netspeed", "关闭暂停提醒后不主动切换媒体");
             options.PauseNotifyEnabled = true;
-            layers.Request(IslandNotification.Seconds("approval", 30)); Set("_lastIsPlaying", true); PrivateCall(window, "ApplyMedia", paused);
+            layers.Request(IslandNotification.Seconds("approval", 30)); workspace.Media.Commit(media); PrivateCall(window, "ApplyMedia", paused);
             Check((string)Get("_activeMainIslandKey")! != "music" && layers.IsActive("approval"), "媒体状态变化不会抢占待审批操作");
-            layers.Hide("approval"); Set("_clipboardLocked", true); Set("_lastIsPlaying", true); PrivateCall(window, "ApplyMedia", paused);
+            layers.Hide("approval"); Set("_clipboardLocked", true); workspace.Media.Commit(media); PrivateCall(window, "ApplyMedia", paused);
             Check((string)Get("_activeMainIslandKey")! != "music", "待粘贴剪切板的优先交互不会被媒体暂停打断"); Set("_clipboardLocked", false);
-            Set("_fileDragActive", true); Set("_lastIsPlaying", true); PrivateCall(window, "ApplyMedia", paused);
+            Set("_fileDragActive", true); workspace.Media.Commit(media); PrivateCall(window, "ApplyMedia", paused);
             Check(pages.ActiveId == IslandPageIds.System, "文件拖入过程中媒体提醒不替换投递卡片"); Set("_fileDragActive", false);
             PrivateCall(window, "SetState", IslandState.Pill, false, IslandPageIds.System);
             var next = media with { Title = "下一段媒体" }; smtc.SetDebugNowPlaying(next); PrivateCall(window, "ApplyMedia", next);
@@ -158,8 +158,7 @@ internal static partial class Program
             options.PauseNotifyEnabled = oldPause; Set("_clipboardLocked", false); Set("_fileDragActive", false);
             PrivateCall(window, "DismissUpNext"); layers.SetPinned("netspeed", false); layers.HideAll();
             Set("_downloads", oldDownloads); Set("_smtc", oldSmtc);
-            ((Dictionary<string, double>)Get("_dlSpeed")!).Clear();
-            Set("_dlLastPromptKey", null); Set("_dlLastPromptState", null);
+            workspace.Downloads.Reset();
             PrivateCall(window, "SetState", oldState, false, oldPage); PumpAnimations(300);
         }
     }

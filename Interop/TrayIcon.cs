@@ -14,7 +14,6 @@ namespace alpha_island.Interop
     {
         private NotifyIcon? _icon;
         private ContextMenuStrip? _menu;
-        private ToolStripMenuItem? _memoryTrimItem;
         private bool _disposed;
 
         /// <summary>左键单击 / 双击托盘图标。</summary>
@@ -22,9 +21,6 @@ namespace alpha_island.Interop
 
         /// <summary>菜单里的"退出程序"。</summary>
         public event EventHandler? ExitRequested;
-
-        /// <summary>菜单里的"整理内存"（A 组②）。</summary>
-        public event EventHandler? MemoryTrimRequested;
 
         private DateTime _lastSettingsRequestTime = DateTime.MinValue;
 
@@ -53,13 +49,9 @@ namespace alpha_island.Interop
             _menu = TrayMenuTheme.Create();
             var settingsItem = new ToolStripMenuItem("打开设置");
             settingsItem.Click += (_, __) => TriggerSettingsRequested();
-            // A 组②：一键内存整理（只回收本进程工作集，免提权）。开关关闭时这一项变灰。
-            _memoryTrimItem = new ToolStripMenuItem("整理内存");
-            _memoryTrimItem.Click += (_, __) => MemoryTrimRequested?.Invoke(this, EventArgs.Empty);
             var exitItem = new ToolStripMenuItem("退出程序");
             exitItem.Click += (_, __) => ExitRequested?.Invoke(this, EventArgs.Empty);
             _menu.Items.Add(settingsItem);
-            _menu.Items.Add(_memoryTrimItem);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(exitItem);
 
@@ -74,6 +66,19 @@ namespace alpha_island.Interop
             {
                 if (e.Button == MouseButtons.Left) TriggerSettingsRequested();
             };
+        }
+
+        public void SetPluginActions(System.Collections.Generic.IReadOnlyList<AlphaIsland.PluginSdk.PluginAction> actions)
+        {
+            if (_menu == null || _disposed) return;
+            foreach (var item in System.Linq.Enumerable.ToArray(System.Linq.Enumerable.OfType<ToolStripMenuItem>(_menu.Items)))
+                if (item.Tag as string == "plugin-action") { _menu.Items.Remove(item); item.Dispose(); }
+            int index = 1;
+            foreach (var action in actions)
+            {
+                var item = new ToolStripMenuItem(action.Title) { Tag = "plugin-action" };
+                item.Click += (_, _) => action.Invoke(); _menu.Items.Insert(index++, item);
+            }
         }
 
         /// <summary>
@@ -162,15 +167,6 @@ namespace alpha_island.Interop
             }
             Core.IslandLog.Debug("Tray", $"图标尺寸 = {fallback}px（取 SmallIconSize；dpi 探测值 {dpi} 不可用）");
             return fallback;
-        }
-
-        /// <summary>
-        /// 「整理内存」菜单项是否可用（跟着设置里的"一键内存整理"开关走）。
-        /// 菜单项始终列出来（用户看得见入口），关闭时只是变灰，避免"菜单项时有时无"的困惑。
-        /// </summary>
-        public void SetMemoryTrimEnabled(bool enabled)
-        {
-            if (_memoryTrimItem != null) _memoryTrimItem.Enabled = enabled;
         }
 
         public void Dispose()

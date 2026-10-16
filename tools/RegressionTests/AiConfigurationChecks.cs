@@ -101,21 +101,22 @@ internal static partial class Program
 
     private static void AiSettingsConfigurationUiChecks(string root)
     {
-            alpha_island.Settings.SettingsWindow? settings = null;
+            AlphaIsland.Plugins.ApiChat.ApiSettingsView? settings = null;
             try
             {
                 var options = new IslandOptions().Normalized();
                 string path = Path.Combine(root, "settings-key", "secrets.dat");
-                settings = new alpha_island.Settings.SettingsWindow(false, path); settings.LoadFrom(options);
+                settings = new AlphaIsland.Plugins.ApiChat.ApiSettingsView(false, path); settings.LoadFrom(options);
                 var input = settings.AiApiKeyBox;
                 foreach (char c in TestApiKey) input.Password += c;
                 Check(input.Password == TestApiKey && !File.Exists(path), "逐字输入完整密钥不会提前保存或清空");
-                settings.GreetingTextBox.Text = "编辑其他配置";
-                var currentOptions = (IslandOptions)typeof(alpha_island.Settings.SettingsWindow).GetField("_options", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(settings)!;
+                settings.AiSystemPromptBox.Text = "编辑其他配置";
+                var currentOptions = (IslandOptions)typeof(AlphaIsland.Plugins.ApiChat.ApiSettingsView).GetField("_options", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(settings)!;
                 Check(!File.Exists(path) && SettingsRegistry.GetText(currentOptions, "AiApiKey", "") == "", "其他设置自动保存也不会写入未确认的密钥");
                 Check(settings.SaveAiKeyButton.IsEnabled && !settings.ClearAiKeyButton.IsEnabled, "待保存密钥的按钮状态正确");
                 settings.SaveAiKeyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                 Check(AiSecretStore.Load(path) == TestApiKey && input.Password == "" && settings.ClearAiKeyButton.IsEnabled, "保存按钮提交完整密钥并清空输入框");
+                Check(!SettingsRegistry.GetBool(currentOptions, "AiEnabled", false), "只保存密钥但尚未连接成功时不启用 AI 对话");
                 input.Password = "replacement-test-key";
                 using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
                 {
@@ -127,19 +128,18 @@ internal static partial class Program
                 Check(AiSecretStore.Load(path) == TestApiKey, "清空输入不删除已保存密钥");
                 settings.ClearAiKeyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                 Check(!File.Exists(path) && !settings.ClearAiKeyButton.IsEnabled, "删除按钮明确删除密钥");
-                Check(settings.OpenConfigFolderButton != null, "设置页提供集中配置目录入口");
                 Check(DiagnosticsReport.EnvironmentText().Contains(AppPaths.ConfigDir), "诊断信息能定位集中配置目录");
-                PrivateCall(settings, "SelectPageByTag", "ai");
                 var content = (FrameworkElement)settings.Content;
                 content.Measure(new System.Windows.Size(880, 600)); content.Arrange(new Rect(0, 0, 880, 600)); content.UpdateLayout();
-                Check(settings.Page_Ai.IsAncestorOf(settings.SaveAiKeyButton) && !settings.Page_Ai.IsAncestorOf(settings.GreetingTextBox), "密钥操作按钮位于 AI 配置行");
+                Check(content.IsAncestorOf(settings.SaveAiKeyButton), "密钥操作位于独立插件设置界面");
                 string preview = Path.GetFullPath("docs/screens/ai-configuration.png"); Directory.CreateDirectory(Path.GetDirectoryName(preview)!);
                 var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(880, 600, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
                 bitmap.Render(content); var png = new System.Windows.Media.Imaging.PngBitmapEncoder(); png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
                 using var file = File.Create(preview); png.Save(file);
-                SettingsForegroundChecks(settings);
+                var hostSettings = new alpha_island.Settings.SettingsWindow(false);
+                try { SettingsForegroundChecks(hostSettings); } finally { hostSettings.ForceClose=true; hostSettings.Close(); }
             }
-            finally { if (settings != null) { settings.ForceClose = true; settings.Close(); } }
+            finally { if (settings != null) { settings.Dispose(); } }
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindow")]
@@ -158,12 +158,21 @@ internal static partial class Program
             bool above = false;
             for (IntPtr handle = SettingsTestGetWindow(peer, 3); handle != IntPtr.Zero; handle = SettingsTestGetWindow(handle, 3))
                 if (handle == own) { above = true; break; }
-            Check(settings.Topmost && (alpha_island.Interop.NativeMethods.GetWindowLong(own, -20) & 8) != 0 && above,
-                "设置窗口打开后位于另一个置顶全屏窗口之上（真实 Win32 层级）");
-            settings.WindowState = WindowState.Minimized;
-            Check(!settings.Topmost, "设置窗口最小化后释放置顶层");
+            Check(!settings.Topmost && (alpha_island.Interop.NativeMethods.GetWindowLong(own, -20) & 8) == 0 && !above,
+                "设置窗口处于普通层级，前台顶置应用可以覆盖设置（真实 Win32 层级）");
+            Check(settings.Owner == null && SettingsTestGetWindow(own, 4) == IntPtr.Zero,
+                "设置窗口不依附顶置的岛，独立参与窗口切换");
+            fullScreenPeer.Topmost = false;
             settings.ShowInForeground(requestFocus: false);
-            Check(settings.WindowState == WindowState.Normal && settings.IsVisible && settings.Topmost, "重复打开恢复最小化设置并重新置顶");
+            alpha_island.Interop.NativeMethods.SetWindowPos(peer, IntPtr.Zero, 0, 0, 0, 0, 0x0013);
+            bool peerAbove = false;
+            for (IntPtr handle = SettingsTestGetWindow(own, 3); handle != IntPtr.Zero; handle = SettingsTestGetWindow(handle, 3))
+                if (handle == peer) { peerAbove = true; break; }
+            Check(peerAbove && !settings.Topmost, "其他普通窗口可以置于设置之上");
+            settings.WindowState = WindowState.Minimized;
+            Check(!settings.Topmost, "设置窗口最小化不进入置顶层");
+            settings.ShowInForeground(requestFocus: false);
+            Check(settings.WindowState == WindowState.Normal && settings.IsVisible && !settings.Topmost, "重复打开恢复最小化设置且保持普通层级");
             settings.CloseButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             Check(!settings.IsVisible && !settings.Topmost, "关闭按钮隐藏设置并释放置顶，其他窗口可正常操作");
             settings.ShowInForeground(requestFocus: false);

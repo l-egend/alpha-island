@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Windows.Threading;
@@ -33,11 +34,28 @@ namespace alpha_island.Services
     }
 
     /// <summary>音频应用会话信息。</summary>
-    public sealed class AudioAppSessionViewModel
+    public sealed class AudioAppSessionViewModel : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private string _name = "";
+        private int _volumePercent = 100;
+        private bool _isMuted;
         public int ProcessId { get; set; }
-        public string Name { get; set; } = "";
-        public bool IsMuted { get; set; }
+        public string Name { get => _name; set { if (_name == value) return; _name = value; Changed(nameof(Name)); } }
+        public int VolumePercent
+        {
+            get => _volumePercent;
+            set { value = Math.Clamp(value, 0, 100); if (_volumePercent == value) return;
+                _volumePercent = value; Changed(nameof(VolumePercent)); Changed(nameof(PercentText)); }
+        }
+        public string PercentText => $"{VolumePercent}%";
+        public bool IsMuted
+        {
+            get => _isMuted;
+            set { if (_isMuted == value) return; _isMuted = value;
+                Changed(nameof(IsMuted)); Changed(nameof(MuteText)); Changed(nameof(MuteColorBrush)); }
+        }
+        private void Changed(string name) => PropertyChanged?.Invoke(this, new(name));
         public string MuteText => IsMuted ? "已静音" : "静音";
         public System.Windows.Media.Brush MuteColorBrush => IsMuted
             ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x55, 0x55))
@@ -113,11 +131,15 @@ namespace alpha_island.Services
         private volatile AudioPeakSnapshot _sessionPeaks = new(new Dictionary<string, float>(), 0);
         // 仅后台刷新线程访问；进程查询仍每 2.5 秒一次，缓存的电平表每 100ms 采样。
         private List<(string Name, AudioMeterInformation Meter)> _sessionMeters = new();
+        private int _devicesDirty = 1;
 
         private AutoResetEvent? _refreshSignal;
         private Thread? _refreshThread;
+        private AutoResetEvent? _commandSignal;
+        private Thread? _commandThread;
+        private volatile bool _commandReady;
         private volatile string? _pendingDefaultDeviceId;
-        private volatile int _pendingMuteAppPid;
+        private readonly AppAudioCommandQueue _appCommands = new();
 
         /// <summary>设备列表或应用会话列表发生变化时触发（已在 UI 线程上）。</summary>
         public event EventHandler? ListsChanged;
@@ -130,6 +152,7 @@ namespace alpha_island.Services
 
         /// <summary>当前主音量百分比 (0~100)。</summary>
         public int CurrentPercent => _lastPercent >= 0 ? _lastPercent : 0;
+        internal bool IsAvailable => !_disposed && _volume != null && _commandReady;
 
         /// <summary>当前是否处于静音状态。</summary>
         public bool IsMuted => _lastMuted;
@@ -143,6 +166,13 @@ namespace alpha_island.Services
         }
 
         /// <summary>调节系统音量增减（如 delta = +2 或 -2）。</summary>
+        internal bool TryHandleVolumeKey(int virtualKey)
+        {
+            if (!IsAvailable || _lastPercent < 0 || virtualKey is not (0xAD or 0xAE or 0xAF)) return false;
+            if (virtualKey == 0xAD) ToggleMute();
+            else AdjustVolume(virtualKey == 0xAF ? 2 : -2);
+            return true;
+        }
         public void AdjustVolume(int delta)
         {
             SetVolume(Math.Clamp(CurrentPercent + delta, 0, 100));
@@ -216,25 +246,29 @@ namespace alpha_island.Services
                 Name = "VolumeListRefresh"
             };
             _refreshThread.Start();
+            _commandSignal = new AutoResetEvent(false);
+            _commandThread = new Thread(VolumeCommandLoop) { IsBackground = true, Name = "VolumeCommands" };
+            _commandThread.Start();
             _refreshSignal.Set();
         }
 
         /// <summary>请求后台线程立刻刷新设备 / 会话缓存（UI 线程调用，自身不做任何 COM 操作）。</summary>
         public void RequestRefresh()
         {
-            try { _refreshSignal?.Set(); } catch (ObjectDisposedException) { }
+            try { _refreshSignal?.Set(); _commandSignal?.Set(); } catch (ObjectDisposedException) { }
         }
 
         /// <summary>后台刷新循环：落地挂起写入 → 跟随系统默认端点 → 枚举 → 更新缓存 → 有变化就通知 UI。</summary>
         private void RefreshLoop()
         {
             long nextEnumerationMs = 0;
+            long nextDevicesMs = 0;
             bool refreshLists = true;
             while (!_disposed)
             {
                 // 1) 先把挂起的写入落到端点上。写音量 / 切静音是"抢占式"的：
                 //    落地后这一拍直接跳过枚举，让用户按键的响应只花"唤醒线程"的时间。
-                bool urgent = ApplyPendingWrites();
+                bool urgent = Volatile.Read(ref _pendingUrgent) != 0 || Environment.TickCount64 - Volatile.Read(ref _localWriteTick) < 300;
 
                 bool switched = false;
                 List<AudioDeviceInfo>? devices = null;
@@ -249,12 +283,7 @@ namespace alpha_island.Services
                     catch (Exception ex) { Debug.WriteLine("[VolumeService] 切换默认设备异常: " + ex.Message); }
                 }
 
-                int pendingMutePid = _pendingMuteAppPid;
-                if (pendingMutePid > 0)
-                {
-                    _pendingMuteAppPid = 0;
-                    ApplyAppMuteCore(pendingMutePid);
-                }
+                if (ApplyPendingAppWritesCore()) refreshLists = true;
 
                 if (!urgent && (refreshLists || switched || Environment.TickCount64 >= nextEnumerationMs))
                 {
@@ -262,7 +291,14 @@ namespace alpha_island.Services
                     //    每拍读一次默认端点 ID，变了就重绑 —— 这就是"系统里换输出设备后岛内不跟着变"的解药。
                     if (SyncDefaultEndpoint()) switched = true;
 
-                    devices = EnumerateDevicesCore();
+                    long now = Environment.TickCount64;
+                    bool devicesDirty = Interlocked.Exchange(ref _devicesDirty, 0) != 0;
+                    if (switched || devicesDirty || now >= nextDevicesMs)
+                    {
+                        devices = EnumerateDevicesCore();
+                        nextDevicesMs = now + 15000;
+                    }
+                    else { lock (_cacheLock) devices = _deviceCache; }
                     sessions = EnumerateSessionsCore();
                     nextEnumerationMs = Environment.TickCount64 + 2500;
                     refreshLists = false;
@@ -309,7 +345,54 @@ namespace alpha_island.Services
         /// 把挂起的音量 / 静音写入落到当前端点上。只在后台刷新线程调用。
         /// 返回 true 表示这一拍做过写入（调用方应跳过枚举，保证按键响应不被枚举拖慢）。
         /// </summary>
-        private bool ApplyPendingWrites()
+        // Volume commands own a separate MTA endpoint. Device/session enumeration
+        // cannot delay a key that has already been accepted by the keyboard hook.
+        private void VolumeCommandLoop()
+        {
+            MMDeviceEnumerator? commands = null;
+            MMDevice? device = null;
+            AudioEndpointVolume? endpoint = null;
+            string? bound = null;
+            try
+            {
+                commands = new MMDeviceEnumerator();
+                while (!_disposed)
+                {
+                    try
+                    {
+                        string? id = _currentDeviceId;
+                        if (id != bound || endpoint == null)
+                        {
+                            _commandReady = false;
+                            endpoint?.Dispose(); endpoint = null; device?.Dispose(); device = null; bound = null;
+                            if (!string.IsNullOrWhiteSpace(id))
+                            {
+                                device = commands.GetDevice(id); endpoint = device.AudioEndpointVolume; bound = id;
+                                _commandReady = endpoint != null;
+                            }
+                        }
+                        ApplyPendingWrites(endpoint);
+                    }
+                    catch (Exception ex)
+                    {
+                        _commandReady = false;
+                        Debug.WriteLine("[VolumeService] 音量命令暂时失败: " + ex.GetType().Name);
+                        bound = null;
+                    }
+                    _commandSignal?.WaitOne(100);
+                }
+            }
+            catch (Exception ex) { alpha_island.Core.IslandLog.Warn("Volume", "音量命令线程不可用: " + ex.GetType().Name); }
+            finally
+            {
+                _commandReady = false;
+                try { endpoint?.Dispose(); } catch { }
+                try { device?.Dispose(); } catch { }
+                try { commands?.Dispose(); } catch { }
+                _commandSignal?.Dispose();
+            }
+        }
+        private bool ApplyPendingWrites(AudioEndpointVolume? ep)
         {
             bool urgent = Interlocked.Exchange(ref _pendingUrgent, 0) == 1;
             int percent = Interlocked.Exchange(ref _pendingVolumePercent, -1);
@@ -317,7 +400,6 @@ namespace alpha_island.Services
 
             if (percent < 0 && muteToggle == 0) return false;
 
-            var ep = _volume;
             if (ep == null)
             {
                 // 端点还没绑上（启动那一瞬间）：把请求放回去，下一拍再落地，别丢用户的按键。
@@ -334,16 +416,15 @@ namespace alpha_island.Services
                     if (ep.Mute && percent > 0)
                     {
                         ep.Mute = false;
-                        _lastMuted = false;
                     }
-                    _lastPercent = Math.Clamp(percent, 0, 100);
+                    // SetVolume already published the latest target. A completed older
+                    // write must never overwrite a newer key/slider request in the cache.
                 }
 
                 if (muteToggle == 1)
                 {
-                    bool next = !ep.Mute;
+                    bool next = _localWriteMuted; // Coalesced repeats apply the latest requested state.
                     ep.Mute = next;
-                    _lastMuted = next;
                 }
             }
             catch (Exception ex)
@@ -408,7 +489,7 @@ namespace alpha_island.Services
             {
                 if (a[i].ProcessId != b[i].ProcessId ||
                     !string.Equals(a[i].Name, b[i].Name, StringComparison.Ordinal) ||
-                    a[i].IsMuted != b[i].IsMuted)
+                    a[i].IsMuted != b[i].IsMuted || a[i].VolumePercent != b[i].VolumePercent)
                 {
                     return false;
                 }
@@ -562,7 +643,6 @@ namespace alpha_island.Services
         /// <summary>当前激活的音频输出端点（读缓存，UI 线程安全）。</summary>
         public List<AudioDeviceInfo> GetActiveOutputDevices()
         {
-            RequestRefresh();
             lock (_cacheLock) return new List<AudioDeviceInfo>(_deviceCache);
         }
 
@@ -603,7 +683,6 @@ namespace alpha_island.Services
         /// <summary>当前默认音频输出设备上的各应用音频会话（读缓存，UI 线程安全）。</summary>
         public List<AudioAppSessionViewModel> GetAudioAppSessions()
         {
-            RequestRefresh();
             lock (_cacheLock) return new List<AudioAppSessionViewModel>(_sessionCache);
         }
 
@@ -612,8 +691,7 @@ namespace alpha_island.Services
         {
             var list = new List<AudioAppSessionViewModel>();
             var meters = new List<(string Name, AudioMeterInformation Meter)>();
-            _sessionMeters = meters;
-            if (_currentDevice == null) return list;
+            if (_currentDevice == null) { _sessionMeters = meters; return list; }
             try
             {
                     var sm = _currentDevice.AudioSessionManager;
@@ -625,7 +703,12 @@ namespace alpha_island.Services
                         for (int i = 0; i < sessions.Count; i++)
                         {
                             // 同上：每查一个会话就可能付出一次进程查询的代价，急活优先。
-                            if (Volatile.Read(ref _pendingUrgent) != 0 || _pendingMuteAppPid > 0) break;
+                            if (Volatile.Read(ref _pendingUrgent) != 0 || _appCommands.HasPending)
+                            {
+                                // Never publish a partial list: it would destroy live sliders and
+                                // replace the player's peak evidence with an incomplete sample.
+                                lock (_cacheLock) return new(_sessionCache);
+                            }
                             var s = sessions[i];
                             if (s == null) continue;
                             uint pid = s.GetProcessID;
@@ -657,7 +740,8 @@ namespace alpha_island.Services
                                 {
                                     ProcessId = (int)pid,
                                     Name = procName,
-                                    IsMuted = vol.Mute
+                                    IsMuted = vol.Mute,
+                                    VolumePercent = (int)Math.Round(vol.Volume * 100)
                                 });
                             }
                         }
@@ -667,7 +751,12 @@ namespace alpha_island.Services
                 {
                     Debug.WriteLine("[VolumeService] 枚举音频会话异常: " + ex.Message);
                 }
-            return list;
+            _sessionMeters = meters;
+            return list.GroupBy(item => item.ProcessId).Select(group => new AudioAppSessionViewModel
+            {
+                ProcessId = group.Key, Name = group.First().Name,
+                VolumePercent = group.Max(item => item.VolumePercent), IsMuted = group.All(item => item.IsMuted)
+            }).ToList();
         }
 
         private void SampleSessionPeaks()
@@ -699,36 +788,70 @@ namespace alpha_island.Services
         public void ToggleAppMute(int processId)
         {
             if (processId <= 0) return;
-            _pendingMuteAppPid = processId;
+            lock (_cacheLock)
+            {
+                var app = _sessionCache.FirstOrDefault(item => item.ProcessId == processId);
+                if (app == null) return;
+                bool muted = !app.IsMuted;
+                _appCommands.SetMute(processId, muted);
+                UpdateAppCache(processId, null, muted);
+            }
             RequestRefresh();
         }
 
-        /// <summary>必须在后台刷新线程上调用。</summary>
-        private void ApplyAppMuteCore(int processId)
+        public void SetAppVolume(int processId, int percent)
         {
-            if (_currentDevice == null) return;
+            if (processId <= 0) return;
+            percent = Math.Clamp(percent, 0, 100);
+            lock (_cacheLock)
+            {
+                _appCommands.SetVolume(processId, percent);
+                UpdateAppCache(processId, percent, percent > 0 ? false : null);
+            }
+            RequestRefresh();
+        }
+
+        // Replace cache values rather than notifying UI bindings from a backend thread.
+        private void UpdateAppCache(int pid, int? percent, bool? muted)
+        {
+            _sessionCache = _sessionCache.Select(item => item.ProcessId != pid ? item : new AudioAppSessionViewModel
+            {
+                ProcessId = pid, Name = item.Name,
+                VolumePercent = percent ?? item.VolumePercent, IsMuted = muted ?? item.IsMuted
+            }).ToList();
+        }
+
+        /// <summary>必须在后台刷新线程上调用。</summary>
+        private bool ApplyPendingAppWritesCore()
+        {
+            if (!_appCommands.HasPending || _currentDevice == null) return false;
             try
             {
                 var sm = _currentDevice.AudioSessionManager;
-                if (sm == null) return;
+                if (sm == null) return false;
+                var commands = _appCommands.Drain();
                 var sessions = sm.Sessions;
                 for (int i = 0; i < sessions.Count; i++)
                 {
                     var s = sessions[i];
-                    if (s != null && s.GetProcessID == (uint)processId)
+                    if (s != null && commands.TryGetValue((int)s.GetProcessID, out var command))
                     {
-                        var vol = s.SimpleAudioVolume;
-                        if (vol != null)
+                        try
                         {
-                            vol.Mute = !vol.Mute;
+                            var vol = s.SimpleAudioVolume;
+                            if (vol == null) continue;
+                            if (command.Percent is int percent) vol.Volume = percent / 100f;
+                            if (command.Muted is bool muted) vol.Mute = muted;
                         }
-                        break;
+                        catch (Exception ex) { Debug.WriteLine("[VolumeService] 应用音量写入异常: " + ex.Message); }
                     }
                 }
+                return true;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("[VolumeService] 切换应用静音异常: " + ex.Message);
+                Debug.WriteLine("[VolumeService] 应用音量写入异常: " + ex.Message);
+                return false;
             }
         }
 
@@ -797,10 +920,16 @@ namespace alpha_island.Services
             }
         }
 
-        public void OnDeviceStateChanged(string deviceId, DeviceState newState) { }
-        public void OnDeviceAdded(string pwstrDeviceId) { }
-        public void OnDeviceRemoved(string deviceId) { }
-        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
+        private void InvalidateDevices()
+        {
+            if (_disposed) return;
+            Interlocked.Exchange(ref _devicesDirty, 1);
+            RequestRefresh();
+        }
+        public void OnDeviceStateChanged(string deviceId, DeviceState newState) => InvalidateDevices();
+        public void OnDeviceAdded(string pwstrDeviceId) => InvalidateDevices();
+        public void OnDeviceRemoved(string deviceId) => InvalidateDevices();
+        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) => InvalidateDevices();
     }
 
     [ComImport]

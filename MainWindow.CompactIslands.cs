@@ -6,13 +6,14 @@ namespace alpha_island;
 
 public partial class MainWindow
 {
+    private Services.AgentAppNavigationService _agentNavigation = new();
     private void UpdateCompactIslandContent(string key)
     {
-        SideBubble.Width = key == "netspeed" ? StatusSatelliteWidth : 144;
+        SideBubble.Width = key switch { "netspeed" => StatusSatelliteWidth, "status" => ResourceSatelliteWidth, "charging" or ChargingPreviewIslandKey => 100, _ when AgentHasDefaultAvatar(key) => 176, _ => 144 };
         SideBubble.Height = 40; SideBubble.CornerRadius = new CornerRadius(20);
         SideBubbleArtwork.Source = key == "music" ? _smtc?.Current?.Artwork : null;
-        SideBubbleArtwork.Visibility = SideBubbleArtwork.Source != null ? Visibility.Visible : Visibility.Collapsed;
-        SideBubbleIcon.Visibility = SideBubbleArtwork.Source == null ? Visibility.Visible : Visibility.Collapsed;
+        SideBubbleArtwork.Visibility = Visibility.Collapsed;
+        SideBubbleIcon.Visibility = Visibility.Visible;
         SideBubbleDetail.FontSize = key == "card/focus" ? 18 : 9;
         SideBubbleDetail.Text = key switch
         {
@@ -21,11 +22,24 @@ public partial class MainWindow
             "clipboard" => ClipboardPreviewText.Text,
             "volume" => CardVolumePercentText.Text,
             "download" => DownloadNotifyDetail.Text,
+            "system" => string.Join(" · ", new[] { _layers.Peek(key)?.Value, _layers.Peek(key)?.Detail }
+                .Where(text => !string.IsNullOrWhiteSpace(text))),
             _ => _cardPinViews.TryGetValue(key, out var view) ? view.Detail.Text : _layers.Peek(key)?.Detail ?? ""
         };
-        SideBubbleGeneric.Visibility = key == "netspeed" ? Visibility.Collapsed : Visibility.Visible;
-        SideBubbleCustomContent.Visibility = key == "netspeed" ? Visibility.Visible : Visibility.Collapsed;
-        if (key == "netspeed")
+        if (key == "system") SideBubble.ToolTip = SysNotifyTitle.Text + "\n" + SideBubbleDetail.Text;
+        SideBubbleGeneric.Visibility = key is "netspeed" or "status" or "charging" or ChargingPreviewIslandKey ? Visibility.Collapsed : Visibility.Visible;
+        SideBubbleCustomContent.Visibility = key is "netspeed" or "status" or "charging" or ChargingPreviewIslandKey ? Visibility.Visible : Visibility.Collapsed;
+        if (key == "status")
+        {
+            _sideStatusView ??= new Controls.SystemStatusPill(compact: true);
+            SideBubbleCustomContent.Content = _sideStatusView; UpdateResourceStatus(_sideStatusView);
+        }
+        else if (key is ChargingIslandKey or ChargingPreviewIslandKey)
+        {
+            _sideChargingView ??= new Controls.BatteryChargePill(compact: true);
+            SideBubbleCustomContent.Content = _sideChargingView; SetChargingIslandContent(_sideChargingView, key);
+        }
+        else if (key == "netspeed")
         {
             _sideNetworkView ??= new Controls.NetworkSpeedPill(compact: true) { Height = 40 };
             SideBubbleCustomContent.Content = _sideNetworkView;
@@ -34,7 +48,8 @@ public partial class MainWindow
     }
     private void SideBubble_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (!TryOpenAgentIsland(_sideBubbleComponentKey)
+        if (!TryOpenMessengerNotification(_sideBubbleComponentKey)
+            && !TryOpenAgentIsland(_sideBubbleComponentKey)
             && _sideBubbleComponentKey is { } key && PageForCompactIsland(key) is { } page) SelectComponent(page);
         e.Handled = true;
     }
@@ -42,14 +57,20 @@ public partial class MainWindow
     // External agent status/approvals have their own pill, independent of the AI chat page.
     private bool TryOpenAgentIsland(string? key)
     {
-        if (key != ApprovalLayerKey && key != AgentTickerKey) return false;
+        if (key != ApprovalLayerKey && !IsAgentIslandKey(key)) return false;
+        if (IsAgentIslandKey(key) && !SettingsRegistry.GetBool(_options, "AgentStatusEnabled", true)) return true;
         if (_approvalCurrent != null) PresentCurrentApproval();
-        else if (key == AgentTickerKey && (_layers.IsActive(key) || AgentStatus.IsBusy))
+        else if (AgentSession(key) is { } view && view.Owner.StartsWith("external:", StringComparison.Ordinal))
         {
-            UpdateAgentStatusUi();
-            SwitchMainIsland(key);
-            SetState(IslandState.Pill);
+            _agentWindowKey = view.Key;
+            string message;
+            if (_agentNavigation.TryResolve(view.Owner, out var target, out message)) _ = OpenAgentWindowAsync(target!);
+            view.Root.ToolTip = string.IsNullOrEmpty(message) ? AgentLabel(view.Key) + " · 打开对应助手" : message;
         }
+        else if (AgentSession(key) is { } plugin && _plugins?.PageForActivity(plugin.Owner) is { } activityPage)
+            SelectComponent(activityPage);
+        else if (key != null && _layers.IsActive(key))
+        { UpdateAgentStatusUi(); SwitchMainIsland(key); SetState(IslandState.Pill); }
         return true;
     }
     private bool IsPointOnCompactIsland(int x, int y)

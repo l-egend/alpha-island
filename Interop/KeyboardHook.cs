@@ -10,6 +10,8 @@ namespace alpha_island.Interop
         public int VirtualKey { get; }
         public ModifierKeys Modifiers { get; }
         public bool IsKeyDown { get; }
+        /// <summary>Only synchronous hook subscribers can suppress an event (used during shortcut recording).</summary>
+        public bool Handled { get; set; }
 
         public KeyboardHookEventArgs(Key key, int virtualKey, ModifierKeys modifiers, bool isKeyDown)
         {
@@ -81,6 +83,9 @@ namespace alpha_island.Interop
                 if (isKeyDown || isKeyUp)
                 {
                     var info = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
+                    // Do not feed our outbound shortcut into island hotkeys or approval handlers.
+                    if (info.dwExtraInfo == NativeMethods.ExternalShortcutInputTag)
+                        return NativeMethods.CallNextHookEx(_handle, nCode, wParam, lParam);
                     int vk = (int)info.vkCode;
                     Key key = KeyInterop.KeyFromVirtualKey(vk);
 
@@ -95,7 +100,9 @@ namespace alpha_island.Interop
                         (NativeMethods.GetKeyState(NativeMethods.VK_RWIN) & 0x8000) != 0)
                         modifiers |= ModifierKeys.Windows;
 
-                    KeyAction?.Invoke(this, new KeyboardHookEventArgs(key, vk, modifiers, isKeyDown));
+                    var args = new KeyboardHookEventArgs(key, vk, modifiers, isKeyDown);
+                    KeyAction?.Invoke(this, args);
+                    if (args.Handled) return new IntPtr(1);
                 }
             }
             return NativeMethods.CallNextHookEx(_handle, nCode, wParam, lParam);

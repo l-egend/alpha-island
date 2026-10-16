@@ -12,7 +12,37 @@ namespace alpha_island
 {
     public partial class MainWindow
     {
-        private readonly IslandPageHost _pages = new();
+        private IslandPageHost _pages => _workspace.Pages.Host;
+        private const string LastOpenedCardPageSetting = "LastOpenedCardPage";
+
+        // 记录实际看过的页面，而不是暂时占据主岛的通知图层或页序号。
+        private void RememberOpenCardPage()
+        {
+            if (_state != IslandState.Card || _pages.ActivePage == null) return;
+            string page = _pages.ActiveId;
+            if (SettingsRegistry.GetText(_options, LastOpenedCardPageSetting, "") == page) return;
+            SettingsRegistry.SetExtra(_options, LastOpenedCardPageSetting, page);
+            if (_runtimeEnabled) _options.Save();
+        }
+
+        private string LastOpenedCardPage()
+        {
+            string saved = SettingsRegistry.GetText(_options, LastOpenedCardPageSetting, "");
+            if (_pages.IndexOf(saved) >= 0 && (saved != IslandPageIds.Music || MusicIslandHasMedia)) return saved;
+            if (saved.Length == 0 && MusicIslandHasMedia) return IslandPageIds.Music;
+            // 原插件被禁用/卸载，或播放器已无会话时，落到始终有内容的系统页。
+            if (_pages.IndexOf(IslandPageIds.System) >= 0) return IslandPageIds.System;
+            return _pages.ActiveId;
+        }
+
+        private void OpenCardFromPill()
+        {
+            // 点开正在显示的通知或置顶岛仍进入其详情；普通打开恢复页面记忆。
+            string? page = HasActiveNotification || _layers.AnyPinned || HasVisibleMusicPin
+                ? null : LastOpenedCardPage();
+            SetState(IslandState.Card, preferredPage: page);
+            if (_pages.ActiveId == IslandPageIds.Notifications) ExpandCurrentNotification();
+        }
 
         /// <summary>
         /// 建立卡片页注册表。必须在 ApplyOptions() 之前调用 —— SetState(Card) 会按 Id 选页。
@@ -26,7 +56,7 @@ namespace alpha_island
                 title: "媒体播放器",
                 view: CardLayer,
                 order: 0,
-                preferredHeight: IslandMetrics.CardHeight));
+                preferredHeight: IslandMetrics.MusicCardHeight));
 
             // 剪切板页 / 音量页：无论有没有歌词都要 214（老代码写的是 `_currentCardPage >= 1`）。
             _pages.Register(new DelegateIslandPage(
@@ -47,22 +77,10 @@ namespace alpha_island
                 activated: () => SyncVolumeCardContent(),
                 viewportChanged: SetVolumeCardLayerHeight));
 
-            // AI 对话页（B 组②）：只有设置里开了「AI 对话」才会出现在组件菜单里
-            // （可用性由 Sync(options) 每次 ApplyOptions 重算）。
-            _pages.Register(new DelegateIslandPage(
-                id: IslandPageIds.Ai,
-                title: "AI 对话",
-                view: AiCardLayer,
-                order: 3,
-                preferredHeight: IslandMetrics.CardHeightLyrics,
-                available: options => SettingsRegistry.GetBool(options, "AiEnabled", false),
-                activated: SyncAiCardContent,
-                viewportChanged: SetAiCardLayerHeight));
-
             // 实时网速页（C 组②）：实时上下行 + 最近 60 秒曲线。
             // **不设 available** —— 用户需求是"新增功能必须看得到、测得到"，
             // 所以哪怕设置里没开网速监控，这一页也始终能翻到，页内写"未开启"提示。
-            RegisterMergedSystemPage();
+            RegisterSeparateStatusPages();
 
             // 下载进度页（第二批③）：浏览器 downloads 表 + Steam appmanifest 清单（只读）。
             // 同样不设 available：没开开关这一页也能翻到，页内写"当前没有下载任务"。
@@ -77,6 +95,7 @@ namespace alpha_island
 
             RegisterDesktopNotificationPage();
             RegisterUtilityPages();
+            RegisterProductivityPage();
             // 初值与老代码的 _currentCardPage = 0 一致：开机就停在音乐页。
             _pages.SetActiveIndex(_pages.IndexOfOrDefault(IslandPageIds.Music));
             InitializeComponentSwitcher();
@@ -102,11 +121,13 @@ namespace alpha_island
                 {
                     "volume" => IslandPageIds.Volume,
                     "download" => IslandPageIds.Download,
-                    "netspeed" => IslandPageIds.System,
-                    "system" => IslandPageIds.System,
+                    "netspeed" => IslandPageIds.NetSpeed,
+                    "system" => _systemNotifyTargetPage,
+                    "status" or "charging" or "battery" or ChargingPreviewIslandKey => IslandPageIds.System,
                     DesktopToastKey => IslandPageIds.Notifications,
                     "clipboard" => IslandPageIds.Clipboard,
-                    "approval" or "agentstatus" => IslandPageIds.Ai,
+                    "approval" => IslandPageIds.Ai,
+                    _ when IsAgentIslandKey(_activeMainIslandKey) => AgentPage(_activeMainIslandKey),
                     _ => CardPageFromPinKey(_activeMainIslandKey)
                 };
                 if (pageForMain != null && _pages.IndexOf(pageForMain) >= 0)
@@ -119,12 +140,12 @@ namespace alpha_island
             {
                 ("approval", IslandPageIds.Ai),          // 90
                 ("volume", IslandPageIds.Volume),        // 80
-                ("system", IslandPageIds.System),        // 68
+                ("system", _systemNotifyTargetPage),        // 68
                 ("download", IslandPageIds.Download),    // 66
-                ("netspeed", IslandPageIds.System),      // 系统状态与网络共用卡片
+                ("netspeed", IslandPageIds.NetSpeed),      // 独立网速卡片
                 (DesktopToastKey, IslandPageIds.Notifications),
                 ("clipboard", IslandPageIds.Clipboard),  // 56
-                ("agentstatus", IslandPageIds.Ai),       // 48
+                ("agentstatus", AgentActivityPage),       // 48
             };
 
             foreach (var (key, page) in table)
@@ -144,12 +165,6 @@ namespace alpha_island
         private void SetVolumeCardLayerHeight(double height)
         {
             if (VolumeCardLayer != null) VolumeCardLayer.Height = height;
-        }
-
-        /// <summary>AI 页同理：输入态/带对话时整卡被 SetCardDrawerExtra 撑高，只有这一层跟着长。</summary>
-        private void SetAiCardLayerHeight(double height)
-        {
-            if (AiCardLayer != null) AiCardLayer.Height = height;
         }
 
         /// <summary>
@@ -198,6 +213,7 @@ namespace alpha_island
         /// <summary>同步轮廓线与当前卡片的波浪底色。</summary>
         private void SyncCardPageVisuals()
         {
+            SyncVisualizers();
             SyncCardViewportHeight();
             SyncComponentHandle();
             if (_pages.ActiveId != IslandPageIds.Music || _state != IslandState.Card)
@@ -219,8 +235,9 @@ namespace alpha_island
 
         private void SyncCardViewportHeight()
         {
-            double musicHeight = LyricsAreaVisible ? IslandMetrics.MusicCardHeightLyrics : IslandMetrics.CardHeight;
-            CardLayer.Height = musicHeight - 20;
+            double musicHeight = LyricsAreaVisible ? IslandMetrics.MusicCardHeightLyrics : IslandMetrics.MusicCardHeight;
+            // The music page has its own 4 DIP top/bottom margin inside the shared viewport.
+            CardLayer.Height = musicHeight - 28;
             double pageHeight = _pages.ActiveId == IslandPageIds.Music
                 ? musicHeight : _pages.ActivePage?.PreferredHeight ?? IslandMetrics.CardHeightLyrics;
             double height = (_pages.ActiveId == IslandPageIds.Music ? pageHeight - 20 : Math.Max(194, pageHeight - 20))

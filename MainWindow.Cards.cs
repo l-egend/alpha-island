@@ -82,7 +82,9 @@ namespace alpha_island
                     else
                     {
                         _widthOnlyMorph = false;
+                        ReserveIslandHost(target);
                         _animator.SetImmediate(target);
+                        FitIslandHost(target);
                         _layers.EndMorph();
                     }
                 }
@@ -117,7 +119,7 @@ namespace alpha_island
 
                     if (pages[i].View.RenderTransform is TranslateTransform translate)
                     {
-                        translate.BeginAnimation(TranslateTransform.YProperty,
+                        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate,TranslateTransform.YProperty,
                             new DoubleAnimation(y, duration) { EasingFunction = ease });
                     }
 
@@ -138,7 +140,7 @@ namespace alpha_island
                         };
                     }
 
-                    pages[i].View.BeginAnimation(UIElement.OpacityProperty, anim);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(pages[i].View,UIElement.OpacityProperty, anim);
                 }
 
             }
@@ -151,11 +153,11 @@ namespace alpha_island
 
                     if (pages[i].View.RenderTransform is TranslateTransform translate)
                     {
-                        translate.BeginAnimation(TranslateTransform.YProperty, null);
+                        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate,TranslateTransform.YProperty, null);
                         translate.Y = y;
                     }
 
-                    pages[i].View.BeginAnimation(UIElement.OpacityProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(pages[i].View,UIElement.OpacityProperty, null);
                     pages[i].View.Opacity = opacity;
                 }
 
@@ -219,6 +221,9 @@ namespace alpha_island
         private bool TryWheelSwitchPage(int delta, DependencyObject? wheelSource = null)
         {
             if (_state != IslandState.Card) return false;
+            // Keep the wheel in either volume drawer, including its scrollbar and edges.
+            if (_pages.ActiveId == IslandPageIds.Volume
+                && (IsDescendantOf(wheelSource, VolumeAppSessionsScroll) || IsDescendantOf(wheelSource, AudioDeviceScroll))) return false;
 
             int index = _pages.ActiveIndex;
             if (index < 0) return false;
@@ -232,13 +237,6 @@ namespace alpha_island
                 // 剪切板页自己有滚动条：只有滚到底才让翻页接管，否则滚轮会被"翻页"吃掉。
                 if (_pages.ActiveId == IslandPageIds.Clipboard &&
                     ClipboardHistoryScroll.VerticalOffset < ClipboardHistoryScroll.ScrollableHeight - 1.0)
-                {
-                    return false;
-                }
-
-                // AI 页同理：气泡列表还能往下滚就先让它滚。
-                if (_pages.ActiveId == IslandPageIds.Ai &&
-                    AiScrollViewer.VerticalOffset < AiScrollViewer.ScrollableHeight - 1.0)
                 {
                     return false;
                 }
@@ -260,13 +258,7 @@ namespace alpha_island
                     return false;
                 }
 
-                if (_pages.ActiveId == IslandPageIds.Ai &&
-                    AiScrollViewer.VerticalOffset > 1.0)
-                {
-                    return false;
-                }
-
-                if (_pageWheel.Consume(delta) == 0 || Environment.TickCount64 - _lastWheelPageUtcTick < 250) return true;
+if (_pageWheel.Consume(delta) == 0 || Environment.TickCount64 - _lastWheelPageUtcTick < 250) return true;
                 _lastWheelPageUtcTick = Environment.TickCount64;
                 SwitchCardPage(index - 1);
                 return true;

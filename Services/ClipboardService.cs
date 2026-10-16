@@ -22,7 +22,7 @@ namespace alpha_island.Services
     ///  2. 弹出"已复制"状态，支持持久驻留；
     ///  3. 在已复制驻留状态下，鼠标右键可替换为自动粘贴动作；
     ///  4. 粘贴后触发"已粘贴"提示；
-    ///  5. 记录最近 10 条文本历史（排除文件类），持久化存储。
+    ///  5. 按用户设置保留文本历史（排除文件类），持久化存储。
     /// </summary>
     public sealed class ClipboardService : IDisposable
     {
@@ -30,6 +30,9 @@ namespace alpha_island.Services
         private readonly HotkeyService _hotkeyService;
         private readonly Func<uint> _getSequenceNumber;
         private readonly Func<string?> _readClipboard;
+        public const int DefaultHistoryLimit = 10, MaximumHistoryLimit = 100;
+        private readonly Action<string> _writeClipboard;
+        private int _historyLimit = DefaultHistoryLimit;
         private readonly string _historyPath;
         private readonly object _lock = new();
 
@@ -39,7 +42,7 @@ namespace alpha_island.Services
         private DateTime _lastCopyTime = DateTime.MinValue;
         private HwndSource? _messageSource;
         private DispatcherTimer? _readTimer;
-        private DispatcherTimer? _sequenceTimer;
+        private IslandTimer? _sequenceTimer;
         private bool _started;
         private bool _listenerRegistered;
         private bool _pendingCut;
@@ -54,8 +57,19 @@ namespace alpha_island.Services
 
         /// <summary>当前是否有尚未粘贴/取消的已复制驻留状态。</summary>
         public bool IsCopiedPending => _isCopiedPending;
+        public Uri? CurrentWebLink { get; private set; }
 
-        /// <summary>剪切板历史记录列表（最多 10 条）。</summary>
+        internal bool TryGetPendingWebLink(out Uri? link)
+        {
+            link = null;
+            if (_disposed || !_isCopiedPending || _readPending || CurrentWebLink == null) return false;
+            uint sequence = _getSequenceNumber();
+            if (sequence != 0 && sequence != _completedSequence) return false;
+            link = CurrentWebLink;
+            return true;
+        }
+
+        /// <summary>剪切板历史记录列表（按 HistoryLimit 保留）。</summary>
         public IReadOnlyList<ClipboardEntry> History
         {
             get
@@ -82,13 +96,14 @@ namespace alpha_island.Services
             : this(dispatcher, hotkeyService, getSequenceNumber, () => ExtractText(readClipboard()), historyPath) { }
 
         internal ClipboardService(Dispatcher dispatcher, HotkeyService hotkeyService,
-            Func<uint> getSequenceNumber, Func<string?> readClipboard, string? historyPath = null)
+            Func<uint> getSequenceNumber, Func<string?> readClipboard, string? historyPath = null, Action<string>? writeClipboard = null)
         {
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             _hotkeyService = hotkeyService ?? throw new ArgumentNullException(nameof(hotkeyService));
             _getSequenceNumber = getSequenceNumber ?? throw new ArgumentNullException(nameof(getSequenceNumber));
             _readClipboard = readClipboard ?? throw new ArgumentNullException(nameof(readClipboard));
             _historyPath = historyPath ?? AppPaths.ClipboardHistoryFile;
+            _writeClipboard = writeClipboard ?? (text => WpfClipboard.SetText(text));
         }
 
         public void Start()
@@ -111,7 +126,7 @@ namespace alpha_island.Services
                 if (!_listenerRegistered) IslandLog.Warn("Clipboard", "系统剪切板监听未注册，使用剪切板变化序号巡检");
             }
             catch (Exception ex) { IslandLog.Warn("Clipboard", "注册系统监听失败: " + ex.Message); }
-            _sequenceTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+            _sequenceTimer = new IslandTimer(_dispatcher, "clipboard-sequence")
             { Interval = TimeSpan.FromMilliseconds(250) };
             _sequenceTimer.Tick += (_, _) => CheckClipboardSequence();
             _sequenceTimer.Start();
@@ -243,6 +258,7 @@ namespace alpha_island.Services
         private void ProcessClipboardText(string? text, bool isCut)
         {
             _stateVersion++;
+            CurrentWebLink = WebLinkDetector.Detect(text);
             if (string.IsNullOrWhiteSpace(text))
             {
                 // 文件/图片取代文本后取消旧的文本驻留与右键代粘贴，不能误贴新的文件载荷。
@@ -275,8 +291,8 @@ namespace alpha_island.Services
                 // 插入头部
                 _history.Insert(0, new ClipboardEntry(text, DateTime.Now));
 
-                // 限制最多 10 条
-                while (_history.Count > 10)
+                // Keep the newest entries within the configured retention limit.
+                while (_history.Count > _historyLimit)
                 {
                     _history.RemoveAt(_history.Count - 1);
                 }
@@ -285,6 +301,19 @@ namespace alpha_island.Services
             SaveHistory();
         }
 
+        public int HistoryLimit { get { lock (_lock) return _historyLimit; } }
+        public void SetHistoryLimit(int limit)
+        {
+            bool trimmed;
+            lock (_lock)
+            {
+                _historyLimit = Math.Clamp(limit, 0, MaximumHistoryLimit);
+                trimmed = _history.Count > _historyLimit;
+                if (trimmed) _history.RemoveRange(_historyLimit, _history.Count - _historyLimit);
+            }
+            // A smaller retention limit also removes the old, larger backup.
+            if (trimmed) SaveHistory(keepBackup: false);
+        }
         /// <summary>清空所有剪切板历史记录。</summary>
         public void ClearHistory()
         {
@@ -325,6 +354,7 @@ namespace alpha_island.Services
         public void NotifyPasted()
         {
             _isCopiedPending = false;
+            CurrentWebLink = null;
             int version = ++_stateVersion;
             _dispatcher.BeginInvoke(DispatcherPriority.Normal, () =>
             {
@@ -341,10 +371,13 @@ namespace alpha_island.Services
             NotifyPasted();
         }
 
-        public void SetTextForPaste(string text)
+        /// <summary>Copy a history item without changing focus or injecting paste keys.</summary>
+        public void CopyFromHistory(string text)
         {
-            WpfClipboard.SetText(text);
+            if (_disposed || string.IsNullOrWhiteSpace(text)) return;
+            _writeClipboard(text);
             AcceptOwnClipboardWrite(_getSequenceNumber());
+            ProcessClipboardText(text, isCut: false);
         }
 
         internal void AcceptOwnClipboardWrite(uint sequence)
@@ -360,6 +393,7 @@ namespace alpha_island.Services
         {
             if (!_isCopiedPending) return;
             _isCopiedPending = false;
+            CurrentWebLink = null;
             int version = ++_stateVersion;
             _dispatcher.BeginInvoke(DispatcherPriority.Normal, () =>
             {
@@ -383,8 +417,9 @@ namespace alpha_island.Services
                         lock (_lock)
                         {
                             _history.Clear();
-                            _history.AddRange(list.Where(x => x != null && !string.IsNullOrWhiteSpace(x.Text)).Take(10));
+                            _history.AddRange(list.Where(x => x != null && !string.IsNullOrWhiteSpace(x.Text)).Take(_historyLimit));
                         }
+                        if (list.Count > HistoryLimit) SaveHistory(keepBackup: false);
                         return;
                     }
                 }
@@ -417,9 +452,10 @@ namespace alpha_island.Services
             {
                 if (_disposed) return;
                 _disposed = true;
+                CurrentWebLink = null;
                 _hotkeyService.KeyPressed -= OnKeyPressed;
                 _readTimer?.Stop();
-                _sequenceTimer?.Stop();
+                _sequenceTimer?.Dispose();
                 if (_messageSource != null)
                 {
                     if (_listenerRegistered) NativeMethods.RemoveClipboardFormatListener(_messageSource.Handle);

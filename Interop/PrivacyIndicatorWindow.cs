@@ -235,10 +235,10 @@ namespace alpha_island.Interop
 
                 int popInMs = PopMs(PopInMs);
                 int fadeInMs = PopMs(FadeInMs);
-                _window.BeginAnimation(UIElement.OpacityProperty,
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_window,UIElement.OpacityProperty,
                     new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(fadeInMs)));
-                _pop.BeginAnimation(ScaleTransform.ScaleXProperty, PopAnim(0, 1, popInMs, easeIn: false));
-                _pop.BeginAnimation(ScaleTransform.ScaleYProperty, PopAnim(0, 1, popInMs, easeIn: false));
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_pop,ScaleTransform.ScaleXProperty, PopAnim(0, 1, popInMs, easeIn: false));
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_pop,ScaleTransform.ScaleYProperty, PopAnim(0, 1, popInMs, easeIn: false));
                 IslandLog.Debug("Privacy", $"角落指示灯动画：出现（中心放大 0→1，{popInMs}ms；淡入 {fadeInMs}ms）" +
                     $" [corner-anim in pop={popInMs} fade={fadeInMs}]");
                 StartPopProbe("in", 1, popInMs);
@@ -272,11 +272,11 @@ namespace alpha_island.Interop
                     ResetVisual();
                     _window.Hide();
                 };
-                _window.BeginAnimation(UIElement.OpacityProperty, fade);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_window,UIElement.OpacityProperty, fade);
                 // 出场动画的反向：缩回中心点。比淡出短一点（最后 30ms 只剩一层正在淡掉的黑底）。
                 int popOutMs = PopMs(PopOutMs);
-                _pop.BeginAnimation(ScaleTransform.ScaleXProperty, PopAnim(1, 0, popOutMs, easeIn: true));
-                _pop.BeginAnimation(ScaleTransform.ScaleYProperty, PopAnim(1, 0, popOutMs, easeIn: true));
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_pop,ScaleTransform.ScaleXProperty, PopAnim(1, 0, popOutMs, easeIn: true));
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_pop,ScaleTransform.ScaleYProperty, PopAnim(1, 0, popOutMs, easeIn: true));
                 IslandLog.Debug("Privacy", $"角落指示灯动画：消失（中心收缩 1→0，{popOutMs}ms；淡出 {PopMs(FadeOutMs)}ms）" +
                     $" [corner-anim out pop={popOutMs} fade={PopMs(FadeOutMs)}]");
                 StartPopProbe("out", 0, popOutMs);
@@ -309,10 +309,10 @@ namespace alpha_island.Interop
         /// <summary>把窗口的透明度与缩放复位到「静止态」：停掉动画并清掉动画留下的当前值。</summary>
         private void ResetVisual()
         {
-            _window.BeginAnimation(UIElement.OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_window,UIElement.OpacityProperty, null);
             _window.Opacity = 1;
-            _pop.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            _pop.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_pop,ScaleTransform.ScaleXProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_pop,ScaleTransform.ScaleYProperty, null);
             _pop.ScaleX = 1;
             _pop.ScaleY = 1;
         }

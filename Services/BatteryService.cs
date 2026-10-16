@@ -1,3 +1,4 @@
+using alpha_island.Core;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -20,12 +21,12 @@ namespace alpha_island.Services
         CriticalBattery   // 严重低电量警告 (<= 10%)
     }
 
-    /// <summary>充电类型推断。</summary>
+    /// <summary>已确认的充电器类型；无法读取厂商信息时使用 Unknown。</summary>
     public enum BatteryChargeType
     {
         Unknown,          // 未知/通用充电
         StandardAC,       // 电源适配器
-        PD,               // PD 快充 (USB Type-C)
+        PD,               // USB-C PD（不表示已知充电瓦数）
         ConservationMode  // 电池保养模式 (通常限制在 80% 左右)
     }
 
@@ -41,7 +42,9 @@ namespace alpha_island.Services
         bool HasBattery = true,
         bool? IsOnAcPower = null,
         bool IsPowerEstimated = false,
-        DateTime SampledUtc = default
+        DateTime SampledUtc = default,
+        bool IsEnergySaverEnabled = false,
+        SmartChargingState SmartCharging = SmartChargingState.Unknown
     );
 
     /// <summary>
@@ -50,7 +53,7 @@ namespace alpha_island.Services
     /// 核心职责：
     ///  1. 基于 Win32 GetSystemPowerStatus 与 WinRT Windows.Devices.Power.Battery 双轨监控电池；
     ///  2. 监听 Microsoft.Win32.SystemEvents.PowerModeChanged 与 WinRT ReportUpdated，瞬时感知插拔电源；
-    ///  3. 智能推断充电类型（PD 快充 / 电源适配器 / 80% 电池保养模式）；
+    ///  3. 后台读取 Windows 的智能充电指示（不按电量或充电速率猜测）；
     ///  4. 充满与低电量阶梯阈值预警；
     ///  5. 所有状态通知与事件统一封送到 UI Dispatcher。
     /// </summary>
@@ -63,7 +66,7 @@ namespace alpha_island.Services
             public byte ACLineStatus;          // 0 = Offline, 1 = Online, 255 = Unknown
             public byte BatteryFlag;           // 1 = High, 2 = Low, 4 = Critical, 8 = Charging, 128 = No battery
             public byte BatteryLifePercent;    // 0..100, 255 = Unknown
-            public byte SystemStatusFlag;
+            public byte SystemStatusFlag;      // 0 = 节电关闭，1 = 节电开启（Windows 10+）
             public int BatteryLifeTime;
             public int BatteryFullLifeTime;
         }
@@ -74,11 +77,19 @@ namespace alpha_island.Services
         private readonly Dispatcher _dispatcher;
         private readonly object _lock = new();
         private readonly object _reportGate = new();
-        private Task<BatteryReport>? _reportTask;
+        private Task<BatteryHardwareReport>? _reportTask;
+        private readonly Func<BatteryHardwareReport> _readReport;
+        private readonly Func<NativeBatterySnapshot?> _readNative;
+        private readonly SmartChargingMonitor _smartCharging = new();
+        private readonly ChargerTypeMonitor _chargerType = new();
+        private BatteryHardwareReport? _cachedReport;
+        private DateTime _cachedReportUtc, _reportStartedUtc, _nextReportUtc;
+        private bool? _reportPowerSource;
+        private int _powerGeneration, _reportGeneration, _cachedReportGeneration;
         private BatteryStatusInfo? _current;
         public BatteryStatusInfo? Current => System.Threading.Volatile.Read(ref _current);
 
-        private DispatcherTimer? _pollTimer;
+        private IslandTimer? _pollTimer;
         private bool _disposed;
         private bool _isStarted;
         private bool _initialReportReceived;
@@ -95,13 +106,29 @@ namespace alpha_island.Services
         /// <summary>电池状态、充放电事件发生时触发。</summary>
         public event EventHandler<BatteryStatusInfo>? BatteryStatusChanged;
 
-        public BatteryService(Dispatcher dispatcher)
+        public BatteryService(Dispatcher dispatcher) : this(dispatcher, ReadHardwareReport) { }
+        internal BatteryService(Dispatcher dispatcher, Func<BatteryHardwareReport> readReport,
+            Func<NativeBatterySnapshot?>? readNative = null)
         {
             _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+            _readReport = readReport;
+            _readNative = readNative ?? ReadNativeSnapshot;
+            _sampler = new BatterySampleCoordinator(() =>
+            {
+                if (_disposed) return;
+                var status = QueryCurrentStatus();
+                lock (_lock) { if (!_disposed) ProcessStatusUpdate(status); }
+            });
+        }
+        private static NativeBatterySnapshot? ReadNativeSnapshot()
+            => GetSystemPowerStatus(out var s) ? new(s.ACLineStatus, s.BatteryFlag, s.BatteryLifePercent, s.SystemStatusFlag, s.BatteryLifeTime) : null;
+        private static BatteryHardwareReport ReadHardwareReport()
+        {
+            var r = Battery.AggregateBattery.GetReport();
+            return new(r.Status, r.ChargeRateInMilliwatts, r.RemainingCapacityInMilliwattHours, r.FullChargeCapacityInMilliwattHours);
         }
 
-        private int _querying = 0;
-        private volatile bool _pendingQuery = false;
+        private readonly BatterySampleCoordinator _sampler;
 
         public void Start()
         {
@@ -117,6 +144,9 @@ namespace alpha_island.Services
                 // 订阅系统级电源模式切换事件（插拔电源瞬时通知）
                 Microsoft.Win32.SystemEvents.PowerModeChanged += OnSystemPowerModeChanged;
 
+                try { Windows.System.Power.PowerManager.EnergySaverStatusChanged += OnEnergySaverStatusChanged; }
+                catch (Exception ex) { Debug.WriteLine("[BatteryService] 节电状态事件不可用，使用原有采样兜底: " + ex.Message); }
+
                 // 订阅 WinRT 电池报告更新
                 try
                 {
@@ -128,7 +158,7 @@ namespace alpha_island.Services
                 }
 
                 // 辅助轮询定时器（每 1 秒检查一次，兜底防止系统广播丢失）
-                _pollTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+                _pollTimer = new IslandTimer(_dispatcher, "battery-fallback")
                 {
                     Interval = TimeSpan.FromSeconds(1)
                 };
@@ -147,6 +177,8 @@ namespace alpha_island.Services
         public void NotifyPowerBroadcast()
         {
             if (_disposed) return;
+            _smartCharging.Invalidate();
+            _chargerType.Invalidate();
             TriggerStatusCheck(0);
             TriggerStatusCheck(150);
         }
@@ -154,7 +186,9 @@ namespace alpha_island.Services
         private void OnSystemPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
         {
             if (_disposed) return;
-            TriggerStatusCheck(30);
+            _smartCharging.Invalidate();
+            _chargerType.Invalidate();
+            TriggerStatusCheck(0);
             TriggerStatusCheck(180);
         }
 
@@ -168,56 +202,29 @@ namespace alpha_island.Services
             }
             else
             {
-                TriggerStatusCheck(30);
+                TriggerStatusCheck(0);
                 TriggerStatusCheck(180);
             }
+        }
+
+        private void OnEnergySaverStatusChanged(object? sender, object args)
+        {
+            if (!_disposed) TriggerStatusCheck(0);
         }
 
         /// <summary>后台触发异步状态采样，避免 ACPI/WMI 硬件查询阻塞 UI 线程。</summary>
         private void TriggerStatusCheck(int delayMs = 0)
         {
-            if (_disposed) return;
-            Task.Run(async () =>
-            {
-                if (delayMs > 0)
-                {
-                    await Task.Delay(delayMs).ConfigureAwait(false);
-                }
-                if (_disposed) return;
-                if (System.Threading.Interlocked.CompareExchange(ref _querying, 1, 0) != 0)
-                {
-                    _pendingQuery = true;
-                    return; // 已经有查询在进行中，标记 pending 等当前完成后补查
-                }
-                try
-                {
-                    do
-                    {
-                        _pendingQuery = false;
-                        var current = QueryCurrentStatus(BatteryPowerEvent.None);
-                        lock (_lock)
-                        {
-                            if (!_disposed)
-                            {
-                                ProcessStatusUpdate(current);
-                            }
-                        }
-                    } while (_pendingQuery && !_disposed);
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine("[BatteryService] 异步采样异常: " + ex.Message);
-                }
-                finally
-                {
-                    System.Threading.Interlocked.Exchange(ref _querying, 0);
-                }
-            });
+            if (!_disposed) _sampler.Request(delayMs);
         }
-
         private void ProcessStatusUpdate(BatteryStatusInfo current)
         {
             if (_disposed) return;
+            var previous = Current;
+            bool displayChanged = previous == null || current.HasBattery != previous.HasBattery
+                || current.Percent != previous.Percent || current.IsCharging != previous.IsCharging
+                || current.IsOnAcPower != previous.IsOnAcPower || current.IsEnergySaverEnabled != previous.IsEnergySaverEnabled
+                || current.SmartCharging != previous.SmartCharging || current.ChargeType != previous.ChargeType;
             System.Threading.Volatile.Write(ref _current, current);
             bool onAc = current.IsOnAcPower ?? current.IsCharging;
 
@@ -227,6 +234,7 @@ namespace alpha_island.Services
                 _hasBaseline = current.HasBattery && current.Percent >= 0 && current.IsOnAcPower != null;
                 _lastIsCharging = onAc;
                 _lastPercent = current.Percent;
+                if (displayChanged) Publish(current);
                 return;
             }
 
@@ -288,6 +296,7 @@ namespace alpha_island.Services
                 var eventInfo = current with { EventType = eventType };
                 Publish(eventInfo);
             }
+            else if (displayChanged) Publish(current);
         }
 
         /// <summary>查询当前电池即时快照。</summary>
@@ -295,37 +304,66 @@ namespace alpha_island.Services
         {
             int percent = -1;
             bool hasBattery = false;
+            bool nativeAvailable = false;
             bool isCharging = false;
+            bool energySaver = false;
             bool? onAc = null;
             int? rate = null;
             int? remainingMwh = null;
             int remainingSeconds = -1;
             try
             {
-                if (GetSystemPowerStatus(out var status))
+                if (_readNative() is { } status)
                 {
+                    nativeAvailable = true;
+                    energySaver = status.SystemStatusFlag == 1;
                     onAc = status.ACLineStatus <= 1 ? status.ACLineStatus == 1 : null;
                     hasBattery = status.BatteryFlag != 255 && (status.BatteryFlag & 128) == 0;
                     isCharging = hasBattery && (status.BatteryFlag & 8) != 0;
                     if (hasBattery && status.BatteryLifePercent <= 100) percent = status.BatteryLifePercent;
                     remainingSeconds = status.BatteryLifeTime;
                 }
-                // 上一次硬件查询若挂起，复用它；最多保留一个未完成查询。
-                Task<BatteryReport> task;
+                // Detailed ACPI data never delays the immediate Windows power snapshot.
+                BatteryHardwareReport? report = null;
                 lock (_reportGate)
                 {
-                    if (_reportTask == null || _reportTask.IsCompleted)
-                        _reportTask = Task.Run(() => Battery.AggregateBattery.GetReport());
-                    task = _reportTask;
+                    var now = DateTime.UtcNow;
+                    if (_reportPowerSource != onAc)
+                    {
+                        _reportPowerSource = onAc; _powerGeneration++;
+                        _cachedReport = null; _nextReportUtc = DateTime.MinValue;
+                    }
+                    if (_reportTask is { IsCompleted: true })
+                    {
+                        if (_reportTask.IsCompletedSuccessfully && _reportGeneration == _powerGeneration
+                            && now - _reportStartedUtc <= TimeSpan.FromSeconds(10))
+                        {
+                            _cachedReport = _reportTask.Result; _cachedReportUtc = now;
+                            _cachedReportGeneration = _reportGeneration;
+                        }
+                        else if (_reportTask.IsFaulted) _ = _reportTask.Exception;
+                        _reportTask = null;
+                    }
+                    if (_reportTask == null && now >= _nextReportUtc)
+                    {
+                        _reportGeneration = _powerGeneration; _reportStartedUtc = now;
+                        _nextReportUtc = now.AddSeconds(1);
+                        _reportTask = Task.Run(_readReport);
+                    }
+                    if (_cachedReportGeneration == _powerGeneration && now - _cachedReportUtc <= TimeSpan.FromSeconds(10))
+                        report = _cachedReport;
                 }
-                if (task.Wait(200))
+                if (report != null)
                 {
-                    var report = task.Result;
-                    hasBattery = report.Status != Windows.System.Power.BatteryStatus.NotPresent;
-                    isCharging = hasBattery && report.Status == Windows.System.Power.BatteryStatus.Charging;
+                    // Win32 flags describe the present power source; an older report must not reverse them.
+                    if (!nativeAvailable)
+                    {
+                        hasBattery = report.Status != Windows.System.Power.BatteryStatus.NotPresent;
+                        isCharging = hasBattery && report.Status == Windows.System.Power.BatteryStatus.Charging;
+                    }
                     rate = report.ChargeRateInMilliwatts;
                     remainingMwh = report.RemainingCapacityInMilliwattHours;
-                    if (hasBattery && remainingMwh.HasValue && report.FullChargeCapacityInMilliwattHours is > 0)
+                    if (percent < 0 && hasBattery && remainingMwh.HasValue && report.FullChargeCapacityInMilliwattHours is > 0)
                         percent = Math.Clamp((int)Math.Round(100.0 * remainingMwh.Value /
                             report.FullChargeCapacityInMilliwattHours.Value), 0, 100);
                 }
@@ -354,9 +392,16 @@ namespace alpha_island.Services
             if (!hasBattery) percent = -1;
             // 电池的充电速率无法证明适配器使用 PD，也无法证明厂商开启了保养模式。
             return new BatteryStatusInfo(percent, isCharging,
-                onAc == true ? BatteryChargeType.StandardAC : BatteryChargeType.Unknown,
-                eventType, rate, discharge, lifeSeconds, hasBattery, onAc, estimated, DateTime.UtcNow);
+                _chargerType.ReadCached(onAc),
+                eventType, rate, discharge, lifeSeconds, hasBattery, onAc, estimated, DateTime.UtcNow, energySaver,
+                hasBattery ? _smartCharging.ReadCached(onAc) : SmartChargingState.Unknown);
         }
+        public static string FormatChargeType(BatteryChargeType type) => type switch
+        {
+            BatteryChargeType.StandardAC => "普通 AC 适配器",
+            BatteryChargeType.PD => "USB-C PD",
+            _ => "充电器类型未知"
+        };
         /// <summary>把毫瓦格式化成瓦（如 18.4 W）。</summary>
         public static string FormatPower(int? milliwatts)
             => milliwatts.HasValue && milliwatts.Value > 0 ? $"{milliwatts.Value / 1000.0:0.#} W" : "—";
@@ -388,6 +433,7 @@ namespace alpha_island.Services
             {
                 if (_disposed) return;
                 _disposed = true;
+                _sampler.Dispose();
 
                 try
                 {
@@ -401,7 +447,10 @@ namespace alpha_island.Services
                 }
                 catch { }
 
-                _pollTimer?.Stop();
+                try { Windows.System.Power.PowerManager.EnergySaverStatusChanged -= OnEnergySaverStatusChanged; }
+                catch { }
+
+                _pollTimer?.Dispose();
                 _pollTimer = null;
             }
         }

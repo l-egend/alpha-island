@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -33,6 +35,86 @@ namespace alpha_island
 {
     public partial class MainWindow
     {
+        private readonly ObservableCollection<AudioAppSessionViewModel> _volumeAppViews = new();
+        private bool _syncingAppVolumes;
+        private int _draggingAppVolumePid;
+        private VolumeFlyoutGuard? _volumeFlyoutGuard;
+        private long _lastVolumeFeedbackAt;
+        private long _volumeUserFeedbackUntil;
+        private bool UserVolumeFeedbackActive => Environment.TickCount64 < _volumeUserFeedbackUntil;
+        private volatile bool _volumeKeysTakeoverEnabled;
+        private DispatcherTimer? _volumeKeyFeedbackTimer;
+        private bool VolumeFlyoutTakeoverAllowed => !_exiting && !_sessionLocked && _options.VolumeNotifyEnabled
+            && !SettingsRegistry.GetBool(_options, "NotificationQuietMode", false);
+
+        private void SyncVolumeFlyoutTakeover()
+        {
+            _volumeKeysTakeoverEnabled = _volumeService != null && VolumeFlyoutTakeoverAllowed && !(_greetingShowing && GreetingActive);
+            if (_volumeFlyoutGuard == null && _runtimeEnabled && _volumeService != null)
+            {
+                _volumeFlyoutGuard = new VolumeFlyoutGuard();
+                _volumeFlyoutGuard.FlyoutHidden += OnNativeVolumeFlyoutHidden;
+            }
+            if (_volumeService == null || !VolumeFlyoutTakeoverAllowed) _volumeKeyFeedbackTimer?.Stop();
+            _volumeFlyoutGuard?.SetEnabled(_volumeService != null && VolumeFlyoutTakeoverAllowed);
+        }
+
+        private void OnVolumeKeyPreview(object? sender, KeyboardHookEventArgs e)
+        {
+            // Runs on the keyboard hook thread. Only cached state and a nonblocking
+            // command submission; the existing audio worker owns all COM calls.
+            if (!_volumeKeysTakeoverEnabled || e.Handled || !e.IsKeyDown) return;
+            var volume = _volumeService;
+            if (volume?.TryHandleVolumeKey(e.VirtualKey) == true) e.Handled = true;
+        }
+        private void OnVolumeKeyPressed(object? sender, KeyboardHookEventArgs e)
+        {
+            if (!e.IsKeyDown || e.VirtualKey is not (0xAD or 0xAE or 0xAF) || !VolumeFlyoutTakeoverAllowed
+                || _volumeService?.IsAvailable != true || _greetingShowing && GreetingActive) return;
+            if (e.Handled)
+            {
+                RecordVolumeDesktopEvent(new VolumeInfo(_volumeService.CurrentPercent, _volumeService.IsMuted));
+                ShowVolumeNotify(_volumeService.CurrentPercent, _volumeService.IsMuted, userInitiated: true);
+                return;
+            }
+            // Nonintercepted feedback retains the compatible native-window fallback.
+            // At 100%/0%, CoreAudio correctly reports no numerical change.
+            _volumeFlyoutGuard?.TakeOverFeedback();
+            QueueVolumeKeyFeedback();
+        }
+
+        private void QueueVolumeKeyFeedback()
+        {
+            if (!VolumeFlyoutTakeoverAllowed || _volumeService?.IsAvailable != true) return;
+            if (_volumeKeyFeedbackTimer == null)
+            {
+                _volumeKeyFeedbackTimer = new DispatcherTimer(DispatcherPriority.Input, Dispatcher)
+                    { Interval = TimeSpan.FromMilliseconds(100) };
+                _volumeKeyFeedbackTimer.Tick += (_, _) =>
+                {
+                    _volumeKeyFeedbackTimer.Stop();
+                    // Let the real CoreAudio callback publish its cache first. A key
+                    // at 0%/100% can produce neither a value event nor a native SHOW.
+                    if (VolumeFlyoutTakeoverAllowed && _volumeService?.IsAvailable == true
+                        && Environment.TickCount64 - _lastVolumeFeedbackAt > 120)
+                        ShowVolumeNotify(_volumeService.CurrentPercent, _volumeService.IsMuted, userInitiated: true);
+                };
+            }
+            if (!_volumeKeyFeedbackTimer.IsEnabled) _volumeKeyFeedbackTimer.Start();
+        }
+
+        private void OnNativeVolumeFlyoutHidden()
+            => Dispatcher.BeginInvoke(new Action(QueueVolumeKeyFeedback));
+
+        private void StopVolumeFlyoutTakeover()
+        {
+            _volumeKeysTakeoverEnabled = false;
+            _volumeUserFeedbackUntil = 0;
+            _volumeKeyFeedbackTimer?.Stop();
+            _volumeFlyoutGuard?.Dispose();
+            _volumeFlyoutGuard = null;
+        }
+
         // ================= 音量调节 =================
 
         private void OnVolumeChanged(object? sender, VolumeInfo info)
@@ -40,7 +122,7 @@ namespace alpha_island
             if (_exiting) return;
             if (!_options.VolumeNotifyEnabled) { SyncVolumeCardContent(); return; }
             RecordVolumeDesktopEvent(info);
-            if (_sessionLocked || SettingsRegistry.GetBool(_options, "NotificationQuietMode", false)) { SyncVolumeCardContent(); return; }
+            if (_sessionLocked || NotificationQuietEffective) { SyncVolumeCardContent(); return; }
             ShowVolumeNotify(info.Percent, info.IsMuted);
         }
 
@@ -69,9 +151,14 @@ namespace alpha_island
             if (_isVolumeMixerExpanded) RefreshVolumeAppSessionsList();
         }
 
-        private void ShowVolumeNotify(int percent, bool isMuted)
+        private void ShowVolumeNotify(int percent, bool isMuted, bool userInitiated = false)
         {
             if (_greetingShowing && GreetingActive) return;
+            _lastVolumeFeedbackAt = Environment.TickCount64;
+            // Game quiet suppresses background changes; an explicit volume key/wheel
+            // keeps its own short feedback window without changing any quiet setting.
+            if (userInitiated) _volumeUserFeedbackUntil = _lastVolumeFeedbackAt + (long)(Math.Max(0, _options.VolumeNotifySeconds) * 1000);
+            _volumeFlyoutGuard?.TakeOverFeedback();
             ShowPillNotification(IslandNotification.Seconds("volume", _options.VolumeNotifySeconds));
             SyncVolumePillContent(percent, isMuted);
             if (_state != IslandState.Pill && _state != IslandState.Card) SetState(IslandState.Pill);
@@ -87,6 +174,12 @@ namespace alpha_island
                 if (percent > 0) isMuted = false;
             }
 
+            string displayText = isMuted ? "静音" : $"{percent}%";
+            bool changed = VolumeText.Text != displayText;
+            VolumeIcon.Shape = IconShape.Volume;
+            VolumeIcon.Active = !isMuted && percent > 0;
+            VolumeIcon.Level = Math.Clamp(percent / 100.0, 0, 1);
+
             // 更新自适应音量图标及微光颜色
             if (isMuted || percent == 0)
             {
@@ -94,7 +187,8 @@ namespace alpha_island
                 VolumeIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x55, 0x55));
                 VolumeIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0xFF, 0x55, 0x55));
                 VolumeIconContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0x55, 0x55));
-                VolumeProgressFill.Background = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+                VolumeProgressFill.Background = ResolveAccentBrush();
+                VolumeProgressFill.Opacity = .55;
             }
             else
             {
@@ -106,14 +200,17 @@ namespace alpha_island
                 VolumeIcon.Foreground = cyan;
                 VolumeIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x00, 0xE5, 0xFF));
                 VolumeIconContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x00, 0xE5, 0xFF));
-                VolumeProgressFill.Background = new SolidColorBrush(Color.FromArgb(0x9F, 255, 255, 255));
+                VolumeProgressFill.Background = ResolveAccentBrush();
+                VolumeProgressFill.Opacity = 1;
             }
 
-            VolumeText.Text = isMuted ? "静音" : $"{percent}%";
+            VolumeText.Text = displayText;
 
             // 动态计算进度条填充宽度 (根据实际槽体宽度，缺省取 180px)
             double trackWidth = VolumeTrackContainer.ActualWidth > 0 ? VolumeTrackContainer.ActualWidth : 180.0;
             VolumeProgressFill.Width = Math.Clamp((trackWidth * percent) / 100.0, 0, trackWidth);
+
+            if (changed) ActionIconMotion.Play(VolumeIcon);
 
         }
 
@@ -141,9 +238,15 @@ namespace alpha_island
             SyncVolumePillContent(percent, isMuted);
             string devName = _volumeService?.CurrentDeviceName ?? "系统扬声器";
 
+            string displayText = isMuted ? "静音" : $"{percent}%";
+            bool changed = CardVolumePercentText.Text != displayText || CardVolumeDeviceText.Text != devName;
+            CardVolumeIcon.Shape = IconShape.Volume;
+            CardVolumeIcon.Active = !isMuted && percent > 0;
+            CardVolumeIcon.Level = Math.Clamp(percent / 100.0, 0, 1);
+
             CardVolumeDeviceText.Text = devName;
             if (CurrentDeviceNameLabel != null) CurrentDeviceNameLabel.Text = devName;
-            CardVolumePercentText.Text = isMuted ? "静音" : $"{percent}%";
+            CardVolumePercentText.Text = displayText;
 
             if (isMuted || percent == 0)
             {
@@ -151,7 +254,8 @@ namespace alpha_island
                 CardVolumeIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x55, 0x55));
                 CardVolumeIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0xFF, 0x55, 0x55));
                 CardVolumeIconContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0x55, 0x55));
-                CardVolumeSliderFill.Background = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+                CardVolumeSliderFill.Background = ResolveAccentBrush();
+                CardVolumeSliderFill.Opacity = .55;
                 CardVolumePercentText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x55, 0x55));
             }
             else
@@ -164,12 +268,14 @@ namespace alpha_island
                 CardVolumeIcon.Foreground = cyan;
                 CardVolumeIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x00, 0xE5, 0xFF));
                 CardVolumeIconContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x00, 0xE5, 0xFF));
-                CardVolumeSliderFill.Background = new SolidColorBrush(Color.FromArgb(0x9F, 255, 255, 255));
+                CardVolumeSliderFill.Background = ResolveAccentBrush();
+                CardVolumeSliderFill.Opacity = 1;
                 CardVolumePercentText.Foreground = cyan;
             }
 
             double trackW = CardVolumeSliderTrack.ActualWidth > 0 ? CardVolumeSliderTrack.ActualWidth : 180.0;
             CardVolumeSliderFill.Width = Math.Clamp((trackW * percent) / 100.0, 0, trackW);
+            if (changed) ActionIconMotion.Play(CardVolumeIcon);
         }
 
         private void VolumeNotifyLayer_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -206,11 +312,15 @@ namespace alpha_island
 
                 if (_pages.ActiveId == IslandPageIds.Volume)
                 {
-                    // 音量卡：滚轮调音量（本页既有语义，别改）。
-                    int delta = _volumeWheel.Consume(e.Delta) * 2;
-                    _volumeService?.AdjustVolume(delta);
-                    SyncVolumeCardContent();
-                    e.Handled = true;
+                    // Only the main volume track adjusts master volume. The drawer's
+                    // own ScrollViewer and app sliders receive their normal wheel events.
+                    if (IsDescendantOf(e.OriginalSource as DependencyObject, CardVolumeSliderTrack))
+                    {
+                        int delta = _volumeWheel.Consume(e.Delta) * 2;
+                        _volumeService?.AdjustVolume(delta);
+                        SyncVolumeCardContent();
+                        e.Handled = true;
+                    }
                     return;
                 }
 
@@ -227,7 +337,7 @@ namespace alpha_island
                 _volumeService?.AdjustVolume(step);
                 int currentVol = _volumeService?.CurrentPercent ?? 0;
                 bool isMuted = _volumeService?.IsMuted ?? false;
-                ShowVolumeNotify(currentVol, isMuted);
+                ShowVolumeNotify(currentVol, isMuted, userInitiated: true);
                 e.Handled = true;
             }
         }
@@ -422,7 +532,7 @@ namespace alpha_island
                 RefreshAudioDeviceList();
             }
 
-            AnimateDrawer(AudioDevicePanel, AudioDeviceChevronRotate, _isAudioDeviceExpanded, 68);
+            AnimateDrawer(AudioDevicePanel, AudioDeviceChevronRotate, _isAudioDeviceExpanded, 110);
         }
 
         private void VolumeMixerHeader_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -440,7 +550,7 @@ namespace alpha_island
                 RefreshVolumeAppSessionsList();
             }
 
-            AnimateDrawer(VolumeMixerPanel, VolumeMixerChevronRotate, _isVolumeMixerExpanded, 78);
+            AnimateDrawer(VolumeMixerPanel, VolumeMixerChevronRotate, _isVolumeMixerExpanded, 180);
         }
 
         private void AnimateDrawer(Grid panel, RotateTransform chevronRotate, bool expand, double targetHeight)
@@ -455,9 +565,9 @@ namespace alpha_island
                 var opAnim = new DoubleAnimation(0, 1.0, duration) { EasingFunction = ease };
                 var rotAnim = new DoubleAnimation(0, 180, duration) { EasingFunction = ease };
 
-                panel.BeginAnimation(FrameworkElement.HeightProperty, hAnim);
-                panel.BeginAnimation(UIElement.OpacityProperty, opAnim);
-                chevronRotate.BeginAnimation(RotateTransform.AngleProperty, rotAnim);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(panel,FrameworkElement.HeightProperty, hAnim);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(panel,UIElement.OpacityProperty, opAnim);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(chevronRotate,RotateTransform.AngleProperty, rotAnim);
                 SetCardDrawerExtra(targetHeight);
             }
             else
@@ -480,9 +590,9 @@ namespace alpha_island
                     }
                 };
 
-                panel.BeginAnimation(FrameworkElement.HeightProperty, hAnim);
-                panel.BeginAnimation(UIElement.OpacityProperty, opAnim);
-                chevronRotate.BeginAnimation(RotateTransform.AngleProperty, rotAnim);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(panel,FrameworkElement.HeightProperty, hAnim);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(panel,UIElement.OpacityProperty, opAnim);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(chevronRotate,RotateTransform.AngleProperty, rotAnim);
                 SetCardDrawerExtra(0);
             }
         }
@@ -498,7 +608,6 @@ namespace alpha_island
             if (extra < 0) extra = 0;
             if (Math.Abs(_cardDrawerExtra - extra) < 0.5) return;
             _cardDrawerExtra = extra;
-
             if (CardViewport != null) CardViewport.Height = 194 + extra;
 
             // 光长视口不够：页自己还写死 194，行 1（输出设备 + 音量合成器两个折叠区）拿不到
@@ -522,6 +631,7 @@ namespace alpha_island
         {
             _isAudioDeviceExpanded = false;
             _isVolumeMixerExpanded = false;
+            _draggingAppVolumePid = 0;
 
             ResetDrawerPanel(AudioDevicePanel, AudioDeviceChevronRotate);
             ResetDrawerPanel(VolumeMixerPanel, VolumeMixerChevronRotate);
@@ -609,7 +719,61 @@ namespace alpha_island
             if (VolumeAppSessionsList == null) return;
             var service = EnsureVolumeService();
             List<AudioAppSessionViewModel> list = service?.GetAudioAppSessions() ?? new List<AudioAppSessionViewModel>();
-            VolumeAppSessionsList.ItemsSource = list;
+            if (!ReferenceEquals(VolumeAppSessionsList.ItemsSource, _volumeAppViews))
+                VolumeAppSessionsList.ItemsSource = _volumeAppViews;
+            _syncingAppVolumes = true;
+            try
+            {
+                for (int i = _volumeAppViews.Count - 1; i >= 0; i--)
+                    if (!list.Any(item => item.ProcessId == _volumeAppViews[i].ProcessId)
+                        && _volumeAppViews[i].ProcessId != _draggingAppVolumePid) _volumeAppViews.RemoveAt(i);
+                foreach (var snapshot in list)
+                {
+                    var view = _volumeAppViews.FirstOrDefault(item => item.ProcessId == snapshot.ProcessId);
+                    if (view == null)
+                    {
+                        _volumeAppViews.Add(new AudioAppSessionViewModel { ProcessId = snapshot.ProcessId,
+                            Name = snapshot.Name, VolumePercent = snapshot.VolumePercent, IsMuted = snapshot.IsMuted });
+                        continue;
+                    }
+                    view.Name = snapshot.Name;
+                    if (view.ProcessId == _draggingAppVolumePid) continue;
+                    view.VolumePercent = snapshot.VolumePercent;
+                    view.IsMuted = snapshot.IsMuted;
+                }
+            }
+            finally { _syncingAppVolumes = false; }
+        }
+
+        private void AppVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_syncingAppVolumes || sender is not Slider slider || !slider.IsLoaded
+                || slider.DataContext is not AudioAppSessionViewModel app) return;
+            int percent = (int)Math.Round(e.NewValue);
+            if (app.VolumePercent == percent) return;
+            app.VolumePercent = percent;
+            if (percent > 0) app.IsMuted = false;
+            _volumeService?.SetAppVolume(app.ProcessId, percent);
+            e.Handled = true;
+        }
+
+        private void AppVolumeSlider_DragStarted(object sender, DragStartedEventArgs e)
+        {
+            if (sender is FrameworkElement element && element.DataContext is AudioAppSessionViewModel app)
+                _draggingAppVolumePid = app.ProcessId;
+            e.Handled = true;
+        }
+
+        private void AppVolumeSlider_DragCompleted(object sender, DragCompletedEventArgs e)
+        {
+            _draggingAppVolumePid = 0;
+            e.Handled = true;
+        }
+
+        private void AppVolumeSlider_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (sender is Slider slider) slider.Value = Math.Clamp(slider.Value + Math.Sign(e.Delta) * 2, 0, 100);
+            e.Handled = true;
         }
 
         private void AudioDeviceItem_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

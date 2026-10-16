@@ -37,25 +37,42 @@ namespace alpha_island
 
         private void OnBluetoothDeviceConnected(object? sender, BluetoothDeviceInfo info)
         {
-            if (_exiting || !_options.BluetoothNotifyEnabled) return;
+            CheckBluetoothLowBattery(info);
+            if (_exiting || _sessionLocked || GameDoNotDisturbActive || !_options.BluetoothNotifyEnabled) return;
             if (_greetingShowing && GreetingActive) return;
             ShowBluetoothNotify(info, isConnected: true);
         }
 
         private void OnBluetoothDeviceDisconnected(object? sender, BluetoothDeviceInfo info)
         {
-            if (_exiting || !_options.BluetoothNotifyEnabled) return;
+            _bluetoothLowBattery.ShouldNotify(info with { IsConnected = false });
+            if (_exiting || _sessionLocked || GameDoNotDisturbActive || !_options.BluetoothNotifyEnabled) return;
             ShowBluetoothNotify(info, isConnected: false);
         }
 
         private string? _btDisplayedDeviceId;
         private bool _btDisplayedConnected;
+        private BluetoothDeviceCategory _btDisplayedCategory;
+        private int _btMotionRevision;
+        private readonly BluetoothLowBatteryPolicy _bluetoothLowBattery = new();
         private void OnBluetoothBatteryUpdated(object? sender, BluetoothDeviceInfo info)
         {
+            CheckBluetoothLowBattery(info);
             if (_btNotifying && BtNotifyActive && _btDisplayedConnected && info.IsConnected && info.Id == _btDisplayedDeviceId)
             {
                 UpdateBluetoothBattery(info.BatteryPercent);
             }
+        }
+
+        private void CheckBluetoothLowBattery(BluetoothDeviceInfo info)
+        {
+            if (_exiting || !SettingsRegistry.GetBool(_options, "BluetoothLowBatteryEnabled", true)
+                || !_bluetoothLowBattery.ShouldNotify(info)) return;
+            var item = new DesktopNotification("bluetooth-low-" + info.Id + "-" + DateTimeOffset.UtcNow.UtcTicks,
+                "", "蓝牙设备", info.Name + " · 电量低", $"剩余电量 {info.BatteryPercent}%，请及时充电", DateTimeOffset.Now,
+                DesktopEventKind.BluetoothLowBattery);
+            _desktopInbox.Add(item, _desktopPolicy.CanPopup(item, _sessionLocked), _desktopPolicy);
+            StartNotificationUiTimer(); RefreshDesktopInbox(); TickDesktopNotifications();
         }
 
         private void UpdateBluetoothBattery(int? percent)
@@ -65,15 +82,18 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 蓝牙设备连接/断开时弹出一级胶囊，显示设备名称、分类专属图标/3D模型和连接/断开状态及电量，一段时间后自动收回。
+        /// 蓝牙设备连接/断开时显示设备名称、分类图片、短动画、状态和真实电量。
         /// </summary>
         private void ShowBluetoothNotify(BluetoothDeviceInfo info, bool isConnected = true)
         {
+            bool newEvent = info.Id != _btDisplayedDeviceId || isConnected != _btDisplayedConnected
+                || info.Name != BtDeviceName.Text || info.Category != _btDisplayedCategory || !BtNotifyActive;
+            if (newEvent) { _btMotionRevision++; ActionIconMotion.Stop(BtIconContainer); }
             _btDisplayedDeviceId = info.Id;
             _btDisplayedConnected = isConnected;
+            _btDisplayedCategory = info.Category;
             // 换设备及断联时立即清除上一个设备的显示，不延续旧电量动画。
-            UpdateBluetoothBattery(null);
-            ShowPillNotification(IslandNotification.Seconds("bluetooth", _options.BluetoothNotifySeconds));
+            if (newEvent || !isConnected) UpdateBluetoothBattery(null);
 
             BtDeviceName.Text = info.Name;
 
@@ -93,56 +113,65 @@ namespace alpha_island
                 BtBatteryText.Visibility = Visibility.Collapsed;
             }
 
-            // 根据设备分类切换 3D 旋转耳机模型或专属硬件矢量图标
+            BtDeviceArt.Source = info.Category is BluetoothDeviceCategory.Audio or BluetoothDeviceCategory.Input
+                ? alpha_island.Controls.BluetoothDeviceArtwork.For(info.Name) : null;
+            BtDeviceArt.Opacity = BtDeviceIcon.Opacity = 1;
+            // 二维音频设备图片与键鼠手柄等专属图标共享同一个动画槽。
             switch (info.Category)
             {
                 case BluetoothDeviceCategory.Audio:
-                    BtDeviceModel.Visibility = Visibility.Visible;
-                    BtDeviceModel.IsRotating = isConnected;
+                    BtDeviceIcon.Text = "\uE702";
+                    BtDeviceArt.Visibility = Visibility.Visible;
                     BtDeviceIcon.Visibility = Visibility.Collapsed;
                     BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
                     break;
                 case BluetoothDeviceCategory.Keyboard:
-                    BtDeviceModel.Visibility = Visibility.Collapsed;
-                    BtDeviceModel.IsRotating = false;
+                    BtDeviceArt.Visibility = Visibility.Collapsed;
                     BtDeviceIcon.Visibility = Visibility.Visible;
                     BtDeviceIcon.Text = "\uE765"; // 键盘
                     BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x4A, 0x90, 0xE2));
                     BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x4A, 0x90, 0xE2));
                     break;
                 case BluetoothDeviceCategory.Mouse:
-                    BtDeviceModel.Visibility = Visibility.Collapsed;
-                    BtDeviceModel.IsRotating = false;
+                    BtDeviceArt.Visibility = Visibility.Collapsed;
                     BtDeviceIcon.Visibility = Visibility.Visible;
                     BtDeviceIcon.Text = "\uE962"; // 鼠标
                     BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x50, 0xE3, 0xC2));
                     BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x50, 0xE3, 0xC2));
                     break;
                 case BluetoothDeviceCategory.Gamepad:
-                    BtDeviceModel.Visibility = Visibility.Collapsed;
-                    BtDeviceModel.IsRotating = false;
+                    BtDeviceArt.Visibility = Visibility.Collapsed;
                     BtDeviceIcon.Visibility = Visibility.Visible;
                     BtDeviceIcon.Text = "\uE7FC"; // 游戏手柄
                     BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xD0, 0x66, 0xFF));
                     BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0xD0, 0x66, 0xFF));
                     break;
                 case BluetoothDeviceCategory.Input:
-                    BtDeviceModel.Visibility = Visibility.Collapsed;
-                    BtDeviceModel.IsRotating = false;
+                    BtDeviceArt.Visibility = Visibility.Collapsed;
                     BtDeviceIcon.Visibility = Visibility.Visible;
                     BtDeviceIcon.Text = "\uE92C"; // 输入设备
                     BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x50, 0xE3, 0xC2));
                     BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x50, 0xE3, 0xC2));
                     break;
                 default:
-                    BtDeviceModel.Visibility = Visibility.Collapsed;
-                    BtDeviceModel.IsRotating = false;
+                    BtDeviceArt.Visibility = Visibility.Collapsed;
                     BtDeviceIcon.Visibility = Visibility.Visible;
                     BtDeviceIcon.Text = "\uE702"; // 蓝牙通用图标
                     BtDeviceIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD7));
                     BtIconContainer.Background = new SolidColorBrush(Color.FromArgb(0x28, 0x00, 0x78, 0xD7));
                     break;
             }
+
+            // Keep the image as a data mirror for satellites; the semantic icon draws the selected
+            // device silhouette and progressively draws/erases its connection strokes.
+            BtDeviceArt.Visibility = Visibility.Collapsed;
+            BtDeviceIcon.Source = BtDeviceArt.Source;
+            BtDeviceIcon.Shape = BtDeviceArt.Source != null ? IconShape.Bluetooth : IconShape.Auto;
+            BtDeviceIcon.Active = isConnected;
+            BtDeviceIcon.Visibility = Visibility.Visible;
+            ActionIconMotion.SetKind(BtIconContainer, isConnected ? ActionIconAnimation.Connect : ActionIconAnimation.Disconnect);
+            ShowPillNotification(IslandNotification.Seconds("bluetooth", _options.BluetoothNotifySeconds));
+            if (newEvent) ActionIconMotion.Play(BtIconContainer);
 
             if (_state == IslandState.Bar)
             {
@@ -184,9 +213,7 @@ namespace alpha_island
 
             backdrop.SetVisible(false);
 
-            // 玻璃窗**固定**覆盖"岛体可能出现的最大范围"（最大卡片 + 过冲余量），
-            // 之后连续形变只改 Composition 侧的圆角裁剪几何、不再动窗口尺寸，
-            // 省掉每帧 4~6.7ms 的窗口重排（纯属性写入便宜一个数量级）。
+            // 初始化隐藏的宿主范围；显示前和形变时同步到实际岛体的屏幕坐标。
             double half = IslandMetrics.CardWidth / 2.0 + BackdropMargin;
             _backdropX = Math.Round(Left + Width / 2.0 - half);
             _backdropY = 0;
@@ -200,59 +227,18 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 玻璃窗外扩的余量。**必须很小**：DWM 的窗口级 backdrop 只认窗口矩形，
-        /// 无论 Composition 侧的圆角裁剪还是 <c>SetWindowRgn</c> 都管不住它
-        /// （实测：模糊范围永远等于窗口矩形）。所以只能让窗口本身贴着岛体走，
-        /// 余量留 2px 防止边缘出现 1px 缝隙，圆角处那一点点方形"耳朵"由投影盖住。
+        /// 玻璃宿主保留 2px 布局余量。背景材质仅绘制在圆角精灵内，
+        /// 窗口矩形本身不再绘制亚克力底色，余量及四角保持透明。
         /// </summary>
         private const double BackdropMargin = 2;
 
         private double _backdropX, _backdropY;
-        private Rect _lastIslandRect = Rect.Empty;
 
-        private void OnBackdropTick(object? sender, EventArgs e)
-        {
-            var backdrop = _backdrop;
-            if (backdrop == null || !backdrop.IsAvailable) return;
-            if (_state == IslandState.Bar || !IsVisible) return;
 
-            Point p0 = IslandBody.PointToScreen(new Point(0, 0));
-            Point p1 = IslandBody.PointToScreen(new Point(IslandBody.ActualWidth, IslandBody.ActualHeight));
-            var rect = new Rect(p0.X, p0.Y, Math.Max(0, p1.X - p0.X), Math.Max(0, p1.Y - p0.Y));
-            if (rect.Width < 2 || rect.Height < 2) return;
-            if (rect.Equals(_lastIslandRect)) return;
-            _lastIslandRect = rect;
-
-            // 玻璃窗紧贴岛体（含动画位移与过冲），只留 BackdropMargin 的余量。
-            int bx = (int)Math.Round(rect.X - BackdropMargin);
-            int by = (int)Math.Round(rect.Y - BackdropMargin);
-            int bw = (int)Math.Round(rect.Width + BackdropMargin * 2);
-            int bh = (int)Math.Round(rect.Height + BackdropMargin * 2);
-            _backdropX = bx;
-            _backdropY = by;
-            backdrop.SetBounds(bx, by, bw, bh);
-
-            // PointToScreen 已经把 RenderTransform（挤压 + 位移）算进去了，
-            // CornerRadius 读的也是动画中的实时值。
-            backdrop.SetIsland(rect.X - bx, rect.Y - by, rect.Width, rect.Height,
-                IslandBody.CornerRadius.TopLeft);
-        }
+        private void OnBackdropTick(object? sender, EventArgs e) => RenderLiquidBackdrop();
 
         /// <summary>形态切换时同步玻璃窗的显隐；细条态没必要让它露着。</summary>
-        private void SyncBackdrop()
-        {
-            var backdrop = _backdrop;
-            if (backdrop == null || !backdrop.IsAvailable) return;
-            bool shouldShow = _options.LiquidGlassBackdrop && _state != IslandState.Bar && _options.GlassOpacity >= 0.45;
-            backdrop.SetVisible(shouldShow);
-            _lastIslandRect = Rect.Empty;   // 强制下一帧重算裁剪
-
-            // 逐帧回调只在玻璃窗真露着的时候挂：挂着 CompositionTarget.Rendering 会让 WPF 一直
-            // 以刷新率请求帧、永远进不了空闲（实测细条态空转 6.5% of one core，而 OnBackdropTick
-            // 在 Bar 态下第一句就 return，纯属白烧）。形态切换必经 SetState → 这里，挂/摘都幂等。
-            CompositionTarget.Rendering -= OnBackdropTick;
-            if (shouldShow) CompositionTarget.Rendering += OnBackdropTick;
-        }
+        private void SyncBackdrop() => SyncLiquidBackdrop();
 
         /// <summary>创建尝试只做一次：驱动/系统拒绝时不必每次 ApplyOptions 都重试。</summary>
         private bool _backdropTried;
@@ -289,12 +275,12 @@ namespace alpha_island
         {
             if (ms <= 0)
             {
-                element.BeginAnimation(OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(element,OpacityProperty, null);
                 element.Opacity = to;
                 return;
             }
 
-            element.BeginAnimation(OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms))
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(element,OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms))
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 BeginTime = TimeSpan.FromMilliseconds(beginTime)
@@ -307,10 +293,17 @@ namespace alpha_island
             // AllowsFrameLoop()：细条态一律不挂逐帧循环（节能模式的显式契约）。
             // 这里的 _state == Pill / Card 本来就排除了细条态，写成一句是为了以后新增
             // 可视化控件时不用再想"收起态要不要跑"——照抄这个 && 就行。
-            bool on = _options.VisualizerEnabled && AllowsFrameLoop();
-            bool pillActive = on && _state == IslandState.Pill && !UpNextActive && !(_btNotifying && BtNotifyActive);
+            bool on = _options.VisualizerEnabled && MusicIslandHasMedia && AllowsFrameLoop();
+            bool pillActive = on && WantPillLayerVisible() && !UpNextActive && !(_btNotifying && BtNotifyActive);
             SetActive(PillSpectrum, pillActive);
-            SetActive(CardWave, on && _state == IslandState.Card && _options.ShowWaveLayer);
+            SetActive(CardWave, on && _state == IslandState.Card && _pages.ActiveId == IslandPageIds.Music && _options.ShowWaveLayer);
+            SyncSpectrumWork();
+        }
+
+        private void SyncSpectrumWork()
+        {
+            if (_audio != null) _audio.VisualizationEnabled =
+                (PillSpectrum.IsActive && PillSpectrum.IsVisible) || (CardWave.IsActive && CardWave.IsVisible);
         }
 
         private static void SetActive(SpectrumVisualizer v, bool active)
@@ -350,6 +343,7 @@ namespace alpha_island
             PrepareSiriOrbContent(actionType);
 
             IslandState prev = _state;
+            RememberOpenCardPage();
             _state = IslandState.Bar;
 
             // 开一段形变窗口（S3）：这条路径不走 SetState，得自己告诉宿主"要塌回收细条了"。
@@ -377,7 +371,7 @@ namespace alpha_island
 
             // 蓝牙通知也随收回重置
             _layers.Hide("bluetooth");
-            BtDeviceModel.IsRotating = false;
+            ActionIconMotion.Stop(BtIconContainer);
             BtNotifyLayer.IsHitTestVisible = false;
 
             // 电池与剪切板通知随收回重置
@@ -404,7 +398,7 @@ namespace alpha_island
             // 主元素的淡出由宿主的形变窗口随弹簧进度驱动，
             // 此处仅停止任何残余的独立动画，不立即隐藏内容层（时钟清理走宿主，避免标记不同步）。
             _layers.CancelPrimaryAnimation();
-            PillLayerTranslate?.BeginAnimation(TranslateTransform.XProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(PillLayerTranslate,TranslateTransform.XProperty, null);
             if (PillCoverHost != null)
             {
                 PillCoverHost.Opacity = 1;
@@ -412,7 +406,7 @@ namespace alpha_island
 
             // 卡片是本次收回的源层时不能提前折叠：它要留在屏幕上被 ApplyReveal 压到 0，
             // 否则收回的第一帧卡片内容直接消失（用户看到的"小岛返回时闪一下"）。
-            CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(CardCarouselHost,UIElement.OpacityProperty, null);
             if (prev != IslandState.Card)
             {
                 CardCarouselHost.Opacity = 0;
@@ -450,7 +444,7 @@ namespace alpha_island
                         PillLayerScale.ScaleX = 1.0;
                         PillLayerScale.ScaleY = 1.0;
                     }
-                    CardCarouselHost.BeginAnimation(UIElement.OpacityProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(CardCarouselHost,UIElement.OpacityProperty, null);
                     CardCarouselHost.Opacity = 0;
                     CardCarouselHost.IsHitTestVisible = false;
                     ClearCardTransitionBlur();

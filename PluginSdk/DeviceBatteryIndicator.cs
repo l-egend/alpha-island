@@ -66,9 +66,9 @@ public sealed class DeviceBatteryIndicator : FrameworkElement
     private void UpdateFill(bool animate)
     {
         double previous = DisplayFraction, target = (Percent ?? 0) / 100d;
-        BeginAnimation(DisplayFractionProperty, null); SetValue(DisplayFractionProperty, target);
+        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,DisplayFractionProperty, null); SetValue(DisplayFractionProperty, target);
         if (animate && CanAnimate && Percent.HasValue && Math.Abs(previous - target) > 0.001)
-            BeginAnimation(DisplayFractionProperty, new DoubleAnimation(previous, target, TimeSpan.FromMilliseconds(380))
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,DisplayFractionProperty, new DoubleAnimation(previous, target, TimeSpan.FromMilliseconds(380))
             { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop });
     }
     private void SyncCharging()
@@ -76,12 +76,12 @@ public sealed class DeviceBatteryIndicator : FrameworkElement
         bool animate = CanAnimate && IsCharging && Percent.HasValue;
         if (animate == _chargingAnimation) return;
         _chargingAnimation = animate;
-        BeginAnimation(ChargeOpacityProperty, null); SetValue(ChargeOpacityProperty, 1d);
-        if (animate) BeginAnimation(ChargeOpacityProperty, new DoubleAnimation(0.4, 1, TimeSpan.FromMilliseconds(850))
+        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,ChargeOpacityProperty, null); SetValue(ChargeOpacityProperty, 1d);
+        if (animate) AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,ChargeOpacityProperty, new DoubleAnimation(0.4, 1, TimeSpan.FromMilliseconds(850))
         { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
     }
     private void StopAnimations()
-    { UpdateFill(animate: false); _chargingAnimation = false; BeginAnimation(ChargeOpacityProperty, null); SetValue(ChargeOpacityProperty, 1d); }
+    { UpdateFill(animate: false); _chargingAnimation = false; AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,ChargeOpacityProperty, null); SetValue(ChargeOpacityProperty, 1d); }
     private void UpdateDescription()
     {
         string text = Percent.HasValue ? $"电量 {Percent}%" + (IsCharging ? "，充电中" : "") : "电量未知";

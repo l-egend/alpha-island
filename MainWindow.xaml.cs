@@ -224,10 +224,10 @@ namespace alpha_island
         {
             "greeting" => IslandActionType.Greeting,
             "volume" => IslandActionType.Volume,
-            "battery" => IslandActionType.Battery,
+            "battery" or "charging" or ChargingPreviewIslandKey => IslandActionType.Battery,
             "bluetooth" => IslandActionType.Bluetooth,
             "clipboard" => IslandActionType.Clipboard,
-            "netspeed" => IslandActionType.NetSpeed,
+            "netspeed" or "status" => IslandActionType.NetSpeed,
             "system" => IslandActionType.SysNotify,
             _ => IslandActionType.Music
         };
@@ -256,8 +256,8 @@ namespace alpha_island
         private const int HoverCollapseTicks = 6;
 
         // ================= 曲目与歌词 =================
-        private string _lastTitle = "";
-        private string _lastArtist = "";
+        
+        
         private LyricsDocument? _lyricsDoc;
         private readonly RectangleGeometry _lyricWipe = new();
         private bool _karaokeHooked;
@@ -278,7 +278,7 @@ namespace alpha_island
         private string _upNextKind = "upnext"; // "upnext" | "pause"
         private bool _upNextShowing;
         private DispatcherTimer? _upNextTimer;
-        private bool? _lastIsPlaying;
+        private bool? _lastIsPlaying => _workspace.Media.Current?.IsPlaying;
 
         private bool UpNextActive => _upNextShowing && DateTime.UtcNow < _upNextUntil;
 
@@ -286,7 +286,7 @@ namespace alpha_island
         /// 已经看到过至少一首曲目了。启动时 SMTC 第一次报上来的那首歌**不算换曲**，
         /// 否则每次开机都会平白弹一次提示。
         /// </summary>
-        private bool _sawMedia;
+        private bool _sawMedia => _workspace.Media.Current != null;
 
         /// <summary>PillLyric 不显示换曲提示时应该有的文本，由歌词/媒体逻辑维护。</summary>
         private string _pillLyricNormal = "Alpha Island";
@@ -308,6 +308,8 @@ namespace alpha_island
         // 隔离的界面验证入口：不占单实例锁，不注册托盘、钩子或后台服务。
         internal MainWindow(IslandOptions? isolatedOptions)
         {
+            _ticker = IslandTicker.Shared(Dispatcher);
+            _resourceMonitor = new SystemResourceMonitor(Dispatcher, _ticker, values: _workspace.Resources);
             _runtimeEnabled = isolatedOptions == null;
             // 单实例：第二次启动直接提示并退出，避免两个岛互相抢钩子
             if (_runtimeEnabled)
@@ -323,6 +325,8 @@ namespace alpha_island
             }
 
             InitializeComponent();
+            PillSpectrum.IsVisibleChanged += (_, _) => SyncSpectrumWork();
+            CardWave.IsVisibleChanged += (_, _) => SyncSpectrumWork();
 
             // 通知图层注册。此处就定义了"哪些弹出通知存在"，显隐/互斥/命中测试全部由
             // _layers 统一算（见 SyncNotificationLayers），不再逐个图层手写三行。
@@ -330,23 +334,21 @@ namespace alpha_island
             // 必须回应的用户动作/提醒 > 持续性背景状态。
             _layers.Register(new IslandLayerSpec(IslandLayerHost.GreetingKey, GreetingLayer, Priority: 100));
             _layers.Register(new IslandLayerSpec("bluetooth", BtNotifyLayer,
-                OnVisibilityChanged: visible => BtDeviceModel.IsRotating = visible,
                 Priority: 76));
             _layers.Register(new IslandLayerSpec("volume", VolumeNotifyLayer, Priority: 80));
-            _layers.Register(new IslandLayerSpec("battery", BatteryNotifyLayer, Priority: 72,
+            _layers.Register(new IslandLayerSpec("battery", BatteryNotifyLayer, Priority: 72, ForceActive: () => PowerAnimationHolding,
                 PriorityOverride: () => _battery?.Current?.EventType is BatteryPowerEvent.LowBattery or BatteryPowerEvent.CriticalBattery ? 84 : 72));
             _layers.Register(new IslandLayerSpec("clipboard", ClipboardNotifyLayer,
                 Scope: IslandLayerScope.PillOrClipboardPage,
                 // 老语义：ClipboardNotifyActive = _clipboardNotifying && (locked || 刚粘贴完)
                 ForceActive: () => _clipboardLocked || DateTime.UtcNow < _clipboardPastedUntil,
                 Priority: 56));
-            // A 组①：下行持续超过阈值时的提示（弹出时机由 MainWindow.MaybeAlertHighSpeed 决定）。
-            // 同一个层平时是"下载中"的网速胶囊（优先级 64，让位于下载卡片 66）；
-            // 阈值告警的那 4 秒用 PriorityOverride 升到 70 —— 否则下载提示每 2 秒续期一次，
-            // 告警的 Show 永远输在仲裁上：屏幕上什么都不出现，60 秒冷却却已经开始计时。
-            _layers.Register(new IslandLayerSpec("netspeed", NetSpeedNotifyLayer,
-                Priority: 64,
-                PriorityOverride: () => DateTime.UtcNow < _netSpeedAlertUntilUtc ? 70 : 64));
+            // 手动展开/置顶的完整状态栏；异常提醒由精简的 system 层呈现。
+            _layers.Register(new IslandLayerSpec("netspeed", NetSpeedNotifyLayer, Priority: 64));
+            _layers.Register(new IslandLayerSpec("status", ResourceStatusNotifyLayer, Priority: 64));
+            _layers.Register(new IslandLayerSpec(ChargingIslandKey, ChargingNotifyLayer, Priority: -5,
+                ForceActive: () => ChargingIslandActive));
+            _layers.Register(new IslandLayerSpec(ChargingPreviewIslandKey, ChargingPreviewNotifyLayer, Priority: -4));
             // A 组②③④⑤：内存/功率/飞行模式/隐私灯共用的"系统状态"提示层
             // （弹出前由 ShowSystemNotify 写字形/标题/说明/数值，所以加新提示不用再加 XAML 层）
             _layers.Register(new IslandLayerSpec("system", SystemNotifyLayer, Priority: 68));
@@ -354,9 +356,8 @@ namespace alpha_island
             // 一直占住胶囊，音乐图层自动让位；归零后由 SyncNotificationLayers 收回。
             _layers.Register(new IslandLayerSpec("agentstatus", AgentNotifyLayer,
                 // 有审批请求在等的时候让位：两层都是 328x32 居中，同时显示会叠在一起（审批本身已经说明"等待授权"）。
-                ForceActive: () => _approvalCurrent == null
-                                   && (AgentStatus.IsBusy || AgentStatus.State == AgentRunState.Error),
-                Priority: 48));
+                ForceActive: () => PrimaryAgentClaimActive,
+                Priority: 48, PriorityOverride: () => AgentSessionPriority(AgentTickerKey)));
             // B 组④：agent 工具权限审批（外部队列 → 用户点允许/拒绝或按 Y/N → 结果回传）。
             // 有待裁决请求时 ForceActive 一直占住，不靠超时续期；裁决后立刻 Hide。
             _layers.Register(new IslandLayerSpec("approval", ApprovalLayer,
@@ -401,12 +402,15 @@ namespace alpha_island
             _layers.SyncRequested = SyncNotificationLayers;
 
             _options = isolatedOptions ?? IslandOptions.Load();
+            InitializeLiquidGlass();
 
             // 卡拉OK 擦除：裁剪几何只挂一次，之后逐帧只改 Rect（见 OnKaraokeTick）
             LyricCurrentBright.Clip = _lyricWipe;
 
             _animator = new IslandAnimator(IslandBody, IslandTranslate, IslandSquash, SheenTranslate,
-                IslandShadow, SpecularBar, SpecularTranslate);
+                null, SpecularBar, SpecularTranslate, _liquidShape);
+            _animator.FrameApplied = OnLiquidMorphFrame;
+            _animator.RunningChanged = OnLiquidMorphRunning;
             // 内容层显露与封面球都挂在主弹簧的进度上：共用同一条时间轴，没有各自独立的淡入淡出。
             _animator.ProgressHook = OnMorphProgress;
             _animator.SetImmediate(BarGeometry);
@@ -418,9 +422,7 @@ namespace alpha_island
             _hoverTimer.Tick += HoverTimer_Tick;
             if (_runtimeEnabled) _hoverTimer.Start();
 
-            // 必须是 Background：Tick 里有一次同步的 WinRT 跨进程调用（GetPlaybackInfo），
-            // 用 Normal 会抢在鼠标输入（Input=5）与渲染（Render=7）之前执行，
-            // 翻页拖动时表现为"手一动就卡"，快速连翻直接卡死。
+            // 进度只读取本地估算；用 Background 避免与输入及动画争抢 UI 调度。
             _progressTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
                 Interval = TimeSpan.FromMilliseconds(100)
@@ -442,9 +444,7 @@ namespace alpha_island
                 _tray = new TrayIcon();
                 _tray.SettingsRequested += (_, __) => Dispatcher.BeginInvoke(DispatcherPriority.Normal, ShowSettings);
                 _tray.ExitRequested += (_, __) => Dispatcher.BeginInvoke(DispatcherPriority.Normal, ExitApplication);
-                _tray.MemoryTrimRequested += (_, __) => Dispatcher.BeginInvoke(DispatcherPriority.Normal, TrimMemoryNow);
                 _tray.Show();
-                _tray.SetMemoryTrimEnabled(SettingsRegistry.GetBool(_options, "MemoryTrimEnabled", false));
             }
 
             // 分页宿主必须先建：SetState(Card) 会按 Id 选页，而页集合是它的唯一真源。
@@ -521,19 +521,23 @@ namespace alpha_island
         private SettingsWindow CreateSettingsWindow()
         {
             var window = new SettingsWindow();
-            window.BindHardwarePowerActions(EnableHardwarePowerFromSettingsAsync);
+            if (_resourceMonitor.Power is { } power) window.UpdateHardwarePowerState(power);
             if (_plugins != null) window.BindPluginHost(_plugins);
-            window.Closed += (_, __) => _settingsWindow = null;
+            window.IsVisibleChanged += (_, _) => SyncResourceSampling();
+            window.Closed += (_, __) => { _settingsWindow = null; SyncResourceSampling(); };
             window.OptionsChanged += (_, options) =>
             {
                 _options.CopyFrom(options);
                 ApplyOptions();
             };
             window.ResetRequested += Settings_ResetRequested;
+            window.BatteryAnimationPreviewRequested += (_, powerEvent) => PreviewBatteryAnimation(powerEvent);
+            window.ChargingIslandPreviewRequested += (_, _) => PreviewChargingIsland();
+            window.SetLauncherStatus(_launcherHotkeyStatus);
             window.NotificationCenterRequested += (_, _) =>
             {
-                _notificationAutoCard = false;
                 SetState(IslandState.Card); SwitchCardPage(_pages.IndexOf(IslandPageIds.Notifications), animated: false);
+                ExpandCurrentNotification();
             };
             return window;
         }
@@ -591,6 +595,7 @@ namespace alpha_island
             byte bottomAlpha = (byte)Math.Clamp(Math.Round(22 + opacity * 230), 18, 255);
             GlassTopStop.Color = Color.FromArgb(topAlpha, 0x12, 0x12, 0x18);
             GlassBottomStop.Color = Color.FromArgb(bottomAlpha, 0x07, 0x07, 0x0B);
+            ApplyLiquidGlassAppearance();
 
             // 置顶提示用和主岛同一块玻璃底色（共享同一个画刷实例，所以上面的透明度改值会自动跟过来）。
             // 之前它是写死的纯色 #E5101016，比半透明的主岛实得多，浮在旁边很突兀。
@@ -612,7 +617,9 @@ namespace alpha_island
 
         private void ApplyOptions()
         {
-            _pomodoro.Configure(PomodoroOptions.From(_options));
+            ConfigureLauncher();
+            _productivity?.SetEnabled(SettingsRegistry.GetBool(_options, "ProductivityEnabled", true));
+            _workspace.Focus.Configure(PomodoroOptions.From(_options));
             SyncFocus();
             EnsureBackdrop();
             SyncBackdrop();
@@ -646,8 +653,11 @@ namespace alpha_island
             // 与「关掉 → 退订 + Dispose」三组手写分支已收敛到 _services.Sync 里，每个服务独立 try/catch。
             _services.Sync(_options);
             _plugins?.Sync(_options);
+            OnClipboardOptionsChanged();
             OnStatusDisplayOptionsChanged();
             OnDesktopNotificationOptionsChanged();
+            OnWeatherOptionsChanged();
+            RefreshExternalTranslation();
 
             // 分页宿主也吃设置：某页在当前设置下不可用时它就从翻页序列里下线（页与翻页点同源）。
             _pages.Sync(_options);
@@ -655,7 +665,6 @@ namespace alpha_island
             SyncPausedMediaVisibility();
 
             // AI 卡片页头部文字（模型名 / 密钥状态）跟着设置走。
-            OnAiOptionsChanged();
 
             // agent 状态色点 / 胶囊（B 组③）也吃设置里的开关。
             OnAgentOptionsChanged();
@@ -684,12 +693,15 @@ namespace alpha_island
 
         private void ExitApplication()
         {
+            _overlayZOrder?.Dispose(); _overlayZOrder = null;
+            RememberOpenCardPage();
             StopMediaWindowHandoff();
             EndVolumeDrag();
             CloseComponentSwitcher();
             if (!_runtimeEnabled)
             {
                 _plugins?.Dispose();
+                _resourceMonitor?.Dispose();
                 StopUtilities();
                 _hoverTimer?.Stop();
                 _progressTimer?.Stop();
@@ -702,6 +714,7 @@ namespace alpha_island
             _exiting = true;
             _plugins?.Dispose();
             StopUtilities();
+            _plugins?.ShutdownCompletion.Wait(TimeSpan.FromSeconds(2));
             IslandLog.Info("Island", "ExitApplication —— 开始优雅退出");
 
             try
@@ -724,9 +737,9 @@ namespace alpha_island
 
                 // 低频采样节拍先停（阶段 3.6）：服务释放期间不该再有任何 tick 回调进来
                 _ticker?.Dispose();
-                _ticker = null!;
 
                 StopKaraoke();
+                DisposeLiquidGlass();
                 _animator?.Stop();
                 CompositionTarget.Rendering -= OnBackdropTick;
                 _backdrop?.Dispose();
@@ -735,6 +748,7 @@ namespace alpha_island
                 // 服务释放统一走宿主（阶段 3.3）：逐个 try/catch，一个服务释放失败不连累其余。
                 // 顺序仍是「电池 → 剪切板/热键 → 蓝牙 → 音量 → 歌词 → 频谱 → SMTC → 文件中转站」。
                 _services?.StopAll();
+                _resourceMonitor?.Dispose();
 
                 // 屏幕右上角的占用灯是独立窗口（不进岛体窗口的矩形），必须单独收掉，
                 // 否则 Application.ShutdownMode=OnLastWindowClose 会因为它还开着而卡住退出。

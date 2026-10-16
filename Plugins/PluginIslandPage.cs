@@ -31,14 +31,18 @@ internal sealed class PluginIslandPage : IIslandPage
     public int Order => _page.Order;
     public double PreferredHeight => _page.Height;
     public UIElement View { get; }
-    public bool IsAvailable(IslandOptions options) => true;
+    public bool IsAvailable(IslandOptions options)
+    {
+        try { return _page.Available?.Invoke() ?? true; }
+        catch (Exception ex) { _failed(ex); return false; }
+    }
     internal bool KeepsWheel(DependencyObject? source, int delta)
     {
         bool consumes = false;
         for (var node = source; node != null; node = node is Visual || node is System.Windows.Media.Media3D.Visual3D
             ? VisualTreeHelper.GetParent(node) : (node as FrameworkContentElement)?.Parent)
         {
-            if (node is System.Windows.Controls.ComboBox or Slider) consumes = true;
+            if (node is Isolation.RemotePluginView or System.Windows.Controls.ComboBox or Slider) consumes = true;
             if (node is ScrollViewer scroll && (delta < 0
                 ? scroll.VerticalOffset < scroll.ScrollableHeight - 1
                 : delta > 0 && scroll.VerticalOffset > 1)) consumes = true;

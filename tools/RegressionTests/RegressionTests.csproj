@@ -10,7 +10,11 @@
     <AssemblyName>AlphaIsland.RegressionTests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App;Microsoft.WindowsDesktop.App.WPF;Microsoft.WindowsDesktop.App.WindowsForms"
+                             RuntimeFrameworkVersion="$(InstallerRuntimeVersion)" Condition="'$(InstallerRuntimeVersion)' != ''" />
     <ProjectReference Include="..\..\alpha-island.csproj" />
+    <ProjectReference Include="..\..\examples\ApiChatPlugin\ApiChatPlugin.csproj" />
+    <ProjectReference Include="..\..\examples\LocalAgentsPlugin\LocalAgentsPlugin.csproj" />
     <ProjectReference Include="..\..\examples\ClockPlugin\ClockPlugin.csproj" ReferenceOutputAssembly="false" AdditionalProperties="DeployPlugin=false" />
     <ProjectReference Include="..\..\examples\TrafficMonitorPlugin\TrafficMonitorPlugin.csproj" AdditionalProperties="DeployPlugin=false" />
     <ProjectReference Include="..\..\examples\OppoPodsPlugin\OppoPodsPlugin.csproj" AdditionalProperties="DeployPlugin=false" />

@@ -29,8 +29,8 @@ internal static partial class Program
             "读取设备名称、连接方式和成功连接时间三个字段");
         Check(!sample.IsCurrent && sample.Summary.StartsWith("最近"), "空连接列表不会因历史时间较新被误判为在线");
         Check(sample.DisplayTime == stamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), "连接时间转换为本机时间并显示完整日期");
-        Check(!sample.Summary.Contains("never-expose") && !typeof(VivoConnection).GetProperties().Any(p => p.Name is "IpAddress" or "Account" or "Storage"),
-            "插件快照与小岛摘要没有账号、IP 或存储字段");
+        Check(!sample.Summary.Contains("never-expose") && sample.IpAddress.Length == 0 && !typeof(VivoConnection).GetProperties().Any(p => p.Name is "Account" or "Storage"),
+            "非法地址不进入卡片；插件快照和摘要仍不包含账号或存储字段");
         Write(new[] { new { mobileDeviceName = "手机 B", device_id = "b", connectFlag = "USB", lastSuccessTime = stamp.AddMinutes(1).ToUnixTimeMilliseconds() } });
         sample = reader.Read();
         Check(sample.IsCurrent && sample.DeviceName == "手机 B" && sample.ConnectionMethod == "USB", "当前连接设备优先于历史设备");
@@ -95,22 +95,22 @@ internal static partial class Program
     private static void VivoPluginUiChecks(alpha_island.MainWindow window, Grid root, string testRoot)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var pages = (IslandPageHost)typeof(alpha_island.MainWindow).GetField("_pages", flags)!.GetValue(window)!;
-        var layers = (IslandLayerHost)typeof(alpha_island.MainWindow).GetField("_layers", flags)!.GetValue(window)!;
+        var pages = (IslandPageHost)ReadWindowMember(window, "_pages")!;
+        var layers = (IslandLayerHost)ReadWindowMember(window, "_layers")!;
         Check(pages.Pages.All(p => p.Id != "link" && p.Title != "应用联动") && !layers.IsRegistered("vivo"), "旧应用联动卡片与内置提示层已移除");
         Check(!SettingsRegistry.All.Any(s => s.Key == "VivoLinkEnabled") && !IslandServiceIds.All.Contains("vivolink"), "旧 vivo 开关和内置监控已移除");
         string pluginRoot = Path.Combine(testRoot, "vivo-plugins"), folder = Path.Combine(pluginRoot, "vivo.office"); Directory.CreateDirectory(folder);
-        string source = Path.GetFullPath("examples/VivoOfficePlugin/bin/Debug/net8.0-windows");
+        string source = Path.GetFullPath($"examples/VivoOfficePlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach (string name in new[] { "AlphaIsland.Plugins.VivoOffice.dll", "AlphaIsland.Plugins.VivoOffice.deps.json", "plugin.json" })
             File.Copy(name.EndsWith(".dll") ? typeof(VivoOfficePlugin).Assembly.Location
                 : name == "plugin.json" ? Path.GetFullPath("examples/VivoOfficePlugin/plugin.json") : Path.Combine(source, name),
                 Path.Combine(folder, name), true);
         string history = Path.Combine(testRoot, "vivo-ui-history.json");
-        File.WriteAllText(history, "{\"phone\":[],\"last_time_phone\":{\"mobileDeviceName\":\"测试手机\",\"connectFlag\":\"WLAN\",\"lastSuccessTime\":1791106200000}}");
+        File.WriteAllText(history, "{\"phone\":[],\"last_time_phone\":{\"mobileDeviceName\":\"测试手机\",\"connectFlag\":\"WLAN\",\"ip\":\"192.168.10.42\",\"lastSuccessTime\":1791106200000}}");
         var previousPath = Environment.GetEnvironmentVariable("ALPHA_ISLAND_VIVO_PATH");
         Environment.SetEnvironmentVariable("ALPHA_ISLAND_VIVO_PATH", history);
         var options = new IslandOptions(); SettingsRegistry.SetExtra(options, PluginHost.EnabledKey("vivo.office"), true);
-        var oldHost = (PluginHost?)typeof(alpha_island.MainWindow).GetField("_plugins", flags)!.GetValue(window); oldHost?.Dispose();
+        var oldHost = (PluginHost?)ReadWindowMember(window, "_plugins"); oldHost?.Dispose();
         using var host = new PluginHost(window.Dispatcher, options, new[] { pluginRoot },
             page => { window.CardViewport.Children.Add(page.View); pages.Register(page); },
             page => { PrivateCall(window, "RemoveCardPinLayer", page.Id); pages.Unregister(page.Id); window.CardViewport.Children.Remove(page.View); },
@@ -118,7 +118,7 @@ internal static partial class Program
         int notices = 0;
         host.PageNotificationRequested += (id, title, detail, seconds) =>
         { notices++; PrivateCall(window, "ShowPluginPageNotification", id, title, detail, seconds); };
-        typeof(alpha_island.MainWindow).GetField("_plugins", flags)!.SetValue(window, host);
+        WriteWindowMember(window, "_plugins", host);
         SettingsWindow? settings = null;
         try
         {
@@ -129,10 +129,17 @@ internal static partial class Program
             Check(entry.Context!.Settings.Count == 0 && entry.Context.Services.Count == 1, "插件仅注册连接读取服务，没有额外数据功能开关");
             PrivateCall(window, "SelectComponent", page.Id); PrivateCall(window, "SetState", IslandState.Card); root.UpdateLayout();
             var values = Descendants<TextBlock>(page.View).Where(t => t.Name.StartsWith("Vivo")).ToArray();
-            Check(values.Length == 3 && values.Single(t => t.Name == "VivoDeviceName").Text == "测试手机"
+            Check(values.Length == 4 && values.Single(t => t.Name == "VivoDeviceIp").Text == "192.168.10.42"
+                && values.Single(t => t.Name == "VivoDeviceName").Text == "测试手机"
                 && values.Single(t => t.Name == "VivoConnectionMethod").Text == "Wi-Fi"
-                && values.Single(t => t.Name == "VivoConnectionTime").Text.Contains("2026-10-04"), "卡片只显示名称、连接方式和连接时间");
+                && values.Single(t => t.Name == "VivoConnectionTime").Text.Contains("2026-10-04"), "卡片显示名称、连接方式、连接时间和内网 IP");
             Check(Descendants<TextBlock>(page.View).Any(t => t.Text == "最近设备"), "历史卡片明确标明最近设备");
+            Check(Descendants<TextBlock>(page.View).Any(t => t.Text == "最近内网 IP"), "历史地址明确标为最近内网 IP，不冒充实时地址");
+            Check(values.Append(Descendants<TextBlock>(page.View).First(text => text.Text == "vivo 手机")).All(text =>
+            {
+                var position=text.TranslatePoint(new System.Windows.Point(0,0),page.View);
+                return position.Y>=0 && position.Y+text.ActualHeight<=((FrameworkElement)page.View).ActualHeight+1;
+            }), "新增 IP 后标题和四行信息均完整位于卡片可见区域");
             SaveThemePreview((FrameworkElement)page.View, "docs/screens/vivo-plugin.png");
             PrivateCall(window, "CollapseToBar", true);
             File.WriteAllText(history, JsonSerializer.Serialize(new { phone = Array.Empty<object>(),

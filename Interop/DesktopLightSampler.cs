@@ -1,0 +1,98 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Media;
+using alpha_island.Core;
+using Color = System.Windows.Media.Color;
+using Point = System.Windows.Point;
+
+namespace alpha_island.Interop;
+
+/// <summary>Four 8x8 desktop patches; no full-screen texture, persistent bitmap or UI-thread readback.</summary>
+internal static class DesktopLightSampler
+{
+    private const int Patch = 8;
+    [StructLayout(LayoutKind.Sequential)] private struct BitmapInfo
+    {
+        public uint Size; public int Width, Height; public ushort Planes, Bits;
+        public uint Compression, ImageSize; public int X, Y; public uint Used, Important;
+    }
+    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr source);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateDIBSection(IntPtr dc, ref BitmapInfo info, uint usage, out IntPtr bits, IntPtr section, uint offset);
+    [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr value);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr value);
+    [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
+    [DllImport("gdi32.dll")] private static extern bool StretchBlt(IntPtr dest, int x, int y, int w, int h, IntPtr source, int sx, int sy, int sw, int sh, uint op);
+    [DllImport("gdi32.dll")] private static extern bool GdiFlush();
+    public readonly record struct Result(GlassLight Light, double Milliseconds, int Patches);
+
+    public static Rect DesktopBounds()
+    {
+        var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
+        try { return new Rect(GetSystemMetrics(76), GetSystemMetrics(77), GetSystemMetrics(78), GetSystemMetrics(79)); }
+        finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
+    }
+
+    public static Rect? ProbeArea(Rect island, Vector direction, Rect desktop, IReadOnlyList<Rect> exclusions)
+    {
+        foreach (double offset in new[] { 36d, 72, 120, 180 })
+        {
+            var center = new Point(island.Left + island.Width / 2 + direction.X * (island.Width / 2 + offset),
+                island.Top + island.Height / 2 + direction.Y * (island.Height / 2 + offset));
+            var area = new Rect(center.X - 10, center.Y - 10, 20, 20);
+            if (desktop.Contains(area) && !exclusions.Any(r => { r.Inflate(14, 14); return r.IntersectsWith(area); })) return area;
+        }
+        return null;
+    }
+
+    public static Result? Capture(Rect island, Rect desktop, Rect[] exclusions)
+    {
+        if (island.IsEmpty || desktop.IsEmpty || island.Width < 2 || island.Height < 2) return null;
+        var started = Stopwatch.GetTimestamp();
+        IntPtr screen = IntPtr.Zero, memory = IntPtr.Zero, bitmap = IntPtr.Zero, old = IntPtr.Zero;
+        var previousDpi = SetThreadDpiAwarenessContext(new IntPtr(-4));
+        try
+        {
+            screen = GetDC(IntPtr.Zero); if (screen == IntPtr.Zero) return null;
+            memory = CreateCompatibleDC(screen); if (memory == IntPtr.Zero) return null;
+            var info = new BitmapInfo { Size = (uint)Marshal.SizeOf<BitmapInfo>(), Width = Patch * 4, Height = -Patch, Planes = 1, Bits = 32 };
+            bitmap = CreateDIBSection(screen, ref info, 0, out IntPtr bits, IntPtr.Zero, 0);
+            if (bitmap == IntPtr.Zero || bits == IntPtr.Zero) return null;
+            old = SelectObject(memory, bitmap);
+            var samples = new List<GlassLightSample>(4);
+            var captured = new List<(int Slot, Vector Direction)>(4);
+            var directions = new[] { new Vector(-1, 0), new Vector(0, -1), new Vector(1, 0), new Vector(0, 1) };
+            for (int i = 0; i < directions.Length; i++)
+            {
+                var area = ProbeArea(island, directions[i], desktop, exclusions);
+                if (area is not Rect region || !StretchBlt(memory, i * Patch, 0, Patch, Patch, screen,
+                    (int)Math.Round(region.X), (int)Math.Round(region.Y), 20, 20, 0x00CC0020)) continue;
+                captured.Add((i, directions[i]));
+            }
+            GdiFlush(); // Finish this thread's GDI batch before reading DIB memory.
+            foreach (var item in captured)
+            {
+                int red = 0, green = 0, blue = 0;
+                for (int y = 0; y < Patch; y++) for (int x = 0; x < Patch; x++)
+                {
+                    uint pixel = unchecked((uint)Marshal.ReadInt32(bits, (y * Patch * 4 + item.Slot * Patch + x) * 4));
+                    blue += (int)(pixel & 255); green += (int)((pixel >> 8) & 255); red += (int)((pixel >> 16) & 255);
+                }
+                samples.Add(new(item.Direction, Color.FromRgb((byte)(red / 64), (byte)(green / 64), (byte)(blue / 64))));
+            }
+            return samples.Count == 0 ? null : new(GlassLighting.Estimate(samples), Stopwatch.GetElapsedTime(started).TotalMilliseconds, samples.Count);
+        }
+        finally
+        {
+            if (old != IntPtr.Zero && old != new IntPtr(-1)) SelectObject(memory, old);
+            if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
+            if (memory != IntPtr.Zero) DeleteDC(memory);
+            if (screen != IntPtr.Zero) ReleaseDC(IntPtr.Zero, screen);
+            if (previousDpi != IntPtr.Zero) SetThreadDpiAwarenessContext(previousDpi);
+        }
+    }
+}

@@ -6,7 +6,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Effects;
 using alpha_island.Animation;
 using alpha_island.Core;
 using alpha_island.Controls;
@@ -44,7 +43,10 @@ namespace alpha_island
         private double SatelliteWidth(string key) => key switch
         {
             "netspeed" => StatusSatelliteWidth,
+            "status" => ResourceSatelliteWidth,
+            "charging" or ChargingPreviewIslandKey => 100,
             "card/focus" => FocusSatelliteWidth,
+            _ when AgentHasDefaultAvatar(key) => 52,
             _ => 36
         };
 
@@ -58,9 +60,13 @@ namespace alpha_island
         private bool ShouldHidePausedMedia => SettingsRegistry.GetBool(_options, "MediaHideWhenPaused", false)
             && !_isPinned && _smtc?.Current?.State == PlaybackState.Paused
             && !(_upNextKind == "pause" && UpNextActive);
-        private bool MusicIslandCanShow => MusicIslandHasMedia && !ShouldHidePausedMedia && !ShouldHideForegroundMedia;
+        private bool MusicIslandCanShow => MusicIslandHasMedia && !ShouldHidePausedMedia && !ShouldHideForegroundMedia && (!GameDoNotDisturbActive || _isPinned);
         private bool HasVisibleMusicPin => _isPinned && MusicIslandHasMedia && !ShouldHideForegroundMedia;
 
+        // Window handoff owns the player's foreground/background lifetime. A playing
+        // background player stays available until it pauses, opens or is explicitly dismissed.
+        private bool KeepPlayingMusicIslandVisible => !_musicIslandDismissed && MusicIslandCanShow
+            && _smtc?.Current?.IsPlaying == true && (_options.KeepCompactWhilePlaying || MediaWindowHandoffEnabled);
         private bool CanRetainIsland(string key) => IsIslandActive(key);
 
         /// <summary>
@@ -69,6 +75,10 @@ namespace alpha_island
         /// </summary>
         private bool IsIslandActive(string key)
         {
+            // The expanded animation and compact view belong to one battery island.
+            if ((key is ChargingIslandKey or ChargingPreviewIslandKey) && (_powerTransitionPreparing || BatteryNotifyActive)) return false;
+            if (key == ChargingIslandKey && _layers.IsActive(ChargingPreviewIslandKey)) return false;
+            if (_layers.IsPresentationSuppressed(key)) return false;
             if (string.Equals(key, "music", StringComparison.Ordinal))
             {
                 // 音乐在有媒体播放、或被独立置顶时才作为卫星或主岛活跃，杜绝无音乐时强行常驻卫星栏
@@ -97,12 +107,12 @@ namespace alpha_island
                 CancelSiriOrb();
                 if (SiriOrb != null)
                 {
-                    SiriOrb.BeginAnimation(UIElement.OpacityProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(SiriOrb,UIElement.OpacityProperty, null);
                     SiriOrb.Opacity = 0;
                 }
                 if (OrbIconContainer != null)
                 {
-                    OrbIconContainer.BeginAnimation(UIElement.OpacityProperty, null);
+                    AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(OrbIconContainer,UIElement.OpacityProperty, null);
                     OrbIconContainer.Opacity = 0;
                 }
 
@@ -167,6 +177,7 @@ namespace alpha_island
         /// </summary>
         private void EnsureLayerContent(string key)
         {
+            if (AgentSession(key) is { } agent) { WriteAgentSession(agent); return; }
             if (CardPageFromPinKey(key) is { } page) { UpdateCardPinSummary(page); return; }
             switch (key)
             {
@@ -189,6 +200,16 @@ namespace alpha_island
                     }
                     break;
 
+                case "status":
+                    UpdateResourceStatus(ResourceStatusRates);
+                    break;
+                case ChargingPreviewIslandKey:
+                    SetChargingIslandContent(ChargingPreviewPrimary, ChargingPreviewIslandKey);
+                    break;
+
+                case "charging":
+                    ChargingPrimary.SetBattery(_chargingStatus);
+                    break;
                 case "netspeed":
                     var netSample = CurrentNetworkSample;
                     UpdateNetSpeedPrimary(netSample);
@@ -252,11 +273,14 @@ namespace alpha_island
             "battery" => BatteryNotifyLayer,
             "bluetooth" => BtNotifyLayer,
             "netspeed" => NetSpeedNotifyLayer,
+            "status" => ResourceStatusNotifyLayer,
+            "charging" => ChargingNotifyLayer,
+            ChargingPreviewIslandKey => ChargingPreviewNotifyLayer,
             "system" => SystemNotifyLayer,
             "clipboard" => ClipboardNotifyLayer,
             "approval" => ApprovalLayer,
             "agentstatus" or "ai" => AgentNotifyLayer,
-            _ => _cardPinViews.TryGetValue(layerKey, out var view) ? view.Root : null
+            _ => AgentSession(layerKey)?.Root ?? (_cardPinViews.TryGetValue(layerKey, out var view) ? view.Root : null)
         };
 
         private void FadeOutNotifyLayer(string layerKey)
@@ -264,7 +288,7 @@ namespace alpha_island
             UIElement? layer = GetNotifyLayerElement(layerKey);
             if (layer == null) return;
 
-            layer.BeginAnimation(UIElement.OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(layer,UIElement.OpacityProperty, null);
             if (alpha_island.Animation.MotionPolicy.InstantMorph)
             { layer.Opacity = 0; layer.Visibility = Visibility.Collapsed; return; }
             var fadeAnim = new DoubleAnimation(layer.Opacity, 0.0, TimeSpan.FromMilliseconds(180))
@@ -273,11 +297,11 @@ namespace alpha_island
             };
             fadeAnim.Completed += (_, _) =>
             {
-                layer.BeginAnimation(UIElement.OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(layer,UIElement.OpacityProperty, null);
                 layer.Opacity = 0.0;
                 layer.Visibility = Visibility.Collapsed;
             };
-            layer.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(layer,UIElement.OpacityProperty, fadeAnim);
         }
 
         private void AnimateIncomingNotifyLayer(string layerKey)
@@ -285,7 +309,7 @@ namespace alpha_island
             UIElement? layer = GetNotifyLayerElement(layerKey);
             if (layer == null) return;
 
-            layer.BeginAnimation(UIElement.OpacityProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(layer,UIElement.OpacityProperty, null);
             layer.Visibility = Visibility.Visible;
             if (alpha_island.Animation.MotionPolicy.InstantMorph) { layer.Opacity = 1; return; }
             var fadeAnim = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(220))
@@ -294,10 +318,10 @@ namespace alpha_island
             };
             fadeAnim.Completed += (_, _) =>
             {
-                layer.BeginAnimation(UIElement.OpacityProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(layer,UIElement.OpacityProperty, null);
                 layer.Opacity = 1.0;
             };
-            layer.BeginAnimation(UIElement.OpacityProperty, fadeAnim);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(layer,UIElement.OpacityProperty, fadeAnim);
         }
 
         /// <summary>
@@ -327,7 +351,7 @@ namespace alpha_island
             }
             foreach (var pinnedKey in _layers.PinnedKeys)
             {
-                candidateKeys.Add(pinnedKey);
+                if (IsIslandActive(pinnedKey)) candidateKeys.Add(pinnedKey);
             }
 
             // 保留当前正在展示的主岛与流转中的卫星小岛
@@ -344,7 +368,9 @@ namespace alpha_island
             }
 
             // 检查主岛流转：仅当主岛为非置顶且倒计时已结束的临时通知时自动流转；音乐与已置顶的小岛绝不被自动踢出，保障自由互相切换
-            bool mainInactive = !IsIslandActive(_activeMainIslandKey);
+            bool cardAgents = MultipleAgentCardIslands;
+            if (cardAgents) candidateKeys.RemoveWhere(k => !IsAgentIslandKey(k));
+            bool mainInactive = !cardAgents && !IsIslandActive(_activeMainIslandKey);
 
             if (mainInactive)
             {
@@ -381,7 +407,7 @@ namespace alpha_island
             }
 
             // 2. 当前应该在左侧显示的卫星小岛 = 所有活跃候选岛中，排除掉当前主岛
-            var desiredSatellites = candidateKeys.Where(k => !string.Equals(k, _activeMainIslandKey, StringComparison.Ordinal)).ToList();
+            var desiredSatellites = candidateKeys.Where(k => cardAgents || !string.Equals(k, _activeMainIslandKey, StringComparison.Ordinal)).ToList();
 
             // 维持现有排序并同步新增/移除
             _activeSatelliteOrder.RemoveAll(k => !desiredSatellites.Contains(k));
@@ -394,13 +420,15 @@ namespace alpha_island
             }
 
             // 3. 卫星小岛只在胶囊态（Pill）或中转站（Tray）形态展示
-            bool showSatellites = (_state == IslandState.Pill || _state == IslandState.Tray);
+            bool showSatellites = (_state == IslandState.Pill || _state == IslandState.Tray || cardAgents);
             if (!showSatellites)
             {
                 // 卡片展开时不能把仍可见的小岛留在旧坐标，或让音乐球穿过卡片内容退场。
                 HideAllSatellites(immediate: _state == IslandState.Card);
                 return;
             }
+
+            RegisterSatelliteRailEntries();
 
             // 4. 同步音乐卫星小岛（MusicOrbBubble）
             bool musicInSatellite = _activeSatelliteOrder.Contains("music");
@@ -450,7 +478,7 @@ namespace alpha_island
         /// <summary>
         /// 利用 SatelliteRail 统管计算所有左侧小岛的 X 坐标，并执行平滑动画排列。
         /// </summary>
-        private void LayoutSatelliteRail()
+        private void RegisterSatelliteRailEntries()
         {
             // 这里只重排本模块的小岛；旁路提示与置顶气泡共享车道，不能一起清除。
             _satellites.Unregister("music-orb");
@@ -467,10 +495,15 @@ namespace alpha_island
                 _satellites.Register(railKey, SatelliteSide.Left,
                     inner: () => CurrentIslandVisualWidth / 2.0 + 8.0,
                     width: () => orbWidth,
-                    visible: () => _state == IslandState.Pill || _state == IslandState.Tray,
+                    visible: () => _state == IslandState.Pill || _state == IslandState.Tray || MultipleAgentCardIslands,
                     gap: 8.0);
             }
 
+        }
+
+        private void LayoutSatelliteRail()
+        {
+            RegisterSatelliteRailEntries();
             // 2. 依次计算目标偏移并驱动平滑动画排列
             for (int i = 0; i < _activeSatelliteOrder.Count; i++)
             {
@@ -492,68 +525,45 @@ namespace alpha_island
             }
         }
 
+        // Keep the rail attached while the main island changes width. Registration and
+        // content stay unchanged; only the visible orb offsets follow this morph frame.
+        private void SyncSatelliteOrbOffsets()
+        {
+            if (_state is not (IslandState.Pill or IslandState.Tray) && !MultipleAgentCardIslands) return;
+            foreach (string key in _activeSatelliteOrder)
+            {
+                string railKey = key == "music" ? "music-orb" : "orb-" + key;
+                if (!_satellites.IsVisible(railKey)) continue;
+                TranslateTransform? translate = key == "music" ? MusicOrbTranslate
+                    : _satelliteOrbViews.TryGetValue(key, out var orb) && orb.Visibility == Visibility.Visible
+                        && orb.RenderTransform is TransformGroup group ? group.Children.OfType<TranslateTransform>().FirstOrDefault() : null;
+                if (translate == null) continue;
+                double target = _satellites.Offset(railKey);
+                if (Math.Abs(translate.X - target) < .5) continue;
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate,TranslateTransform.XProperty, null);
+                translate.X = target;
+            }
+        }
+
         /// <summary>
         /// 卫星小岛从主岛向左滑出的流体动画与轻微弹性形变（同音乐圆球效果）。
         /// </summary>
         private void AnimateOrbSlideOut(string key, Border orb)
         {
-            if (orb.RenderTransform is TransformGroup tg)
-            {
-                var tt = tg.Children.OfType<TranslateTransform>().FirstOrDefault();
-                var st = tg.Children.OfType<ScaleTransform>().FirstOrDefault();
-                if (tt != null && st != null)
-                {
-                    string railKey = string.Equals(key, "music", StringComparison.Ordinal) ? "music-orb" : ("orb-" + key);
-                    double targetX = _satellites.Offset(railKey);
-                    if (alpha_island.Animation.MotionPolicy.InstantMorph || alpha_island.Animation.MotionPolicy.PowerSave)
-                    {
-                        tt.BeginAnimation(TranslateTransform.XProperty, null);
-                        st.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-                        st.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-                        tt.X = targetX; st.ScaleX = st.ScaleY = 1; return;
-                    }
-                    var splineGlide = new KeySpline(0.16, 0.90, 0.35, 1.0);
-
-                    double startX = -CurrentIslandVisualWidth / 2.0;
-                    tt.X = startX;
-
-                    var moveFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(420) };
-                    moveFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(startX, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-                    moveFrames.KeyFrames.Add(new SplineDoubleKeyFrame(targetX - 4.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), splineGlide));
-                    moveFrames.KeyFrames.Add(new SplineDoubleKeyFrame(targetX, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420))));
-
-                    var scaleXFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(420) };
-                    scaleXFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-                    scaleXFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.15, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160)), splineGlide));
-                    scaleXFrames.KeyFrames.Add(new SplineDoubleKeyFrame(0.96, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320))));
-                    scaleXFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420))));
-
-                    var scaleYFrames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(420) };
-                    scaleYFrames.KeyFrames.Add(new DiscreteDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-                    scaleYFrames.KeyFrames.Add(new SplineDoubleKeyFrame(0.88, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160)), splineGlide));
-                    scaleYFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.04, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320))));
-                    scaleYFrames.KeyFrames.Add(new SplineDoubleKeyFrame(1.00, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420))));
-
-                    tt.BeginAnimation(TranslateTransform.XProperty, moveFrames);
-                    st.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXFrames);
-                    st.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYFrames);
-                }
-            }
+            string railKey = key == "music" ? "music-orb" : "orb-" + key;
+            bool batteryHandoff = key == _powerCompactEmergingKey;
+            if (batteryHandoff) _powerCompactEmergingKey = null;
+            double startX = batteryHandoff ? 0 : -CurrentIslandVisualWidth / 2.0 + orb.Width * .60;
+            SatelliteOrbAnimator.SlideOut(orb, startX, _satellites.Offset(railKey));
         }
 
-        private static void AnimateOrbTranslate(TranslateTransform tt, double targetX)
+        private void AnimateOrbTranslate(TranslateTransform tt, double targetX)
         {
-            if (alpha_island.Animation.MotionPolicy.InstantMorph || alpha_island.Animation.MotionPolicy.PowerSave)
-            { tt.BeginAnimation(TranslateTransform.XProperty, null); tt.X = targetX; return; }
-            if (Math.Abs(tt.X - targetX) < 1.0) return;
-
-            var anim = new DoubleAnimation(tt.X, targetX, TimeSpan.FromMilliseconds(280))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            tt.BeginAnimation(TranslateTransform.XProperty, anim);
+            foreach (var border in _glassBorders)
+                if (border.RenderTransform is TransformGroup group && group.Children.Contains(tt))
+                { SatelliteOrbAnimator.TranslateTo(border, targetX); return; }
+            AnimationReset.Translate(tt); tt.X = targetX;
         }
-
         /// <summary>
         /// 确保指定图层的卫星小岛 Border 已被创建并挂载到 SatellitesHost。
         /// </summary>
@@ -578,16 +588,16 @@ namespace alpha_island
         /// </summary>
         private Border CreateSatelliteOrb(string key)
         {
-            bool isNetwork = key == "netspeed";
+            bool isNetwork = key is "netspeed" or "status" or "charging" or ChargingPreviewIslandKey;
             double orbWidth = SatelliteWidth(key);
-            double orbHeight = isNetwork ? IslandSizing.NetworkSatelliteHeight : 36.0;
+            double orbHeight = isNetwork ? IslandSizing.NetworkSatelliteHeight : AgentHasDefaultAvatar(key) ? 44 : 36.0;
 
             var orb = new Border
             {
                 Width = orbWidth,
                 Height = orbHeight,
                 CornerRadius = new CornerRadius(orbHeight / 2),
-                Margin = isNetwork ? new Thickness(0, IslandMetrics.PillTop + (IslandMetrics.PillHeight - orbHeight) / 2 - 18, 0, 0) : new Thickness(0),
+                Margin = isNetwork ? new Thickness(0, IslandMetrics.PillTop + (IslandMetrics.PillHeight - orbHeight) / 2 - 18, 0, 0) : new Thickness(0, (36 - orbHeight) / 2, 0, 0),
                 Background = IslandBody.Background,
                 BorderBrush = (Brush)FindResource("GlassEdgeBrush"),
                 BorderThickness = new Thickness(1),
@@ -598,17 +608,12 @@ namespace alpha_island
                 RenderTransformOrigin = new Point(0.5, 0.5),
                 ClipToBounds = true,
                 Opacity = 1.0,
-                ToolTip = $"{GetSatelliteDisplayName(key)}（左键展开为主岛，右键切换置顶）"
+                ToolTip = key is ChargingIslandKey or ChargingPreviewIslandKey
+                    ? "电池电量（左键查看系统状态，右键置顶或取消置顶）"
+                    : $"{GetSatelliteDisplayName(key)}（左键展开为主岛，右键切换置顶）"
             };
 
-            orb.Effect = new DropShadowEffect
-            {
-                BlurRadius = 16,
-                ShadowDepth = 4,
-                Direction = 270,
-                Color = Color.FromRgb(0, 0, 0),
-                Opacity = 0.55
-            };
+            // Rounded material layers provide depth without pixels outside the island outline.
 
             var tg = new TransformGroup();
             var st = new ScaleTransform(1.0, 1.0);
@@ -616,10 +621,23 @@ namespace alpha_island
             tg.Children.Add(st);
             tg.Children.Add(tt);
             orb.RenderTransform = tg;
+            RegisterLiquidChrome(orb);
 
-            var grid = new Grid();
+            var grid = new RoundedClipGrid();
+            grid.SetBinding(RoundedClipGrid.CornerRadiusProperty,
+                new System.Windows.Data.Binding(nameof(Border.CornerRadius)) { Source = orb });
+            grid.SetBinding(RoundedClipGrid.BorderInsetProperty,
+                new System.Windows.Data.Binding(nameof(Border.BorderThickness)) { Source = orb });
 
-            if (string.Equals(key, "netspeed", StringComparison.Ordinal))
+            if (key == "status")
+            {
+                var status = new SystemStatusPill(compact: true); UpdateResourceStatus(status); grid.Children.Add(status);
+            }
+            else if (key is ChargingIslandKey or ChargingPreviewIslandKey)
+            {
+                var charging = new BatteryChargePill(compact: true); SetChargingIslandContent(charging, key); grid.Children.Add(charging);
+            }
+            else if (string.Equals(key, "netspeed", StringComparison.Ordinal))
             {
                 var rates = new alpha_island.Controls.NetworkSpeedPill(compact: true);
                 var sample = CurrentNetworkSample;
@@ -629,9 +647,10 @@ namespace alpha_island
             else
             {
                 // 中心专属模块图标
-                var iconBlock = new TextBlock
+                var iconBlock = new SemanticIcon
                 {
                     Name = "OrbGlyph",
+                    Width = 26, Height = 26,
                     Text = GetCurrentLayerGlyph(key),
                     FontFamily = new FontFamily("Segoe MDL2 Assets"),
                     FontSize = 14,
@@ -639,6 +658,8 @@ namespace alpha_island
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center
                 };
+                UpdateSatelliteIconMetadata(key, iconBlock);
+                ActionIconMotion.SetKind(iconBlock, SatelliteIconAnimation(key));
                 if (key == "card/focus")
                 {
                     grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -655,10 +676,37 @@ namespace alpha_island
                     Grid.SetColumn(time, 1); grid.Children.Add(time);
                 }
                 grid.Children.Add(iconBlock);
+                if (AgentSession(key) is { } agent)
+                {
+                    var badge = new TextBlock { Name = "AgentSessionBadge", FontSize = 8, FontWeight = FontWeights.SemiBold,
+                        Text = (agent.Source == "claude-code" ? "Cl" : AgentSourceName(agent.Source)[..1]) + agent.Number, Foreground = System.Windows.Media.Brushes.White,
+                        Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(170, 0, 0, 0)),
+                        Padding = new Thickness(1, 0, 1, 0), HorizontalAlignment = HorizontalAlignment.Right,
+                        VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 2, 3), IsHitTestVisible = false };
+                    grid.Children.Add(badge);
+                }
+                if (key == DesktopToastKey)
+                {
+                    var counter = DesktopNotificationCard.ActionButton("", OpenDesktopNotificationStack);
+                    counter.Name = "NotificationStackCount"; counter.FontSize = 8; counter.Padding = new Thickness(3, 0, 3, 0);
+                    counter.MinHeight = 17; counter.MinWidth = 19; counter.Margin = new Thickness(0, 0, -2, -1);
+                    counter.HorizontalAlignment = HorizontalAlignment.Right; counter.VerticalAlignment = VerticalAlignment.Bottom;
+                    counter.Visibility = Visibility.Collapsed; System.Windows.Controls.Panel.SetZIndex(counter, 3); grid.Children.Add(counter);
+                }
+                if (key == DesktopToastKey || key == "bluetooth")
+                {
+                    var iconImage = new System.Windows.Controls.Image
+                    {
+                        Name = key == DesktopToastKey ? "OrbAppLogo" : "OrbDeviceArt", Width = 26, Height = 26, Stretch = Stretch.Uniform,
+                        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                        Visibility = Visibility.Collapsed, IsHitTestVisible = false
+                    };
+                    grid.Children.Add(iconImage);
+                }
             }
 
             // 右上角独立置顶指示小图标
-            var pinBlock = new TextBlock
+            var pinBlock = new AlphaIsland.PluginSdk.GlyphIcon
             {
                 Name = "OrbPinIcon",
                 Text = "\uE718",
@@ -679,12 +727,12 @@ namespace alpha_island
             orb.PreviewMouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
-                if (!TryOpenAgentIsland(key)) SwitchMainIsland(key);
+                if (!TryOpenMessengerNotification(key) && !TryOpenAgentIsland(key) && !TryOpenBatteryIsland(key)) SwitchMainIsland(key);
             };
             orb.MouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
-                if (!TryOpenAgentIsland(key)) SwitchMainIsland(key);
+                if (!TryOpenMessengerNotification(key) && !TryOpenAgentIsland(key) && !TryOpenBatteryIsland(key)) SwitchMainIsland(key);
             };
 
             // 鼠标右键点击：独立置顶/取消置顶
@@ -704,6 +752,16 @@ namespace alpha_island
         {
             bool isPinned = _layers.IsPinned(key);
 
+            if (IsAgentIslandKey(key))
+            {
+                bool enlarged = AgentHasDefaultAvatar(key);
+                orb.Width = SatelliteWidth(key); orb.Height = enlarged ? 44 : 36;
+                orb.CornerRadius = new CornerRadius(orb.Height / 2);
+                orb.Margin = new Thickness(0, (36 - orb.Height) / 2, 0, 0);
+                orb.ToolTip = AgentLabel(key) + " · " + AgentStateTitle(AgentStateFor(key)) + "（左键打开助手，右键置顶）";
+                if (orb.Child is Grid agentGrid && agentGrid.Children.OfType<TextBlock>().FirstOrDefault(t => t.Name == "AgentSessionBadge") is { } badge)
+                    badge.Visibility = AgentSession(key)?.Icon.Source != null ? Visibility.Collapsed : Visibility.Visible;
+            }
             // 边框发光
             orb.BorderBrush = isPinned
                 ? (Brush)FindResource("AccentCyan")
@@ -712,12 +770,24 @@ namespace alpha_island
             // 置顶图钉图标与中心内容
             if (orb.Child is Grid grid)
             {
-                var pinIcon = grid.Children.OfType<TextBlock>().FirstOrDefault(t => t.Name == "OrbPinIcon");
+                var pinIcon = grid.Children.OfType<AlphaIsland.PluginSdk.GlyphIcon>().FirstOrDefault(t => t.Name == "OrbPinIcon");
                 if (pinIcon != null)
                 {
                     pinIcon.Visibility = isPinned ? Visibility.Visible : Visibility.Collapsed;
                 }
 
+                if (key == "status")
+                {
+                    orb.Width = ResourceSatelliteWidth;
+                    if (grid.Children.OfType<SystemStatusPill>().FirstOrDefault() is { } status) UpdateResourceStatus(status);
+                    return;
+                }
+                if (key is ChargingIslandKey or ChargingPreviewIslandKey)
+                {
+                    if (grid.Children.OfType<BatteryChargePill>().FirstOrDefault() is { } charging) SetChargingIslandContent(charging, key);
+                    if (key == ChargingPreviewIslandKey) orb.ToolTip = isPinned ? "充电小岛测试已置顶（右键取消）" : "充电小岛测试（右键置顶，默认8秒后收回）";
+                    return;
+                }
                 if (string.Equals(key, "netspeed", StringComparison.Ordinal))
                 {
                     var sample = CurrentNetworkSample;
@@ -732,16 +802,127 @@ namespace alpha_island
                         var time = grid.Children.OfType<TextBlock>().FirstOrDefault(t => t.Name == "OrbTime");
                         if (time != null) time.Text = _pomodoro.DisplayRemaining();
                     }
-                    var glyph = grid.Children.OfType<TextBlock>().FirstOrDefault(t => t.Name == "OrbGlyph");
+                    var glyph = grid.Children.OfType<SemanticIcon>().FirstOrDefault(t => t.Name == "OrbGlyph");
                     if (glyph != null)
                     {
-                        glyph.Text = GetCurrentLayerGlyph(key);
+                        string nextGlyph = GetCurrentLayerGlyph(key);
+                        int? weatherCode = key switch
+                        {
+                            DesktopToastKey => _notificationSummary.Icon.WeatherCode,
+                            "weather" or "card/weather" => _weatherSnapshot?.Code,
+                            _ => null,
+                        };
+                        bool changed = glyph.Text != nextGlyph || glyph.WeatherCode != weatherCode;
+                        glyph.Text = nextGlyph;
                         glyph.Foreground = GetLayerBrush(key);
+                        UpdateSatelliteIconMetadata(key, glyph);
+                        ActionIconMotion.SetKind(glyph, SatelliteIconAnimation(key));
+                        if (changed) ActionIconMotion.Play(glyph);
+                    }
+                    if (key == DesktopToastKey)
+                    {
+                        if (grid.Children.OfType<System.Windows.Controls.Button>().FirstOrDefault(button => button.Name == "NotificationStackCount") is { } counter)
+                        {
+                            counter.Content = NotificationStackCount >= 50 ? "50+" : NotificationStackCount.ToString();
+                            counter.Visibility = NotificationStackCount > 1 ? Visibility.Visible : Visibility.Collapsed;
+                            counter.ToolTip = $"展开 {NotificationStackCount} 条堆叠通知";
+                        }
+                        var appLogo = grid.Children.OfType<System.Windows.Controls.Image>().FirstOrDefault(i => i.Name == "OrbAppLogo");
+                        if (appLogo != null)
+                        {
+                            bool newNotice = !Equals(appLogo.Tag, _desktopCurrent?.Key);
+                            if (newNotice) appLogo.Tag = _desktopCurrent?.Key;
+                            appLogo.Source = _notificationSummary.IconImage.Source;
+                            appLogo.Visibility = Visibility.Collapsed;
+                            if (glyph != null)
+                            {
+                                glyph.Source = appLogo.Source;
+                                glyph.Visibility = Visibility.Visible;
+                                if (newNotice) { ActionIconMotion.Stop(glyph); ActionIconMotion.Play(glyph); }
+                            }
+                        }
+                    }
+                    else if (key == "bluetooth")
+                    {
+                        var deviceArt = grid.Children.OfType<System.Windows.Controls.Image>().FirstOrDefault(i => i.Name == "OrbDeviceArt");
+                        if (deviceArt != null)
+                        {
+                            bool changed = deviceArt.Tag is not int revision || revision != _btMotionRevision;
+                            if (changed) deviceArt.Tag = _btMotionRevision;
+                            deviceArt.Source = BtDeviceArt.Source;
+                            deviceArt.Opacity = BtDeviceArt.Opacity;
+                            deviceArt.Visibility = Visibility.Collapsed;
+                            if (glyph != null)
+                            {
+                                glyph.Source = deviceArt.Source;
+                                glyph.Visibility = Visibility.Visible;
+                                ActionIconMotion.SetKind(glyph, ActionIconMotion.GetKind(BtIconContainer));
+                                glyph.Opacity = 1;
+                                if (changed) { ActionIconMotion.Stop(glyph); ActionIconMotion.Play(glyph); }
+                            }
+                        }
                     }
                 }
             }
 
-            orb.ToolTip = $"{GetSatelliteDisplayName(key)}（{(isPinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）";
+            orb.ToolTip = key == DesktopToastKey && _desktopCurrent is { CanOpenApp: true } notice
+                && MessengerIdentity.FromNotification(notice) is { } messenger
+                ? $"{MessengerIdentity.Name(messenger)}（左键打开应用，右键切换置顶）"
+                : $"{GetSatelliteDisplayName(key)}（{(isPinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）";
+        }
+
+        private ActionIconAnimation SatelliteIconAnimation(string key) => IsAgentIslandKey(key) ? AgentMotion(key) : key switch
+        {
+            "bluetooth" => _btDisplayedConnected ? ActionIconAnimation.Connect : ActionIconAnimation.Disconnect,
+            "card/focus" or "download" or "clipboard" or "approval" => ActionIconAnimation.Tick,
+            _ => ActionIconAnimation.Pulse,
+        };
+
+        private void UpdateSatelliteIconMetadata(string key, SemanticIcon icon)
+        {
+            if (IsAgentIslandKey(key))
+            {
+                icon.Shape = IconShape.Agent; icon.Active = AgentStateFor(key) != AgentRunState.Idle;
+                ApplyAgentArtwork(key, icon);
+                return;
+            }
+            icon.Shape = key switch
+            {
+                "bluetooth" => BtDeviceIcon.Shape,
+                "volume" => IconShape.Volume,
+                "battery" => IconShape.Battery,
+                "agentstatus" or "ai" => IconShape.Agent,
+                "approval" => IconShape.Approval,
+                "clipboard" => IconShape.Clipboard,
+                "download" => IconShape.Download,
+                "card/focus" => IconShape.Timer,
+                "weather" or "card/weather" => IconShape.Weather,
+                DesktopToastKey => _notificationSummary.Icon.Shape,
+                _ => IconShape.Auto,
+            };
+            icon.Active = key switch
+            {
+                "bluetooth" => _btDisplayedConnected,
+                "volume" => !(_volumeService?.IsMuted ?? false),
+                "battery" => _battery?.Current is { } battery && (battery.IsCharging || battery.IsOnAcPower == true),
+                "agentstatus" or "ai" => AgentStatus.IsBusy,
+                "card/focus" => _pomodoro.Running,
+                DesktopToastKey => _notificationSummary.Icon.Active,
+                _ => true,
+            };
+            icon.Level = key switch
+            {
+                "volume" => Math.Clamp(_volumeDisplayPercent / 100.0, 0, 1),
+                "battery" => _battery?.Current is { Percent: >= 0 } battery ? Math.Clamp(battery.Percent / 100.0, 0, 1) : 1,
+                DesktopToastKey => _notificationSummary.Icon.Level,
+                _ => 1,
+            };
+            icon.WeatherCode = key switch
+            {
+                DesktopToastKey => _notificationSummary.Icon.WeatherCode,
+                "weather" or "card/weather" => _weatherSnapshot?.Code,
+                _ => null,
+            };
         }
 
         /// <summary>
@@ -805,9 +986,9 @@ namespace alpha_island
             }
         }
 
-        private static void AnimateHideSatelliteOrb(Border orb)
+        private void AnimateHideSatelliteOrb(Border orb)
         {
-            SatelliteOrbAnimator.Hide(orb, MotionPolicy.InstantMorph || MotionPolicy.PowerSave);
+            SatelliteOrbAnimator.Return(orb, -CurrentIslandVisualWidth / 2.0 + orb.Width * .36, MotionPolicy.InstantMorph || MotionPolicy.PowerSave);
         }
 
         /// <summary>
@@ -852,6 +1033,7 @@ namespace alpha_island
         /// </summary>
         private string GetCurrentLayerGlyph(string key)
         {
+            if (IsAgentIslandKey(key)) return AgentGlyph(key);
             return key switch
             {
                 "music" => "\uE8D6", // 音乐音符
@@ -861,39 +1043,47 @@ namespace alpha_island
                     ? BtDeviceIcon.Text
                     : "\uE7F6",
                 "download" => "\uE896",    // 下载箭头
-                "netspeed" => "\uE895",    // 双向网速
+                "netspeed" => AlphaIsland.PluginSdk.GlyphArtwork.NetworkTransferGlyph,    // 双向网速
+                "status" => "\uE950",
+                "charging" or ChargingPreviewIslandKey => "\uE83F",
                 "system" => SysNotifyGlyph?.Text ?? "\uE7F4",
-                DesktopToastKey => DesktopEventAppearance.For(_desktopCurrent?.Kind ?? DesktopEventKind.Message).Glyph,
+                DesktopToastKey => _notificationSummary.Icon.Text,
                 "clipboard" => (ClipboardIcon != null && !string.IsNullOrEmpty(ClipboardIcon.Text)) ? ClipboardIcon.Text : "\uE8C8",   // 剪贴板
                 "approval" => "\uE73E",    // 审批勾
-                "agentstatus" or "ai" => "\uE99A", // AI 助手
+                "agentstatus" => AgentNotifyGlyph?.Text ?? "\uE99A",
+                "ai" => "\uE99A", // AI 助手
                 _ => CardPageFromPinKey(key) is { } page ? CardPinGlyph(page) : "\uE700"
             };
         }
 
         private Brush GetLayerBrush(string key)
         {
+            if (IsAgentIslandKey(key)) return AgentBrush(key);
             return key switch
             {
                 "download" => new SolidColorBrush(Color.FromRgb(0x34, 0xD3, 0x99)),
                 "battery" => BatteryIcon.Foreground,
+                "charging" or ChargingPreviewIslandKey => System.Windows.Media.Brushes.LimeGreen,
                 "volume" => VolumeIcon.Foreground,
                 "system" => SysNotifyGlyph.Foreground,
-                DesktopToastKey => new SolidColorBrush(DesktopEventAppearance.For(_desktopCurrent?.Kind ?? DesktopEventKind.Message).Color),
+                DesktopToastKey => _notificationSummary.Icon.Foreground,
                 "bluetooth" => new SolidColorBrush(Colors.White),
                 _ => (Brush)FindResource("AccentCyan")
             };
         }
 
-        private string GetSatelliteDisplayName(string key) => key switch
+        private string GetSatelliteDisplayName(string key) => IsAgentIslandKey(key) ? AgentLabel(key) : key switch
         {
             "music" => "媒体播放器",
             "volume" => "系统音量",
             "download" => "下载任务",
             "battery" => "电池状态",
             "bluetooth" => "蓝牙设备",
-            "netspeed" => "系统状态与网络",
-            "system" => "系统事件",
+            "netspeed" => "实时网速",
+            "status" => "系统状态",
+            "charging" => "充电电量",
+            ChargingPreviewIslandKey => "充电小岛测试",
+            "system" => !string.IsNullOrWhiteSpace(SysNotifyTitle.Text) ? SysNotifyTitle.Text : "系统事件",
             DesktopToastKey => _notificationSummary.Title.Text,
             "clipboard" => "剪贴板",
             "approval" => "权限审批",

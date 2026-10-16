@@ -16,7 +16,7 @@ async function fixture(options = {}) {
     if (req.method === 'DELETE') { requests.push({ cancel: req.url }); pendingResponse?.end(JSON.stringify({ approved: false })); return respond({ ok: true }); }
     requests.push(body);
     if (options.pending) { pendingResponse = res; return; }
-    respond({ approved: options.approved ?? false, decidedBy: options.decidedBy ?? 'mouse', timedOut: options.timedOut ?? false });
+    respond({ id: options.wrongId ? 'unrelated' : body.id, approved: options.approved ?? false, decidedBy: options.decidedBy ?? 'mouse', timedOut: options.timedOut ?? false });
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const listeners = new Map(), cleanup = [];
@@ -43,7 +43,7 @@ test('native approval receives only a one-shot user grant', async () => {
   } finally { await f.close(); }
 });
 test('deny and timeout never grant a tool', async () => {
-  for (const options of [{ approved: false }, { approved: false, timedOut: true }, { approved: true, timedOut: true }, { approved: true, decidedBy: 'api' }]) {
+  for (const options of [{ approved: false }, { approved: false, timedOut: true }, { approved: true, timedOut: true }, { approved: true, decidedBy: 'api' }, { approved: true, wrongId: true }]) {
     const f = await fixture(options);
     try { assert.equal(await f.ask(), 'rejected'); } finally { await f.close(); }
   }
@@ -64,6 +64,7 @@ test('agent events show work and release the claim when done', async () => {
     assert.ok(f.statuses.some(s => s.state === 'thinking'));
     assert.ok(f.statuses.some(s => s.state === 'streaming'));
     assert.ok(f.statuses.some(s => s.session !== `p${process.pid}-connection` && s.state === 'idle'));
+    assert.ok(f.statuses.every(s => s.processId === process.pid));
     assert.ok(!JSON.stringify(f.statuses).includes('private chat content'));
   } finally { await f.close(); }
 });

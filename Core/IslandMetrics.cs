@@ -50,12 +50,14 @@ namespace alpha_island.Core
 
         // ================= 二级展开：完整卡片 =================
         public const double CardWidth = 430;
-        /// <summary>无歌词时的卡片高度。</summary>
+        /// <summary>通用卡片最低高度。</summary>
         public const double CardHeight = 138;
+        /// <summary>音乐卡片为曲目信息和独立的控制行留出空间。</summary>
+        public const double MusicCardHeight = 192;
         /// <summary>通用详情页高度。</summary>
         public const double CardHeightLyrics = 214;
         /// <summary>音乐歌词卡片的独立高度，容纳行距与可选翻译，不影响其他详情页。</summary>
-        public const double MusicCardHeightLyrics = 246;
+        public const double MusicCardHeightLyrics = 300;
         public const double CardTop = 18;
         public const double CardCornerRadius = 28;
 

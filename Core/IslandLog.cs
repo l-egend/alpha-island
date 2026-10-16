@@ -23,7 +23,7 @@ namespace alpha_island.Core
     ///     最老的丢弃。旧实现是 File.AppendAllText 无限增长（实测被 SMTC 探针刷到 278KB 且永不回收）；
     ///   - 全程 try/catch 吞掉自身异常 —— 日志失败绝不能让应用挂掉。
     ///
-    /// 线程安全：所有状态都在 Gate 下访问。文件写入也在锁内串行，避免多线程交错写坏行。
+    /// 线程安全：内存环形缓冲和入队在 Gate 下串行；后台单消费者批量写入并轮转，不在 UI 线程碰磁盘。
     /// </summary>
     public static class IslandLog
     {
@@ -37,14 +37,23 @@ namespace alpha_island.Core
 
         private static readonly object Gate = new();
         private static readonly LogEntry[] Ring = new LogEntry[RingCapacity];
-        private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
         private static int _ringCount;
         private static int _ringNext;
         private static long _sequence;
+        private static readonly Lazy<RollingFileLogSink> FileSink = new(() => new(AppPaths.ErrorLogFile, MaxFileBytes, MaxFiles));
+        public static bool Flush(TimeSpan timeout) => !FileSink.IsValueCreated || FileSink.Value.FlushAsync(timeout).GetAwaiter().GetResult();
+        public static string FileDiagnostics => !FileSink.IsValueCreated ? "文件日志尚未启动"
+            : $"后台写入；排队 {FileSink.Value.Pending}；拥塞丢弃 {FileSink.Value.Dropped}；写入失败 {FileSink.Value.WriteFailures}";
 
         /// <summary>低于该级别的日志直接丢弃。</summary>
-        public static IslandLogLevel MinLevel { get; set; } = IslandLogLevel.Debug;
+        public static IslandLogLevel MinLevel { get; set; } =
+#if DEBUG
+            IslandLogLevel.Debug;
+#else
+            IslandLogLevel.Info;
+#endif
+        public static bool IsEnabled(IslandLogLevel level) => level >= MinLevel;
 
         /// <summary>是否写文件。设 false 只留内存缓冲（诊断导出仍可用）。</summary>
         public static bool FileSinkEnabled { get; set; } = true;
@@ -60,6 +69,10 @@ namespace alpha_island.Core
 
         public static void Trace(string source, string message) => Write(IslandLogLevel.Trace, source, message);
         public static void Debug(string source, string message) => Write(IslandLogLevel.Debug, source, message);
+        public static void Debug(string source, ref DebugLogInterpolatedStringHandler message)
+        {
+            if (message.Enabled) Write(IslandLogLevel.Debug, source, message.GetText());
+        }
         public static void Info(string source, string message) => Write(IslandLogLevel.Info, source, message);
         public static void Warn(string source, string message) => Write(IslandLogLevel.Warn, source, message);
 
@@ -126,55 +139,10 @@ namespace alpha_island.Core
 
         private static void AppendToFile(LogEntry entry)
         {
-            try
-            {
-                AppPaths.EnsureRoot();
-                var path = AppPaths.ErrorLogFile;
-                RotateIfNeeded(path);
-                File.AppendAllText(path, entry + Environment.NewLine, Utf8NoBom);
-            }
-            catch
-            {
-                // 磁盘满 / 无权限：静默放弃文件 sink，内存缓冲仍然有效。
-            }
-        }
-
-        private static void RotateIfNeeded(string path)
-        {
-            try
-            {
-                var fi = new FileInfo(path);
-                if (!fi.Exists || fi.Length < MaxFileBytes) return;
-
-                // 最老的直接删，其余整体顺移一位，最后把当前文件改名成 .1
-                var oldest = RotatedPath(path, MaxFiles - 1);
-                if (File.Exists(oldest)) File.Delete(oldest);
-
-                for (int i = MaxFiles - 2; i >= 1; i--)
-                {
-                    var from = RotatedPath(path, i);
-                    if (File.Exists(from)) File.Move(from, RotatedPath(path, i + 1), overwrite: true);
-                }
-
-                File.Move(path, RotatedPath(path, 1), overwrite: true);
-            }
-            catch
-            {
-                // 轮转失败就继续追加，下次再试。
-            }
-        }
-
-        /// <summary>error.log + index=1 → error.1.log</summary>
-        private static string RotatedPath(string basePath, int index)
-        {
-            var dir = Path.GetDirectoryName(basePath);
-            if (string.IsNullOrEmpty(dir)) dir = ".";
-            var name = Path.GetFileNameWithoutExtension(basePath);
-            var ext = Path.GetExtension(basePath);
-            return Path.Combine(dir, $"{name}.{index}{ext}");
+            try { FileSink.Value.TryWrite(entry.ToString(), entry.Level >= IslandLogLevel.Warn); }
+            catch { /* The in-memory ring remains available if a sink cannot start. */ }
         }
     }
-
     /// <summary>
     /// 把 <c>System.Diagnostics.Debug.WriteLine</c> / <c>Trace.WriteLine</c> 接进 IslandLog。
     ///
@@ -200,7 +168,7 @@ namespace alpha_island.Core
 
         public override void WriteLine(string? message)
         {
-            if (string.IsNullOrWhiteSpace(message)) return;
+            if (!IslandLog.IsEnabled(_level) || string.IsNullOrWhiteSpace(message)) return;
 
             // 既有调用点大多写成 "[Bluetooth] xxx"，把方括号前缀提成 Source，
             // 日志行就跟老格式一致了：(Bluetooth) xxx

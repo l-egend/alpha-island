@@ -105,7 +105,7 @@ namespace alpha_island
             if (!active && _cover3DRotateY != null)
             {
                 // 退回 2D 时把角度归零：下次再开起来是正对镜头，不会停在侧对的位置。
-                _cover3DRotateY.BeginAnimation(AxisAngleRotation3D.AngleProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_cover3DRotateY,AxisAngleRotation3D.AngleProperty, null);
                 _cover3DRotateY.Angle = 0;
             }
 
@@ -172,7 +172,7 @@ namespace alpha_island
             if (art == null)
             {
                 // 没有封面时 3D 卡片是透明的，把角度复位就行（不播翻转）。
-                _cover3DRotateY.BeginAnimation(AxisAngleRotation3D.AngleProperty, null);
+                AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_cover3DRotateY,AxisAngleRotation3D.AngleProperty, null);
                 _cover3DRotateY.Angle = 0;
                 return;
             }
@@ -189,7 +189,7 @@ namespace alpha_island
                 if (ok == true) _cover3DProbed = true;
             }
 
-            _cover3DRotateY.BeginAnimation(AxisAngleRotation3D.AngleProperty, null);
+            AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(_cover3DRotateY,AxisAngleRotation3D.AngleProperty, null);
 
             if (MotionPolicy.ReduceMotion)
             {
@@ -201,9 +201,9 @@ namespace alpha_island
             var flip = new DoubleAnimation(-90, 0, TimeSpan.FromMilliseconds(Cover3DFlipMs))
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                FillBehavior = FillBehavior.HoldEnd,
+                FillBehavior = FillBehavior.Stop,
             };
-            _cover3DRotateY.BeginAnimation(AxisAngleRotation3D.AngleProperty, flip);
+            AnimationReset.Once(_cover3DRotateY, AxisAngleRotation3D.AngleProperty, flip, 0d);
             IslandLog.Debug("Cover3D", $"封面翻转：-90° → 0°（{Cover3DFlipMs:F0}ms，渲染层级=Tier {MotionPolicy.RenderTier}）");
         }
 

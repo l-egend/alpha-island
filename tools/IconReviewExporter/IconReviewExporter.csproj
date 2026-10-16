@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>AlphaIsland.IconReviewExporter</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- .cs.txt keeps the application's default recursive Compile glob untouched. -->
+    <Compile Include="Program.cs.txt" />
+    <ProjectReference Include="..\..\alpha-island.csproj" />
+  </ItemGroup>
+</Project>

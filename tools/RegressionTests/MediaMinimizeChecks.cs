@@ -25,7 +25,7 @@ internal static partial class Program
         SetWatcherField(watcher, "_kind", MediaWindowKind.DesktopPlayer);
         SetWatcherField(watcher, "_nextResolve", long.MaxValue);
         WatcherCall(watcher, "SuppressTransitions");
-        ((DispatcherTimer)typeof(MediaWindowService).GetField("_timer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(watcher)!).Stop();
+        ((IslandTimer)typeof(MediaWindowService).GetField("_timer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(watcher)!).Stop();
         var origin = root.PointToScreen(new Point(200, 120));
         var state = new MediaWindowState(fixtureHandle, MediaWindowKind.DesktopPlayer, new Rect(origin.X, origin.Y, 800, 600), false, true);
         typeof(MediaWindowService).GetProperty("Current", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(watcher, state);
@@ -36,7 +36,8 @@ internal static partial class Program
             while (AgentField<bool>(window, "_mediaHandoffInFlight")
                 && elapsed.ElapsedMilliseconds < MediaHandoffOverlay.DurationMilliseconds + 600)
                 PumpAnimations(10);
-            Check(!AgentField<bool>(window, "_mediaHandoffInFlight"), "媒体动画在有界等待内完成交接");
+            var pending = AgentField<MediaHandoffOverlay?>(window, "_mediaHandoff");
+            Check(!AgentField<bool>(window, "_mediaHandoffInFlight"), $"媒体动画在有界等待内完成交接 (progress={pending?.Progress}, source={((pending == null) ? null : AgentField<Task?>(pending, "_sourceCommit"))?.Status}, destination={((pending == null) ? null : AgentField<Task?>(pending, "_destinationCommit"))?.Status})");
         }
         try
         {

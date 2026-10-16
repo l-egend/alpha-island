@@ -23,7 +23,7 @@ namespace alpha_island.Core
         // ── 第一批新增（A/B 组，随功能落地逐个注册）──
         public const string Telemetry = "telemetry";
         public const string NetworkSpeed = "networkspeed";
-        public const string MemoryTrim = "memorytrim";
+        public const string MemoryMonitor = "memory";
         public const string PrivacyIndicator = "privacyindicator";
         public const string AiChat = "aichat";
         public const string AgentBridge = "agentbridge";
@@ -36,14 +36,16 @@ namespace alpha_island.Core
         public const string Cpu = "cpu";
         public const string HardwarePower = "hardwarepower";
         public const string DesktopNotifications = "desktopnotifications";
+        public const string MessengerNotifications = "messengernotifications";
         public const string SessionEvents = "sessionevents";
+        public const string GameActivity = "gameactivity";
 
         /// <summary>全部 Id（按注册顺序无关；用于自检与文档）。</summary>
         public static IReadOnlyList<string> All { get; } = new[]
         {
             Smtc, Spectrum, Lyrics, Clipboard, FileTransfer, Volume, Battery, Bluetooth,
-            Telemetry, NetworkSpeed, MemoryTrim, PrivacyIndicator, AiChat, AgentBridge,
-            TrafficMonitorLink, DownloadMonitor, Cpu, HardwarePower, DesktopNotifications, SessionEvents,
+            Telemetry, NetworkSpeed, MemoryMonitor, PrivacyIndicator, AiChat, AgentBridge,
+            TrafficMonitorLink, DownloadMonitor, Cpu, HardwarePower, DesktopNotifications, MessengerNotifications, SessionEvents, GameActivity,
         };
 
         /// <summary>Id → 中文显示名的兜底映射（服务自己的 <c>DisplayName</c> 优先）。</summary>
@@ -59,7 +61,7 @@ namespace alpha_island.Core
             Bluetooth => "蓝牙设备监听",
             Telemetry => "系统状态采样（飞行模式）",
             NetworkSpeed => "网速与下载进度",
-            MemoryTrim => "内存占用与一键整理",
+            MemoryMonitor => "内存占用采样",
             PrivacyIndicator => "麦克风摄像头指示灯",
             AiChat => "AI 对话",
             AgentBridge => "Agent 状态与审批",
@@ -68,7 +70,9 @@ namespace alpha_island.Core
             Cpu => "CPU 占用采样",
             HardwarePower => "CPU＋GPU 硬件功耗",
             DesktopNotifications => "Windows 通知监听",
+            MessengerNotifications => "QQ / 微信新消息提醒",
             SessionEvents => "锁屏与解锁事件",
+            GameActivity => "游戏自动免打扰",
             _ => id,
         };
     }

@@ -20,27 +20,33 @@ namespace alpha_island;
 public partial class MainWindow
 {
     private const string DesktopToastKey = "desktoptoast";
-    private readonly DesktopNotificationInbox _desktopInbox = new();
-    private DesktopNotificationPolicy _desktopPolicy = null!;
+    private DesktopNotificationInbox _desktopInbox => _workspace.Notifications.Inbox;
+    private DesktopNotificationPolicy _desktopPolicy => _workspace.Notifications.Policy ?? throw new InvalidOperationException("通知策略尚未初始化");
     private SystemToastService? _systemToasts;
-    private DesktopNotification? _desktopCurrent;
+    private Action<DesktopNotification>? _suppressSystemPopup;
+    private DesktopNotification? _desktopCurrent { get => _workspace.Notifications.Current; set => _workspace.Notifications.Current = value; }
     private Grid _notificationsView = null!;
     private UIElement? _notificationRoot;
     private StackPanel _notificationList = null!;
     private TextBlock _notificationAccessText = null!;
     private DesktopNotificationPill _notificationSummary = null!;
     private CheckBox _notificationQuiet = null!;
-    private DispatcherTimer? _notificationUiTimer;
-    private DateTimeOffset _desktopExpires;
-    private bool _sessionEventsStarted, _sessionLocked, _notificationAutoCard, _notificationAutoPill, _refreshingQuiet;
+    private IslandTimer? _notificationUiTimer;
+    private DateTimeOffset _desktopExpires { get => _workspace.Notifications.Expires; set => _workspace.Notifications.Expires = value; }
+    private DateTime _notificationCalendarDate = DateTime.MinValue;
+    private bool _sessionEventsStarted, _sessionLocked, _notificationAutoPill, _refreshingQuiet;
     private IslandState _notificationReturnState;
     private string _notificationReturnKey = "music";
 
     private void RegisterDesktopNotificationPage()
     {
-        _desktopPolicy = new DesktopNotificationPolicy(_options);
+        _workspace.Notifications.Policy = new DesktopNotificationPolicy(_options, () => GameDoNotDisturbActive);
+        if (_runtimeEnabled) _workspace.Notifications.AttachArchive(System.IO.Path.Combine(AppPaths.Root, "notification-history.dat"),
+            SettingsRegistry.GetBool(_options, "NotificationRememberHistory", true), IslandTicker.Shared(Dispatcher));
+        RegisterGameQuietLayer();
         _notificationRoot = Content as UIElement;
         _notificationSummary = new DesktopNotificationPill();
+        _notificationSummary.StackRequested += OpenDesktopNotificationStack;
         ((Panel)NetSpeedNotifyLayer.Parent).Children.Add(_notificationSummary);
         _layers.Register(new IslandLayerSpec(DesktopToastKey, _notificationSummary, Priority: 60,
             PriorityOverride: () => _desktopCurrent == null ? 60 : _desktopPolicy.Priority(_desktopCurrent)));
@@ -50,23 +56,46 @@ public partial class MainWindow
         _notificationsView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         var heading = new StackPanel { Margin = new Thickness(4, 4, 4, 6) };
         var bar = new Grid(); bar.ColumnDefinitions.Add(new ColumnDefinition()); bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        bar.Children.Add(UtilityText("通知中心", 14));
+        _notificationHistoryTitle = UtilityText("通知中心", 14); bar.Children.Add(_notificationHistoryTitle);
         var quietLabel = UtilityText("静默", 10); quietLabel.VerticalAlignment = VerticalAlignment.Center; quietLabel.Margin = new Thickness(0, 0, 7, 0);
         Grid.SetColumn(quietLabel, 1); bar.Children.Add(quietLabel);
         _notificationQuiet = new CheckBox { Style = (Style)FindResource("W11Switch"), VerticalAlignment = VerticalAlignment.Center };
         _notificationQuiet.Checked += (_, _) => SetNotificationQuiet(true); _notificationQuiet.Unchecked += (_, _) => SetNotificationQuiet(false);
         Grid.SetColumn(_notificationQuiet, 2); bar.Children.Add(_notificationQuiet); heading.Children.Add(bar);
         _notificationAccessText = UtilityText("等待通知授权", 10); heading.Children.Add(_notificationAccessText);
+        _notificationStackBack = DesktopNotificationCard.ActionButton("全部通知", ShowAllDesktopNotifications);
+        _notificationStackBack.HorizontalAlignment = HorizontalAlignment.Left; _notificationStackBack.Visibility = Visibility.Collapsed; heading.Children.Add(_notificationStackBack);
         heading.Children.Add(UtilityButtons(DesktopNotificationCard.ActionButton("授权读取", async () => await RequestToastAccessAsync()),
             DesktopNotificationCard.ActionButton("权限设置", OpenNotificationPrivacySettings), DesktopNotificationCard.ActionButton("清空记录", ClearDesktopInbox)));
+        var filters = new Grid { Margin = new Thickness(0, 5, 0, 0) };
+        filters.ColumnDefinitions.Add(new ColumnDefinition()); filters.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var search = new System.Windows.Controls.TextBox { MinHeight = 25, Margin = new Thickness(0, 0, 6, 0), ToolTip = "搜索应用、联系人或消息内容" };
+        _notificationSearch = search; search.TextChanged += (_, _) => { _workspace.Notifications.Search = search.Text.Trim(); RefreshDesktopInbox(); };
+        filters.Children.Add(search);
+        var levels = new System.Windows.Controls.ComboBox { ItemsSource = new[] { "全部通知", "重要及以上", "紧急通知" }, SelectedIndex = 0, MinWidth = 98 };
+        _notificationLevels = levels; levels.SelectionChanged += (_, _) => { _workspace.Notifications.MinimumImportance = (NotificationImportance)Math.Max(0, levels.SelectedIndex); RefreshDesktopInbox(); };
+        Grid.SetColumn(levels, 1); filters.Children.Add(levels); heading.Children.Add(filters);
         _notificationsView.Children.Add(heading);
         _notificationList = new StackPanel();
         var scroll = new ScrollViewer { Content = _notificationList, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         // 消息列表的滚轮用于阅读，不向岛内翻页冒泡。
-        scroll.PreviewMouseWheel += (_, e) => { scroll.ScrollToVerticalOffset(scroll.VerticalOffset - e.Delta / 3.0); e.Handled = true; };
+        scroll.PreviewMouseWheel += (_, e) =>
+        {
+            for (DependencyObject? node = e.OriginalSource as DependencyObject; node != null;
+                node = node is System.Windows.Media.Visual ? System.Windows.Media.VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
+            {
+                if (node is System.Windows.Controls.TextBox { IsReadOnly: true } reader)
+                {
+                    reader.ScrollToVerticalOffset(reader.VerticalOffset - e.Delta / 3.0);
+                    e.Handled = true; return;
+                }
+                if (ReferenceEquals(node, scroll)) break;
+            }
+            scroll.ScrollToVerticalOffset(scroll.VerticalOffset - e.Delta / 3.0); e.Handled = true;
+        };
         Grid.SetRow(scroll, 1); _notificationsView.Children.Add(scroll); CardViewport.Children.Add(_notificationsView);
         _pages.Register(new DelegateIslandPage(IslandPageIds.Notifications, "通知中心", _notificationsView, 8,
-            300, activated: () => { _notificationAutoCard = false; RefreshDesktopInbox(); },
+            366, activated: RefreshDesktopInbox, deactivated: () => { _workspace.Notifications.ExpandedKeys = null; _workspace.Notifications.ExpandedApplications.Clear(); },
             viewportChanged: height => _notificationsView.Height = height));
         RefreshDesktopInbox();
     }
@@ -74,14 +103,17 @@ public partial class MainWindow
     {
         if (_systemToasts != null) return;
         _systemToasts = new SystemToastService(Dispatcher);
+        _systemToasts.SetBannerReplacementEnabled(SettingsRegistry.GetBool(_options, "NotificationReplaceSystemPopup", true));
+        _suppressSystemPopup = item => _systemToasts?.SuppressPopup(item);
         _systemToasts.Received += OnSystemToastsReceived;
         _systemToasts.StatusChanged += RefreshDesktopAccess;
         _systemToasts.Start(); StartNotificationUiTimer();
     }
     private void StopSystemToastService()
     {
-        _systemToasts?.Dispose(); _systemToasts = null;
-        _desktopInbox.DropPending(); FinishDesktopPopup(); RefreshDesktopAccess(); StopNotificationTimerIfUnused();
+        _systemToasts?.Dispose(); _systemToasts = null; _suppressSystemPopup = null;
+        if (_messengerNotifications == null) { _desktopInbox.DropPending(); FinishDesktopPopup(); }
+        RefreshDesktopAccess(); StopNotificationTimerIfUnused();
     }
     private async System.Threading.Tasks.Task RequestToastAccessAsync()
     {
@@ -94,48 +126,67 @@ public partial class MainWindow
     private static void OpenNotificationPrivacySettings()
     {
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:privacy-notifications") { UseShellExecute = true }); }
-        catch (Exception ex) { IslandLog.Warn("Toast", "打开系统通知权限页失败：" + ex.Message); }
+        catch (Exception ex)
+        {
+            IslandLog.Warn("Toast", "打开通知读取权限页失败，尝试通知设置：" + ex.Message);
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:notifications") { UseShellExecute = true }); }
+            catch (Exception fallback) { IslandLog.Warn("Toast", "打开通知设置失败：" + fallback.Message); }
+        }
     }
     private void RefreshDesktopAccess()
     {
-        if (_notificationAccessText != null) _notificationAccessText.Text = _systemToasts?.Status ?? "通知监听已关闭";
+        if (_notificationAccessText != null) _notificationAccessText.Text = (_systemToasts == null ? "Windows 通知监听已关闭"
+            : _systemToasts.Status + " · " + _systemToasts.BannerTakeoverStatus)
+            + (_messengerNotifications == null ? "" : "\n" + _messengerNotifications.Status)
+            + (GameDoNotDisturbActive ? "\n游戏免打扰已开启 · " + _gameQuietName : "");
     }
     private void OnSystemToastsReceived(System.Collections.Generic.IReadOnlyList<DesktopNotification> messages, bool initial)
-    {
-        if (_exiting) return;
-        foreach (var item in messages)
-        {
-            if (!_desktopPolicy.Accepts(item)) continue;
-            _desktopInbox.Add(item, !initial && _desktopPolicy.CanPopup(item, _sessionLocked), _desktopPolicy);
-        }
-        RefreshDesktopInbox(); TickDesktopNotifications();
-    }
+        => ReceiveDesktopNotifications(messages, initial, MessengerNoticeSource.Windows);
     private void RefreshDesktopInbox()
     {
         if (_notificationList == null) return;
-        _refreshingQuiet = true; _notificationQuiet.IsChecked = SettingsRegistry.GetBool(_options, "NotificationQuietMode", false); _refreshingQuiet = false;
+        _refreshingQuiet = true; _notificationQuiet.IsChecked = NotificationQuietEffective; _refreshingQuiet = false;
+        _notificationQuiet.IsEnabled = !GameDoNotDisturbActive;
+        _notificationQuiet.ToolTip = GameDoNotDisturbActive ? "游戏退出后恢复你原来的静默设置" : "普通消息仅保留在通知中心";
         RefreshDesktopAccess();
         if (_pages.ActiveId != IslandPageIds.Notifications) return;
-        _notificationList.Children.Clear();
-        var history = _desktopInbox.History.Where(_desktopPolicy.Accepts).ToArray();
-        if (_desktopCurrent != null) history = new[] { _desktopCurrent }.Concat(history.Where(x => x.Key != _desktopCurrent.Key)).ToArray();
-        history = history.Take(50).ToArray();
-        foreach (var item in history)
-        {
-            var card = new DesktopNotificationCard(item);
-            card.OpenRequested += OpenDesktopNotificationApp;
-            card.DismissRequested += value => { _desktopInbox.Dismiss(value.Key); if (_desktopCurrent?.Key == value.Key) FinishDesktopPopup(); RefreshDesktopInbox(); };
-            card.BlockAppRequested += BlockDesktopNotificationApp;
-            _notificationList.Children.Add(card);
-        }
-        if (history.Length == 0) _notificationList.Children.Add(UtilityText("暂无通知。授权后接收新消息；静默消息保留在这里。", 11));
+        RenderDesktopNotificationStacks();
         RefreshDesktopAccess();
     }
-    private void OpenDesktopNotificationApp(DesktopNotification item)
+    private bool _openingDesktopApp;
+    private Func<DesktopNotification, bool> _notificationAppOpener = item => MessengerIdentity.FromNotification(item) is { } client
+        ? MessengerWindowReader.TryOpen(client) : NotificationAppLauncher.TryOpen(item.AppId);
+    private async void OpenDesktopNotificationApp(DesktopNotification item)
     {
-        if (_sessionLocked || !item.CanOpenApp) return;
-        if (!NotificationAppLauncher.TryOpen(item.AppId)) _notificationAccessText.Text = "无法打开此应用，请从开始菜单打开。";
-        else FinishDesktopPopup();
+        if (!_sessionLocked && item.Kind == DesktopEventKind.Weather)
+        { FinishDesktopPopup(); SelectComponent("weather"); return; }
+        if (_sessionLocked || !item.CanOpenApp || _openingDesktopApp) return;
+        _openingDesktopApp = true;
+        string? popupKey = _desktopCurrent?.Key;
+        try
+        {
+            bool opened = await Task.Run(() => _notificationAppOpener(item));
+            if (_sessionLocked) return;
+            if (!opened) _notificationAccessText.Text = MessengerIdentity.FromNotification(item) is { } messenger
+                ? "无法调用" + MessengerIdentity.Name(messenger) + "入口，请从右下角托盘打开。" : "无法打开此应用，请从开始菜单打开。";
+            else if (_desktopCurrent?.Key == popupKey) FinishDesktopPopup();
+        }
+        catch (Exception ex) { IslandLog.Debug("Notifications", "应用跳转失败：" + ex.GetType().Name); }
+        finally { _openingDesktopApp = false; }
+    }
+    private bool TryOpenMessengerNotification(string? key)
+    {
+        if (key != DesktopToastKey || _desktopCurrent is not { CanOpenApp: true } item
+            || MessengerIdentity.FromNotification(item) == null) return false;
+        // Reuse the asynchronous, guarded tray activation used by the app button.
+        OpenDesktopNotificationApp(item);
+        return true;
+    }
+    private void ExpandCurrentNotification()
+    {
+        var current = DesktopNotificationCards
+            .FirstOrDefault(card => card.Notification.Key == _desktopCurrent?.Key);
+        current?.SetFullContentExpanded(true);
     }
     private void BlockDesktopNotificationApp(DesktopNotification item)
     {
@@ -143,7 +194,9 @@ public partial class MainWindow
         string current = SettingsRegistry.GetText(_options, "NotificationBlockedApps", "");
         SettingsRegistry.Write(_options, "NotificationBlockedApps", current.Length == 0 ? item.AppId : current + ";" + item.AppId);
         if (_runtimeEnabled) _options.Save(allowRecovery: true);
-        if (_desktopCurrent?.AppId == item.AppId) FinishDesktopPopup(); RefreshDesktopInbox();
+        NotificationBurst.Retain(value => _desktopPolicy.CanPopup(value, _sessionLocked));
+        if (NotificationBurst.Count > 0) RefreshNotificationStackPresentation();
+        else if (_desktopCurrent?.AppId == item.AppId) FinishDesktopPopup(); RefreshDesktopInbox();
     }
     private void SetNotificationQuiet(bool quiet)
     {
@@ -154,58 +207,73 @@ public partial class MainWindow
     }
     private void OnDesktopNotificationOptionsChanged()
     {
-        if (_desktopCurrent != null && !_desktopPolicy.CanPopup(_desktopCurrent, _sessionLocked)) FinishDesktopPopup();
+        _workspace.Notifications.SetRemember(SettingsRegistry.GetBool(_options, "NotificationRememberHistory", true));
+        SyncVolumeFlyoutTakeover();
+        _systemToasts?.SetBannerReplacementEnabled(SettingsRegistry.GetBool(_options, "NotificationReplaceSystemPopup", true));
+        if (NotificationBurst.Count > 0)
+        {
+            NotificationBurst.Retain(item => _desktopPolicy.CanPopup(item, _sessionLocked));
+            if (NotificationBurst.Count == 0) FinishDesktopPopup(); else RefreshNotificationStackPresentation();
+        }
+        else if (_desktopCurrent != null && !_desktopPolicy.CanPopup(_desktopCurrent, _sessionLocked)) FinishDesktopPopup();
         RefreshDesktopInbox();
     }
-    private void ClearDesktopInbox() { _desktopInbox.Clear(); FinishDesktopPopup(); RefreshDesktopInbox(); }
+    private void ClearDesktopInbox() { _workspace.Notifications.ExpandedApplications.Clear(); _desktopInbox.Clear(); FinishDesktopPopup(); RefreshDesktopInbox(); }
     private void StartNotificationUiTimer()
     {
         if (_notificationUiTimer != null) return;
-        _notificationUiTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(300) };
+        _notificationUiTimer = new IslandTimer(Dispatcher, "notifications-ui") { Interval = TimeSpan.FromMilliseconds(300) };
         _notificationUiTimer.Tick += OnNotificationUiTick; _notificationUiTimer.Start();
     }
     private void OnNotificationUiTick(object? sender, EventArgs e) => TickDesktopNotifications();
     private void StopNotificationTimerIfUnused()
     {
-        if (_systemToasts != null || _sessionEventsStarted || _radioMonitoring) return;
-        if (_notificationUiTimer != null) { _notificationUiTimer.Stop(); _notificationUiTimer.Tick -= OnNotificationUiTick; _notificationUiTimer = null; }
+        if (_systemToasts != null || _messengerNotifications != null || _sessionEventsStarted || _radioMonitoring || _desktopCurrent != null || _desktopInbox.PendingCount > 0) return;
+        if (_notificationUiTimer != null) { _notificationUiTimer.Dispose(); _notificationUiTimer.Tick -= OnNotificationUiTick; _notificationUiTimer = null; }
     }
     private void TickDesktopNotifications()
     {
         if (_exiting || _sessionLocked) return;
         if (ComponentSwitchGestureActive) return;
         var now = DateTimeOffset.Now;
+        if (_pages.ActiveId == IslandPageIds.Notifications && _notificationCalendarDate != now.Date)
+        {
+            foreach (var card in DesktopNotificationCards) card.RefreshTimestamp(now);
+            foreach (var stack in _notificationList.Children.OfType<DesktopNotificationStackCard>()) stack.RefreshTimestamp(now);
+            _notificationCalendarDate = now.Date;
+        }
         if (_desktopCurrent != null)
         {
-            if (_notificationAutoCard && _pages.ActiveId != IslandPageIds.Notifications) _notificationAutoCard = false;
-            if (_notificationAutoCard && IslandBody.IsMouseOver) _desktopExpires = now.AddSeconds(2);
+            MergePendingDesktopMessages(now);
             if (now < _desktopExpires) return;
             FinishDesktopPopup();
         }
         if (_approvalCurrent != null || _layers.IsActive("volume") || _layers.IsActive("battery")
-            || (_state == IslandState.Card && (_pages.ActiveId != IslandPageIds.Notifications || !_notificationAutoCard))) return;
+            || _state == IslandState.Card) return;
         var next = _desktopInbox.TakeNext(_desktopPolicy, _sessionLocked, now);
-        if (next == null) return;
+        if (next == null) { StopNotificationTimerIfUnused(); return; }
         _notificationReturnState = _state == IslandState.Bar ? IslandState.Bar : IslandState.Pill;
         _notificationReturnKey = _activeMainIslandKey;
-        _desktopCurrent = next; _desktopExpires = now.AddSeconds(SettingsRegistry.GetInt(_options, "NotificationDisplaySeconds", 8));
-        _notificationSummary.SetNotification(next);
-        ShowPillNotification(IslandNotification.Seconds(DesktopToastKey, 120) with
-        { Title = _notificationSummary.Title.Text, Detail = _notificationSummary.Detail.Text });
+        _desktopCurrent = next; _desktopExpires = now.AddSeconds(next.Kind == DesktopEventKind.BootTiming ? 15 : SettingsRegistry.GetInt(_options, "NotificationDisplaySeconds", 8));
         if (next.Kind == DesktopEventKind.Message)
         {
-            SetState(IslandState.Card); SwitchCardPage(_pages.IndexOf(IslandPageIds.Notifications), animated: false);
-            _notificationAutoCard = true;
+            NotificationBurst.Begin(next, now);
+            foreach (var message in _desktopInbox.TakePendingMessages(_desktopPolicy, _sessionLocked, now)) NotificationBurst.Add(message, now);
+            next = NotificationBurst.Top(_desktopPolicy) ?? next; _desktopCurrent = next;
         }
-        else _notificationAutoPill = true;
+        else NotificationBurst.Clear();
+        _notificationSummary.SetNotification(next); _notificationSummary.SetStackCount(NotificationBurst.Count);
+        ShowPillNotification(IslandNotification.Seconds(DesktopToastKey, 120) with
+        { Title = _notificationSummary.Title.Text, Detail = _notificationSummary.Detail.Text });
+        // Messages stay compact; QQ/WeChat clicks open the client, other messages open notification details.
+        _notificationAutoPill = true;
         RefreshDesktopInbox();
     }
     private void FinishDesktopPopup()
     {
-        bool closePopup = (_notificationAutoCard && _state == IslandState.Card && _pages.ActiveId == IslandPageIds.Notifications)
-            || (_notificationAutoPill && _state == IslandState.Pill && _activeMainIslandKey == DesktopToastKey);
-        _desktopCurrent = null;
-        _notificationAutoCard = false; _notificationAutoPill = false;
+        bool closePopup = _notificationAutoPill && _state == IslandState.Pill && _activeMainIslandKey == DesktopToastKey;
+        _desktopCurrent = null; NotificationBurst.Clear(); _notificationSummary.SetStackCount(0);
+        _notificationAutoPill = false;
         if (_layers.IsRegistered(DesktopToastKey)) _layers.Hide(DesktopToastKey);
         if (closePopup && !_exiting && _approvalCurrent == null)
         {
@@ -215,7 +283,10 @@ public partial class MainWindow
                 // 细条没有活跃岛时也要移除已结束的消息键，保留用户原来的音乐收起状态。
                 _activeMainIslandKey = "music"; _layers.PreferredWinnerKey = "music";
             }
-            SetState(_layers.AnyPinned || HasVisibleMusicPin ? IslandState.Pill : _notificationReturnState);
+            // Activity may have started while the popup owned the pill. Its saved
+            // return shape must not hide a still-active background assistant or player.
+            SetState(_layers.AnyPinned || HasVisibleMusicPin || IsIslandActive(_activeMainIslandKey)
+                ? IslandState.Pill : _notificationReturnState);
         }
     }
     private void StartSessionEvents()
@@ -236,6 +307,7 @@ public partial class MainWindow
     internal void ApplySessionNotification(bool locked)
     {
         _sessionLocked = locked;
+        SyncVolumeFlyoutTakeover();
         if (locked) { CloseComponentSwitcher(); _desktopInbox.DropPending(); FinishDesktopPopup(); }
         if (_notificationRoot != null) _notificationRoot.Visibility = locked ? Visibility.Hidden : Visibility.Visible;
         var item = new DesktopNotification("session-" + DateTimeOffset.UtcNow.UtcTicks, "", "Windows", locked ? "电脑已锁定" : "欢迎回来", locked ? "锁屏期间暂停弹出消息，保护通知内容。" : "电脑已解锁，系统事件监听继续运行。", DateTimeOffset.Now, locked ? DesktopEventKind.Locked : DesktopEventKind.Unlocked);

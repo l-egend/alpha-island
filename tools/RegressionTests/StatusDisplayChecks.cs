@@ -21,7 +21,7 @@ internal static partial class Program
     private static void StatusDisplayPolicyChecks()
     {
         var options = new IslandOptions().Normalized();
-        Check(StatusDisplayOptions.Selected(options).SequenceEqual(StatusDisplayOptions.All), "默认展示上传、下载、CPU、内存和硬件功耗");
+        Check(StatusDisplayOptions.Selected(options).SequenceEqual(StatusDisplayOptions.All), "默认分别展示上传下载与 CPU、内存和硬件功耗");
         SettingsRegistry.SetExtra(options, "StatusDisplayOrder", "power,power,garbage,download,cpu");
         SettingsRegistry.Write(options, "StatusShowMemory", false);
         Check(StatusDisplayOptions.Selected(options).SequenceEqual(new[] { "power", "download", "cpu", "upload" }), "损坏或旧排序补齐已知项，过滤重复与未知项并尊重隐藏设置");
@@ -33,15 +33,12 @@ internal static partial class Program
             && HardwarePowerPolicy.SumComplete(new double?[] { 18.1, null }) == null, "CPU 或任一独显缺失时不冒充完整总功耗");
         Check(HardwarePowerPolicy.ValidWatts(double.NaN) == null && HardwarePowerPolicy.ValidWatts(-1) == null
             && HardwarePowerPolicy.ValidWatts(double.PositiveInfinity) == null && HardwarePowerPolicy.ValidWatts(0) == 0, "功率未知和非法数值不会显示成零，真实零值有效");
-        Check(HardwarePowerPolicy.SumComplete(Array.Empty<double?>()) == 0, "没有独显时无需再添加核显功耗");
-        Check(HardwarePowerPolicy.DiscreteGpu(LibreHardwareMonitor.Hardware.HardwareType.GpuIntel, "IntelIntegratedGpu", "Intel UHD", false) == false
-            && HardwarePowerPolicy.DiscreteGpu(LibreHardwareMonitor.Hardware.HardwareType.GpuIntel, "IntelDiscreteGpu", "Intel Arc", false) == true,
-            "Intel 核显不重复添加，Arc 独显参与总功耗");
-        Check(HardwarePowerPolicy.DiscreteGpu(LibreHardwareMonitor.Hardware.HardwareType.GpuAmd, "AmdGpu", "AMD Radeon Graphics", true) == null,
-            "无法确认的 AMD APU 图形功耗不被重复相加");
-        Check(HardwarePowerPolicy.DiscreteGpu(LibreHardwareMonitor.Hardware.HardwareType.GpuAmd, "AmdGpu", "Radeon RX Vega 11 Graphics", true) == null
-            && HardwarePowerPolicy.DiscreteGpu(LibreHardwareMonitor.Hardware.HardwareType.GpuAmd, "AmdGpu", "AMD Radeon RX 7800 XT", true) == true,
-            "RX Vega APU 不与 RX 独显名称混淆");
+        Check(HardwarePowerPolicy.IsCpuPackageChannel("RAPL_Package0_PKG") && HardwarePowerPolicy.IsCpuPackageChannel("RAPL_Package1_PKG"), "选择完整 CPU 封装通道并支持多个封装");
+        Check(!HardwarePowerPolicy.IsCpuPackageChannel("RAPL_Package0_PP0") && !HardwarePowerPolicy.IsCpuPackageChannel("RAPL_Package0_PP1")
+            && !HardwarePowerPolicy.IsCpuPackageChannel("RAPL_Package0_DRAM"), "核显、核心和内存子项不重复计入 CPU 封装功耗");
+        Check(HardwarePowerPolicy.EnergyWatts(0, 0, 10_000_000_000, 10_000_000) == 36, "EMI 能量差与时间差正确换算瓦数");
+        Check(HardwarePowerPolicy.EnergyWatts(100, 100, 90, 200) == null && HardwarePowerPolicy.EnergyWatts(100, 100, 110, 100) == null,
+            "能量计重置或时间未推进时重新建立基线");
         Check(new HardwarePowerReading(25, 15, "") { SampledUtc = DateTime.UtcNow.AddSeconds(-20) }.FreshAt(DateTime.UtcNow).TotalWatts == null,
             "超时读数自动失效，避免功耗停留在过期数值");
         var transitions = new WirelessRadioTransitions();
@@ -64,50 +61,13 @@ internal static partial class Program
         System.Console.WriteLine("Hardware power live: " + reading.Description);
         Check(reading.TotalWatts == null || (reading.TotalWatts >= 0 && double.IsFinite(reading.TotalWatts.Value)), "真实硬件采样返回有效瓦数或明确的不可用状态");
         Check(reading.TotalWatts.HasValue || !string.IsNullOrWhiteSpace(reading.Reason), "功率无法读取时提供原因");
-        Check(HardwareDriverAccess.Probe() == HardwareDriverState.Ready || (reading.CpuWatts == null && reading.TotalWatts == null), "缺少驱动访问时不接受传感器初始化的假零 CPU 功率");
+        Check(reading.Source == "Windows EMI + NVIDIA NVML" && reading.CpuWatts != 0, "原生接口采样拒绝 CPU 初始化假零");
     }
     private static void StatusDisplayUiChecks(alpha_island.MainWindow window, Grid root)
     {
         var options = AgentField<IslandOptions>(window, "_options");
-        var pill = window.NetSpeedRates;
-        pill.SetRates(263900, 50400); pill.SetResources(18, 52); pill.SetPower(42.5, "CPU 24.4 W · GPU 18.1 W");
-        Check(pill.UploadValue.Text == "257.7KB/s" && pill.PowerValue.Text == "42.5W" && pill.ToolTip.ToString()!.Contains("GPU 18.1 W"), "网速与瓦数在同一状态栏显示，悬停提供功耗分项");
-        Check(pill.UploadColor.Color != pill.DownloadColor.Color && pill.Margin.Left == pill.Margin.Right && pill.Margin.Left >= 10,
-            "上传下载有不同颜色且两侧留白对称");
+        StatusSplitUiChecks(window, root);
         Directory.CreateDirectory("bin/status-previews");
-        void Preview(string file, string[] items, bool compact)
-        {
-            var view = new NetworkSpeedPill(compact); view.SetDisplayItems(items); view.SetRates(263900, 50400);
-            view.SetResources(18, 52); view.SetPower(42.5, "CPU 24.4 W · GPU 18.1 W");
-            double width = StatusDisplayOptions.Width(items.Length, compact);
-            var border = new Border { Width = width, Height = 44, Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 38, 57)), CornerRadius = new CornerRadius(22), Child = view };
-            border.Measure(new Size(width, 44)); border.Arrange(new Rect(0, 0, width, 44)); border.UpdateLayout();
-            Check(view.Children.OfType<Viewbox>().All(v => v.ActualWidth > 0 && v.HorizontalAlignment == System.Windows.HorizontalAlignment.Center), "每个状态内容居中且可见 " + file);
-            var bitmap = new RenderTargetBitmap((int)width, 44, 96, 96, PixelFormats.Pbgra32); bitmap.Render(border);
-            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap)); using var output = File.Create("bin/status-previews/" + file + ".png"); png.Save(output);
-        }
-        Preview("all", StatusDisplayOptions.All, false);
-        Preview("compact", StatusDisplayOptions.All, true);
-        Preview("power-first", new[] { "power", "cpu", "memory" }, false);
-        Preview("power-only", new[] { "power" }, true);
-        SettingsRegistry.SetExtra(options, "StatusDisplayOrder", "power,cpu,memory,upload,download");
-        SettingsRegistry.Write(options, "StatusShowUpload", false); SettingsRegistry.Write(options, "StatusShowDownload", false);
-        PrivateCall(window, "OnStatusDisplayOptionsChanged");
-        Check(pill.DisplayedItems.SequenceEqual(new[] { "power", "cpu", "memory" }) && window.NetSpeedNotifyLayer.Width == StatusDisplayOptions.Width(3) - 8,
-            "显示设置立即应用到主岛并调整宽度");
-        SetAgentField(window, "_activeMainIslandKey", "netspeed");
-        PrivateCall(window, "SetState", IslandState.Pill, true); PumpAnimations(400);
-        SettingsRegistry.Write(options, "StatusShowMemory", false); PrivateCall(window, "OnStatusDisplayOptionsChanged"); PumpAnimations(400);
-        Check(Math.Abs(window.IslandBody.Width - StatusDisplayOptions.Width(2)) < 1, "主岛胶囊跟随显示项目数量即时改变实际宽度");
-        SettingsRegistry.Write(options, "StatusShowMemory", true); PrivateCall(window, "OnStatusDisplayOptionsChanged"); PumpAnimations(400);
-        var orb = (Border)PrivateCall(window, "CreateSatelliteOrb", "netspeed")!;
-        var satellite = ((Grid)orb.Child).Children.OfType<NetworkSpeedPill>().Single();
-        Check(orb.Width == StatusDisplayOptions.Width(3, true) && satellite.DisplayedItems.SequenceEqual(pill.DisplayedItems), "卫星岛使用相同顺序与自适应宽度");
-        PrivateCall(window, "UpdateCompactIslandContent", "netspeed");
-        Check(AgentField<NetworkSpeedPill>(window, "_sideNetworkView").DisplayedItems.SequenceEqual(pill.DisplayedItems), "侧岛使用相同显示选择");
-        foreach (string key in StatusDisplayOptions.All) SettingsRegistry.Write(options, StatusDisplayOptions.SettingKey(key), false);
-        PrivateCall(window, "OnStatusDisplayOptionsChanged");
-        Check(pill.DisplayedItems.Length == 0, "所有状态项目均可隐藏");
         void Radios(RadioState wifi, RadioState bluetooth) => PrivateCall(window, "ApplyWirelessRadioStates", new[] { (RadioKind.WiFi, wifi), (RadioKind.Bluetooth, bluetooth) });
         PrivateCall(window, "ClearDesktopInbox"); SetAgentField(window, "_state", IslandState.Card);
         Radios(RadioState.On, RadioState.On);
@@ -163,9 +123,11 @@ internal static partial class Program
         PrivateCall(window, "ClearDesktopInbox");
         var message = new DesktopNotification("status-message-regression", "Chat!App", "聊天", "新消息", "正文", DateTimeOffset.Now);
         PrivateCall(window, "OnSystemToastsReceived", new[] { message }, false);
-        Check(AgentField<IslandState>(window, "_state") == IslandState.Card
-            && AgentField<IslandPageHost>(window, "_pages").ActiveId == IslandPageIds.Notifications,
-            "应用消息继续展开通知卡片以显示完整内容");
+        Check(AgentField<IslandState>(window, "_state") == IslandState.Pill
+            && AgentField<DesktopNotification?>(window, "_desktopCurrent")?.Key == message.Key
+            && notification.Title.Text == message.AppName && notification.Detail.Text == message.PreviewText
+            && AgentField<DesktopNotification?>(window, "_desktopCurrent")?.Body == message.Body,
+            "应用消息也显示简短小岛并保留通知正文，完整内容可在通知页查看");
         PrivateCall(window, "ClearDesktopInbox");
         SettingsRegistry.Write(options, "NotificationQuietMode", true);
         AgentField<WirelessRadioTransitions>(window, "_radioTransitions").Reset(); Radios(RadioState.Off, RadioState.Off);
@@ -187,19 +149,35 @@ internal static partial class Program
         try
         {
             Check(StatusDisplayOptions.All.All(k => settings.FindName(StatusDisplayOptions.SettingKey(k) + "Toggle") is CheckBox), "设置中可选择全部五个显示项");
-            Check(settings.FindName("HardwarePowerEnableButton") is System.Windows.Controls.Button &&
-                settings.FindName("HardwarePowerSetupStatus") is TextBlock && settings.FindName("HardwarePowerElevatedReaderToggle") is CheckBox,
-                "设置提供独立读取授权、安装状态与启动偏好");
-            SettingsRegistry.Write(options, "HardwarePowerElevatedReader", true);
-            var exported = JsonSerializer.Deserialize<IslandOptions>(JsonSerializer.Serialize(options))!;
-            Check(SettingsRegistry.GetBool(exported, "HardwarePowerElevatedReader", false), "读取偏好随统一配置导入导出");
+            Check(settings.FindName("HardwarePowerStatus") is TextBlock && settings.FindName("HardwarePowerEnableButton") == null
+                && settings.FindName("HardwarePowerElevatedReaderToggle") == null, "设置保留实时读取状态并移除驱动安装与管理员授权入口");
+            SettingsRegistry.SetExtra(options, "HardwarePowerElevatedReader", true);
+            var exported = JsonSerializer.Deserialize<IslandOptions>(JsonSerializer.Serialize(options))!.Normalized();
+            Check(!exported.Extras.ContainsKey("HardwarePowerElevatedReader") && SettingsRegistry.GetBool(exported, "StatusShowPower", true),
+                "导入旧配置清理管理员读取偏好并保留功耗显示开关");
+            string legacyPath = Path.Combine(Path.GetTempPath(), "alpha-island-old-power-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                SettingsRegistry.SetExtra(options, "CustomPluginPreference", "keep-me");
+                File.WriteAllText(legacyPath, JsonSerializer.Serialize(options));
+                IslandOptions.Load(legacyPath);
+                var migrated = JsonSerializer.Deserialize<IslandOptions>(File.ReadAllText(legacyPath))!;
+                Check(!migrated.Extras.ContainsKey("HardwarePowerElevatedReader") && migrated.Extras["CustomPluginPreference"].GetString() == "keep-me"
+                    && SettingsRegistry.GetBool(migrated, "StatusShowPower", true) && File.Exists(legacyPath + ".bak"),
+                    "旧配置加载后原子保存迁移并保留自定义配置和备份");
+            }
+            finally { File.Delete(legacyPath); File.Delete(legacyPath + ".bak"); }
+            settings.UpdateHardwarePowerState(new(25, 15, ""));
+            Check(((TextBlock)settings.FindName("HardwarePowerStatus")).Text.Contains("40.0 W"), "设置中的功耗状态随新读数更新");
+            string[] networkOrder = StatusDisplayOptions.NetworkSelected(options);
             for (int i = 0; i < 4; i++) PrivateCall(settings, "MoveStatusDisplayItem", "power", -1);
-            Check(StatusDisplayOptions.Selected(options)[0] == "power", "设置中排序按钮将功耗移到首位并保存顺序");
+            Check(StatusDisplayOptions.NetworkSelected(options).SequenceEqual(networkOrder), "资源组排序不会移动网速组的项目");
+            Check(StatusDisplayOptions.ResourcesSelected(options)[0] == "power", "设置中排序按钮将功耗移到资源组首位并保存顺序");
             ((CheckBox)settings.FindName("StatusShowCpuToggle")).IsChecked = false;
-            Check(!StatusDisplayOptions.Selected(options).Contains("cpu") && StatusDisplayOptions.Selected(options)[0] == "power", "关闭显示项后保留其余显示順序");
+            Check(!StatusDisplayOptions.Selected(options).Contains("cpu") && StatusDisplayOptions.ResourcesSelected(options)[0] == "power", "关闭显示项后保留其余显示順序");
             settings.LoadFrom(options);
             var order = (string[])typeof(alpha_island.Settings.SettingsWindow).GetField("_statusDisplayOrder", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(settings)!;
-            Check(order[0] == "power" && ((CheckBox)settings.FindName("StatusShowCpuToggle")).IsChecked == false,
+            Check(order.Where(key => key is "cpu" or "memory" or "power").First() == "power" && ((CheckBox)settings.FindName("StatusShowCpuToggle")).IsChecked == false,
                 "重新加载设置恢复显示选择与顺序");
             Check(settings.FindName("NotificationWifiRadioToggle") is CheckBox && settings.FindName("NotificationBluetoothRadioToggle") is CheckBox,
                 "Wi-Fi 与蓝牙提醒可分别设置");
@@ -208,7 +186,7 @@ internal static partial class Program
                 PrivateCall(settings, "SelectPageByTag", page); root.UpdateLayout(); SaveThemePreview(root, "bin/status-previews/settings-" + page + ".png");
                 if (page == "system")
                 {
-                    ((FrameworkElement)settings.FindName("HardwarePowerSetupStatus")).BringIntoView(); root.UpdateLayout();
+                    ((FrameworkElement)settings.FindName("HardwarePowerStatus")).BringIntoView(); root.UpdateLayout();
                     SaveThemePreview(root, "bin/status-previews/settings-hardware-power.png");
                 }
             }

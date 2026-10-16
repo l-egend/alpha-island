@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using alpha_island.Animation;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 using Point = System.Windows.Point;
@@ -13,9 +15,12 @@ namespace alpha_island.Controls;
 
 public sealed class IslandContourHandle : FrameworkElement
 {
-    internal const double TrackWidth = 34;
+    internal const double TrackWidth = 28;
     internal const double ContourGap = 8;
-    private const double HitStrokeWidth = 30;
+    private const double VerticalHitPadding = 8;
+    private static readonly Brush InputSurface = CreateInputSurface();
+    private static readonly DependencyProperty HintOffsetProperty = DependencyProperty.Register("HintOffset", typeof(double), typeof(IslandContourHandle),
+        new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
     public static readonly DependencyProperty ContourCornerRadiusProperty = DependencyProperty.Register(
         nameof(ContourCornerRadius), typeof(CornerRadius), typeof(IslandContourHandle),
         new FrameworkPropertyMetadata(new CornerRadius(24), FrameworkPropertyMetadataOptions.AffectsRender));
@@ -24,12 +29,22 @@ public sealed class IslandContourHandle : FrameworkElement
         new FrameworkPropertyMetadata(Brushes.White, FrameworkPropertyMetadataOptions.AffectsRender));
     public static readonly DependencyProperty EngagedProperty = DependencyProperty.Register(
         nameof(Engaged), typeof(bool), typeof(IslandContourHandle),
-        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender,
+            (owner, change) => { if ((bool)change.NewValue) ((IslandContourHandle)owner).StopHint(); }));
     private bool _hovered;
+    private Geometry? _contour;
+    private Size _contourSize;
+    private CornerRadius _contourCorner;
+    private Brush? _lineBrush;
+    private Pen? _normalPen, _highlightPen;
+    private long _lastHintTick = -2000;
+    private int _hintGeneration;
 
     public CornerRadius ContourCornerRadius { get => (CornerRadius)GetValue(ContourCornerRadiusProperty); set => SetValue(ContourCornerRadiusProperty, value); }
     public Brush Stroke { get => (Brush)GetValue(StrokeProperty); set => SetValue(StrokeProperty, value); }
     public bool Engaged { get => (bool)GetValue(EngagedProperty); set => SetValue(EngagedProperty, value); }
+    internal double HintOffset => (double)GetValue(HintOffsetProperty);
+    internal bool IsHintAnimating { get; private set; }
 
     public IslandContourHandle()
     {
@@ -37,6 +52,10 @@ public sealed class IslandContourHandle : FrameworkElement
         Focusable = true;
         System.Windows.Automation.AutomationProperties.SetName(this, "切换组件");
         ToolTip = "单击下一卡片 · 滚轮切换 · 长按移向图标，松手确认 · 移远或 Esc 取消";
+        Loaded += (_, _) => { MotionPolicy.Changed += OnMotionPolicyChanged; PlayHint(); };
+        Unloaded += (_, _) => { MotionPolicy.Changed -= OnMotionPolicyChanged; StopHint(); };
+        IsVisibleChanged += (_, e) => { if ((bool)e.NewValue) PlayHint(); else StopHint(); };
+        SizeChanged += (_, e) => { if (e.PreviousSize.Height < 26 && e.NewSize.Height >= 26) PlayHint(); };
     }
 
     internal static Geometry BuildContour(Size size, CornerRadius corner)
@@ -73,11 +92,46 @@ public sealed class IslandContourHandle : FrameworkElement
         return geometry;
     }
 
-    internal bool ContainsHandlePoint(Point point) => new Rect(RenderSize).Contains(point)
-        && BuildContour(RenderSize, ContourCornerRadius).StrokeContains(HitPen(Brushes.White), point);
+    private Geometry CurrentContour
+    {
+        get
+        {
+            if (_contour == null || _contourSize != RenderSize || _contourCorner != ContourCornerRadius)
+            {
+                _contourSize = RenderSize; _contourCorner = ContourCornerRadius;
+                _contour = BuildContour(_contourSize, _contourCorner);
+            }
+            return _contour;
+        }
+    }
 
-    private static Pen HitPen(Brush brush) => new(brush, HitStrokeWidth)
-    { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+    internal Rect HitBounds
+    {
+        get
+        {
+            // Keep the target around the visible contour rather than the entire card edge.
+            // It follows island geometry, while the separate hint offset never moves it.
+            var bounds = CurrentContour.Bounds;
+            return bounds.IsEmpty ? Rect.Empty : new Rect(0, bounds.Top - VerticalHitPadding,
+                TrackWidth, bounds.Height + VerticalHitPadding * 2);
+        }
+    }
+
+    internal bool ContainsHandlePoint(Point point) => HitBounds.Contains(point);
+
+    private static Brush CreateInputSurface()
+    {
+        // Layered windows skip alpha-zero pixels before WM_NCHITTEST reaches WPF.
+        // One alpha step preserves real mouse delivery without a perceptible background.
+        var brush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(1, 0, 0, 0));
+        brush.Freeze(); return brush;
+    }
+
+    private static Pen MakePen(Brush brush, double width)
+    {
+        var pen = new Pen(brush, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+        if (pen.CanFreeze) pen.Freeze(); return pen;
+    }
 
     protected override HitTestResult? HitTestCore(PointHitTestParameters parameters) => ContainsHandlePoint(parameters.HitPoint)
         ? new PointHitTestResult(this, parameters.HitPoint) : null;
@@ -85,17 +139,45 @@ public sealed class IslandContourHandle : FrameworkElement
     protected override void OnRender(DrawingContext drawingContext)
     {
         base.OnRender(drawingContext);
-        var pen = new Pen(Stroke, Engaged || _hovered || IsKeyboardFocused ? 2.8 : 2.2)
-        { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
-        var contour = BuildContour(RenderSize, ContourCornerRadius);
-        drawingContext.DrawGeometry(null, HitPen(Brushes.Transparent), contour);
-        drawingContext.PushOpacity(Engaged || _hovered || IsKeyboardFocused ? 1 : .72);
-        drawingContext.DrawGeometry(null, pen, contour);
-        drawingContext.Pop();
+        if (!ReferenceEquals(_lineBrush, Stroke))
+        {
+            _lineBrush = Stroke; _normalPen = MakePen(Stroke, 2.2); _highlightPen = MakePen(Stroke, 2.8);
+        }
+        bool highlight = Engaged || _hovered || IsKeyboardFocused;
+        var contour = CurrentContour;
+        if (!HitBounds.IsEmpty) drawingContext.DrawRectangle(InputSurface, null, HitBounds);
+        // Only the visible stroke moves. Native and WPF input keep the same generous target.
+        drawingContext.PushTransform(new TranslateTransform(HintOffset, 0));
+        drawingContext.PushOpacity(highlight ? 1 : .72);
+        drawingContext.DrawGeometry(null, highlight ? _highlightPen : _normalPen, contour);
+        drawingContext.Pop(); drawingContext.Pop();
     }
 
-    protected override void OnMouseEnter(MouseEventArgs e) { base.OnMouseEnter(e); _hovered = true; InvalidateVisual(); }
+    internal void PlayHint()
+    {
+        if (!IsLoaded || !IsVisible || ActualHeight < 26 || Engaged || IsHintAnimating
+            || MotionPolicy.InstantMorph || MotionPolicy.PowerSave || Environment.TickCount64 - _lastHintTick < 1400) return;
+        StopHint(); _lastHintTick = Environment.TickCount64;
+        int generation = _hintGeneration;
+        var animation = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(1100), FillBehavior = FillBehavior.Stop };
+        animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        animation.KeyFrames.Add(new EasingDoubleKeyFrame(4, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(350)), new QuadraticEase { EasingMode = EasingMode.EaseOut }));
+        animation.KeyFrames.Add(new LinearDoubleKeyFrame(4, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(500))));
+        animation.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1100)), new QuadraticEase { EasingMode = EasingMode.EaseInOut }));
+        animation.Completed += (_, _) => { if (generation == _hintGeneration) StopHint(); };
+        IsHintAnimating = true;
+        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,HintOffsetProperty, animation, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    internal void StopHint()
+    {
+        ++_hintGeneration; IsHintAnimating = false;
+        AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,HintOffsetProperty, null); SetValue(HintOffsetProperty, 0d);
+    }
+
+    private void OnMotionPolicyChanged() { if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave) StopHint(); }
+    protected override void OnMouseEnter(MouseEventArgs e) { base.OnMouseEnter(e); _hovered = true; PlayHint(); InvalidateVisual(); }
     protected override void OnMouseLeave(MouseEventArgs e) { base.OnMouseLeave(e); _hovered = false; InvalidateVisual(); }
-    protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e) { base.OnGotKeyboardFocus(e); InvalidateVisual(); }
+    protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e) { base.OnGotKeyboardFocus(e); StopHint(); InvalidateVisual(); }
     protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e) { base.OnLostKeyboardFocus(e); InvalidateVisual(); }
 }
