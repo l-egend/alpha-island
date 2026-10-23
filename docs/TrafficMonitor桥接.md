@@ -31,7 +31,7 @@
 - 连接时使用 TrafficMonitor 的原始 B/s 与今日字节计数；其所选网卡、合并网卡和采样周期会影响结果，岛不会再叠加本机网卡计数。
 - 今日流量直接使用绝对字节值；“本次监测”从接入时建立基线，按计数差值累加。跨天、计数回退或生产者重启重新建立基线，不以舍入后的速度积分估算流量。
 - 数据超过 5 秒未更新、插件关闭或来源无效时恢复本机采样，并重置来源统计基线、峰值和趋势，避免混用口径。主卡片标明当前来源。
-- `history_traffic.dat` 历史字段是 KB，读取时乘 1024；实时接口已经是字节，不再乘 1024。今日值优先取实时桥接，未连接时可使用历史记录。历史记录的更新时间由 TrafficMonitor 决定。
+- `history_traffic.dat` 历史字段是 KB，读取时乘 1024；实时接口已经是字节，不再乘 1024。0.1.118 起，今日值仅在桥接已连接且提供有效当日计数时使用；其他情况由本机采样并保存在 daily-traffic.json，不再依赖历史文件作为备用统计。
 - 所有网络视图与接收插件的速率和流量均按 1024 换算（1 KB/s = 1024 B/s），保留小数。TrafficMonitor 若设为 bit/s，比较时还需将 bit/s 除以 8 转为 B/s。
 
 接口来源见 [官方插件开发指南](https://github.com/zhongyang219/TrafficMonitor/wiki/插件开发指南)、[V1.86 插件接口](https://github.com/zhongyang219/TrafficMonitor/blob/V1.86/include/PluginInterface.h)、[V1.86 原始值实现](https://github.com/zhongyang219/TrafficMonitor/blob/V1.86/TrafficMonitor/TrafficMonitor.cpp#L1290)、[历史文件实现](https://github.com/zhongyang219/TrafficMonitor/blob/V1.86/TrafficMonitor/HistoryTrafficFile.cpp)。上游接口和许可证保存在 `plugins/TrafficMonitorBridge/upstream`。

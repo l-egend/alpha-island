@@ -14,7 +14,7 @@ internal sealed class EarbudView : Grid
     private readonly TextBlock _hint = Text("", 11);
     private readonly TextBlock _wearing = Text("", 11);
     private readonly TextBlock _info = Text("", 10);
-    private readonly TextBlock[] _battery = [Text("—", 20, true), Text("—", 20, true), Text("—", 20, true)];
+    private readonly TextBlock[] _battery = [Text("—", 16, true), Text("—", 16, true), Text("—", 16, true)];
     private readonly DeviceBatteryIndicator[] _batteryMeters = [new(), new(), new()];
     private readonly ComboBox _device = new() { MinWidth = 120, HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 11, MaxDropDownHeight = 220 };
     private readonly Button _refresh, _connect, _disconnect;
@@ -40,7 +40,7 @@ internal sealed class EarbudView : Grid
         titleRow.ColumnDefinitions.Add(new()); titleRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _title.TextTrimming = TextTrimming.CharacterEllipsis; _title.Margin = new Thickness(0, 0, 10, 0);
         titleRow.Children.Add(_title); Grid.SetColumn(_status, 1); titleRow.Children.Add(_status); header.Children.Add(titleRow);
-        _hint.TextWrapping = TextWrapping.Wrap; _hint.Margin = new Thickness(0, 3, 0, 6); header.Children.Add(_hint);
+        _hint.TextWrapping = TextWrapping.Wrap; _hint.MaxHeight=36; _hint.Margin = new Thickness(0, 3, 0, 6); header.Children.Add(_hint);
         var connection = new Grid();
         connection.ColumnDefinitions.Add(new());
         for (int i = 0; i < 3; i++) connection.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -64,7 +64,7 @@ internal sealed class EarbudView : Grid
                 HorizontalAlignment = HorizontalAlignment.Center };
             _batteryMeters[i].Name = new[] { "LeftBatteryMeter", "CaseBatteryMeter", "RightBatteryMeter" }[i];
             _batteryMeters[i].VerticalAlignment = VerticalAlignment.Center;
-            _batteryMeters[i].Margin = new Thickness(0, 0, 6, 0); reading.Children.Add(_batteryMeters[i]);
+            _batteryMeters[i].Margin = new Thickness(0, 0, 12, 0); reading.Children.Add(_batteryMeters[i]);
             reading.Children.Add(_battery[i]); tile.Children.Add(reading);
             Grid.SetColumn(tile, i); batteryRow.Children.Add(tile);
         }
@@ -142,6 +142,7 @@ internal sealed class EarbudView : Grid
             _status.Text = snapshot.Status;
             _status.Foreground = snapshot.Connected ? Brushes.LightGreen : snapshot.Busy ? Brushes.LightSkyBlue : Brushes.LightGray;
             _hint.Text = snapshot.Hint;
+            _hint.ToolTip = snapshot.Hint;
             if (!_lastDevices.SequenceEqual(devices))
             {
                 ulong selected = (_device.SelectedItem as EarbudDevice)?.Address ?? 0;
@@ -151,6 +152,8 @@ internal sealed class EarbudView : Grid
             _device.IsEnabled = !snapshot.Busy;
             _refresh.IsEnabled = !snapshot.Busy;
             _connect.IsEnabled = !snapshot.Busy && _device.SelectedItem != null;
+            if(snapshot.Connected && _device.SelectedItem is EarbudDevice selectedDevice && selectedDevice.Name==snapshot.DeviceName)
+                _connect.IsEnabled=false;
             _disconnect.IsEnabled = snapshot.Connected || snapshot.Busy;
             var batteries = new[] { snapshot.LeftPower, snapshot.CasePower, snapshot.RightPower };
             for (int i = 0; i < batteries.Length; i++)
@@ -158,6 +161,8 @@ internal sealed class EarbudView : Grid
                 _batteryMeters[i].Percent = snapshot.Connected ? batteries[i].Percent : null;
                 _batteryMeters[i].IsCharging = snapshot.Connected && batteries[i].Charging;
                 _battery[i].Text = _batteryMeters[i].Percent.HasValue ? _batteryMeters[i].Percent + "%" : "—";
+                _battery[i].FontSize = _batteryMeters[i].Percent.HasValue ? 16 : 14;
+                _battery[i].FontWeight = _batteryMeters[i].Percent.HasValue ? FontWeights.SemiBold : FontWeights.Normal;
             }
             _wearing.Text = snapshot.Wearing;
             SetChoice(_ancRow, _anc, snapshot.AncChoices, snapshot.Anc, snapshot.CanAnc, snapshot);

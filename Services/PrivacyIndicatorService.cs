@@ -16,7 +16,7 @@ namespace alpha_island.Services
     public readonly record struct PrivacyUsage(PrivacyCapability Capability, string AppName, string SourceKey);
 
     /// <summary>
-    /// 麦克风 / 摄像头占用检测（A 组⑤）。
+    /// 麦克风 / 摄像头占用检测。
     ///
     /// 原理：Windows 在
     ///   HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\{microphone|camera}

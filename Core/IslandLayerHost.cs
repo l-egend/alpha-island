@@ -138,7 +138,7 @@ namespace alpha_island.Core
         /// <summary>
         /// 写入口（Show/Hide）之后要立刻重算显隐的回调，由 MainWindow 在构造函数里指向
         /// SyncNotificationLayers。没有它，一次弹出要等到下一拍别的同步才生效 ——
-        /// A 组系统提示正是踩了这个坑：弹出时音乐胶囊没让位，两层 328x32 就叠在一起。
+        /// 系统提示正是踩了这个坑：弹出时音乐胶囊没让位，两层 328x32 就叠在一起。
         /// </summary>
         public Action? SyncRequested { get; set; }
 
@@ -163,6 +163,10 @@ namespace alpha_island.Core
             }
         }
 
+        /// <summary>Explicit content width for any registered pill, including game-entry and plugin layers.</summary>
+        internal double? ContentWidth(string key) => _views.TryGetValue(key, out var view)
+            && view.Root is FrameworkElement element && double.IsFinite(element.Width) && element.Width > 0
+            ? element.Width : null;
         public void Register(IslandLayerSpec spec)
         {
             if (spec is null) throw new ArgumentNullException(nameof(spec));

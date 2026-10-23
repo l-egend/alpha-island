@@ -106,6 +106,7 @@ namespace alpha_island.Services
         // Parsing unchanged History rows still walks SQLite's downloads table. Keep the
         // bounded raw result; partial sizes and completed-row expiry are evaluated each sample.
         private readonly Dictionary<string, (string Stamp, List<string?[]> Rows)> _chromiumRows = new(StringComparer.OrdinalIgnoreCase);
+        private readonly BrowserDownloadDirectoryCache _downloadDirectories = new();
 
         /// <summary>上一拍还有半成品（= 在下载）的配置目录：这一拍没了说明刚下完，要绕开副本缓存去读完成行。</summary>
         private readonly HashSet<string> _partialProfiles = new(StringComparer.OrdinalIgnoreCase);
@@ -319,7 +320,7 @@ namespace alpha_island.Services
         /// 但拿不到总量 —— 所以这些任务的 TotalBytes 一律 0，界面别显示百分比。
         /// 调用方先拿它判断「这一拍在不在下载 / 上一拍的半成品是不是刚消失」。
         /// </summary>
-        private static List<(string Path, long Size, DateTime When)> CollectChromiumPartials(string profileDir)
+        private List<(string Path, long Size, DateTime When)> CollectChromiumPartials(string profileDir)
         {
             var found = new List<(string Path, long Size, DateTime When)>();
 
@@ -362,7 +363,7 @@ namespace alpha_island.Services
         }
 
         /// <summary>浏览器把下载写到哪儿：先看 Preferences 的 download.default_directory，没设就是用户「下载」目录。</summary>
-        private static IEnumerable<string> CandidateDownloadDirs(string profileDir)
+        private IEnumerable<string> CandidateDownloadDirs(string profileDir)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -386,25 +387,7 @@ namespace alpha_island.Services
             if (fallback.Length > 0 && seen.Add(fallback)) yield return fallback;
         }
 
-        private static string? TryReadDownloadDirectory(string profileDir)
-        {
-            try
-            {
-                string prefs = Path.Combine(profileDir, "Preferences");
-                if (!File.Exists(prefs)) return null;
-
-                using var json = JsonDocument.Parse(ReadAllTextShared(prefs));
-                if (!json.RootElement.TryGetProperty("download", out var download)
-                    || !download.TryGetProperty("default_directory", out var directory)
-                    || directory.ValueKind != JsonValueKind.String) return null;
-                string path = directory.GetString() ?? string.Empty;
-                return path.Length > 0 && Directory.Exists(path) ? path : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
+        private string? TryReadDownloadDirectory(string profileDir) => _downloadDirectories.Read(profileDir);
 
         /// <summary>
         /// 找一个在下载中的文件当前有多大。依次看 current_path、target+”.crdownload“、target，

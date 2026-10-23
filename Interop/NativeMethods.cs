@@ -289,7 +289,7 @@ namespace alpha_island.Interop
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, int dwProcessId);
 
-        // ---- A 组②：物理内存占用（kernel32）----
+        // ---- 物理内存占用（kernel32）----
         // 一次调用拿总量/可用量/占用率；dwMemoryLoad 这个整数百分比就是任务管理器里的那个数。
         // 注意：调用前必须把 dwLength 设成结构体大小，否则函数直接返回 false。
         [StructLayout(LayoutKind.Sequential)]

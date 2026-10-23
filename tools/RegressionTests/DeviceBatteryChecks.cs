@@ -33,7 +33,13 @@ internal static partial class Program
         }
         root.Children.Add(gallery); root.UpdateLayout(); PumpAnimations(20);
         double Fraction(DeviceBatteryIndicator meter) => (double)typeof(DeviceBatteryIndicator).GetProperty("DisplayFraction", flags)!.GetValue(meter)!;
-        bool Charging(DeviceBatteryIndicator meter) => (bool)typeof(DeviceBatteryIndicator).GetField("_chargingAnimation", flags)!.GetValue(meter)!;
+        int BoltPixels(DeviceBatteryIndicator meter)
+        {
+            var bitmap = new RenderTargetBitmap(30, 16, 96, 96, PixelFormats.Pbgra32); bitmap.Render(meter);
+            var pixels = new byte[30 * 16 * 4]; bitmap.CopyPixels(pixels, 120, 0);
+            return Enumerable.Range(0, 30 * 16).Count(i => pixels[i * 4] > 235 && pixels[i * 4 + 1] > 235
+                && pixels[i * 4 + 2] > 235 && pixels[i * 4 + 3] > 200);
+        }
         int ColoredPixels(DeviceBatteryIndicator meter, bool red = false)
         {
             meter.UpdateLayout();
@@ -59,8 +65,8 @@ internal static partial class Program
             foreach (int percent in new[] { 0, 1, 20, 50, 100 })
             { meter.Percent = percent; Check(Math.Abs(Fraction(meter) - percent / 100d) < 0.00001, $"精确绘制 {percent}% 电量"); }
             meter.Percent = 255; meter.IsCharging = true;
-            Check(meter.Percent == null && Fraction(meter) == 0 && !Charging(meter) && ColoredPixels(meter) == 0,
-                $"无效或未知电量显示空框与占位，充电标记不能制造虚假电量（percent={meter.Percent}, fill={Fraction(meter)}, charging={Charging(meter)}, pixels={ColoredPixels(meter)}）");
+            Check(meter.Percent == null && Fraction(meter) == 0 && BoltPixels(meter) == 0 && ColoredPixels(meter) == 0,
+                $"无效或未知电量显示空框与占位，充电标记不能制造虚假电量（percent={meter.Percent}, fill={Fraction(meter)}, pixels={ColoredPixels(meter)}）");
             meter.Percent = 20; meter.IsCharging = false;
             MotionPolicy.Apply(false, false); meter.Percent = 80; PumpAnimations(90);
             double intermediate = Fraction(meter);
@@ -69,17 +75,17 @@ internal static partial class Program
             Check(Fraction(meter) < intermediate && Fraction(meter) > 0.12, "快速连续更新从当前可见电量平滑转向最新值");
             PumpAnimations(420); Check(Math.Abs(Fraction(meter) - 0.12) < 0.00001, "过渡结束后准确停在最后的百分比");
             meter.IsCharging = true; PumpAnimations(80);
-            Check(Charging(meter), "设备报告充电时启动闪电呼吸动画");
+            Check(BoltPixels(meter) > 0 && !meter.HasAnimatedProperties, "设备报告充电时显示常亮闪电，无循环动画");
             meter.Visibility = Visibility.Collapsed;
-            Check(!Charging(meter), "电量控件隐藏时停止充电动画");
+            Check(!meter.HasAnimatedProperties && meter.IsCharging, "电量控件隐藏时不保留动画且仍保留设备充电状态");
             meter.Visibility = Visibility.Visible; PumpAnimations(20);
-            Check(Charging(meter), "重新显示时按当前充电状态恢复动画");
+            Check(BoltPixels(meter) > 0 && !meter.HasAnimatedProperties, "重新显示时按当前充电状态恢复常亮标记");
             MotionPolicy.Apply(true, false);
-            Check(!Charging(meter) && Fraction(meter) == 0.12, "减弱动效立即停止动画并保留准确电量");
+            Check(!meter.HasAnimatedProperties && BoltPixels(meter) > 0 && Fraction(meter) == 0.12, "减弱动效保留常亮充电标记及准确电量");
             MotionPolicy.Apply(false, true); meter.Percent = 65;
-            Check(!Charging(meter) && Fraction(meter) == 0.65, "节能模式采用静态准确电量");
+            Check(!meter.HasAnimatedProperties && BoltPixels(meter) > 0 && Fraction(meter) == 0.65, "节能模式采用静态准确电量并保留充电标记");
             MotionPolicy.Apply(false, false); MotionPolicy.OverrideRenderTierForDebug(0);
-            Check(!Charging(meter), "软件渲染停止装饰动画");
+            Check(!meter.HasAnimatedProperties && BoltPixels(meter) > 0, "软件渲染采用静态充电标记");
             MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(true, false);
 
             var device = new BluetoothDeviceInfo("battery-probe", "测试蓝牙耳机", BluetoothDeviceCategory.Audio, 83, true);

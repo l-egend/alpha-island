@@ -4,7 +4,7 @@ using System.Text;
 using alpha_island.Core;
 using alpha_island.Services;
 
-// C 组②：两个新增卡片页（实时网速 / 系统状态）的装配。
+// 两个新增卡片页（实时网速 / 系统状态）的装配。
 //
 // 需求来源（用户原话要点）：本批新增功能必须"岛和卡都有"，否则用户既看不到也没法测；
 // 网速这类信息要"精简且有效"，不能只是一个图标。于是：
@@ -159,13 +159,9 @@ namespace alpha_island
             // The card and the small status island render the same CPU/RAM/hardware snapshot.
             SysCardBatteryDetail.Text = ChargingBatteryDescription;
             SystemBatterySummary.SetBattery(_chargingStatus ?? _battery?.Current);
-            // --- 飞行模式 ---
-            SysCardAirValue.Text = !_airplaneKnown ? (_radioMonitoring ? "Wi-Fi / 蓝牙" : "未开启监测")
-                : (_airplaneOn ? "飞行模式已开启" : "飞行模式已关闭");
-            SysCardAirDetail.Text = !_airplaneKnown
-                ? _wirelessSummary
-                : "";
-
+            // --- 无线连接 ---
+            SysCardWirelessValue.Text = _radioMonitoring ? "Wi-Fi / 蓝牙" : "未开启监测";
+            SysCardWirelessDetail.Text = _radioMonitoring ? _wirelessSummary : "";
             // --- 隐私 ---
             bool mic = _privacyMicActive;
             bool cam = _privacyCamActive;
@@ -200,7 +196,7 @@ namespace alpha_island
 
             IslandLog.Debug("Cards",
                 $"系统状态卡：内存 {SysCardMemValue.Text}（{SysCardMemDetail.Text}）｜功耗 {SysCardPowerValue.Text}（{SysCardPowerDetail.Text}）" +
-                $"｜飞行 {SysCardAirValue.Text}｜隐私 {privacyValue}（{SysCardPrivacyDetail.Text}）");
+                $"｜无线 {SysCardWirelessValue.Text}｜隐私 {privacyValue}（{SysCardPrivacyDetail.Text}）");
         }
 
         private string BuildPrivacyDetail(bool mic, bool cam)

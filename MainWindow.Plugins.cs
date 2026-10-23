@@ -22,18 +22,21 @@ public partial class MainWindow
                 if (page.View.RenderTransform is TranslateTransform transform) AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(transform,TranslateTransform.YProperty, null);
                 _pages.Unregister(page.Id); CardViewport.Children.Remove(page.View);
             }, SelectComponent);
+        _plugins.ToolDispatcher = _desktopTools;
+        _plugins.DeviceBatteriesChanged += SyncDeviceBatteryCard;
+        _plugins.ContextReader = ReadDesktopContext;
+        _plugins.AllowPluginTools = SettingsRegistry.GetBool(_options, "AgentPluginToolsEnabled", false);
         _plugins.PageNotificationRequested += ShowPluginPageNotification;
-        _plugins.DeviceBatteryReported += report => OnBluetoothBatteryUpdated(_plugins,
-            new Services.BluetoothDeviceInfo(report.Id, report.Name, Services.BluetoothDeviceCategory.Audio,
-                report.Charging ? null : report.Percent, report.Connected));
         _plugins.ConfigurationChanged += () =>
         {
             _settingsWindow?.SynchronizePluginConfiguration(_options);
-            if (_runtimeEnabled) _options.Save(allowRecovery: true);
+            if (_runtimeEnabled) { bool saved = _options.TrySave(allowRecovery: true); _settingsWindow?.ReportSettingsSaved(saved); }
         };
         _plugins.AvailabilityChanged += () =>
         {
             _pages.Sync(_options);
+            if (_pages.IndexOf(VoiceChatPage) < 0 && _voiceAssistant?.Active == true) _ = _voiceAssistant.CancelAsync();
+            ConfigureVoiceAssistant();
             foreach (string id in _cardPinViews.Values.Where(v => _pages.IndexOf(v.PageId) < 0).Select(v => v.PageId).ToArray()) RemoveCardPinLayer(id);
             SwitchCardPage(Math.Max(0, _pages.ActiveIndex), animated: false);
             SyncCardPageVisuals();
@@ -42,6 +45,7 @@ public partial class MainWindow
         _plugins.SettingsRequested += () => { ShowSettings(); _settingsWindow?.OpenPluginSettings(); };
         _plugins.Changed += () =>
         {
+            SyncDeviceBatteryCard();
             _pages.Sync(_options);
             SwitchCardPage(Math.Max(0, _pages.ActiveIndex), animated: false);
             SyncCardPageVisuals();

@@ -20,6 +20,7 @@ internal static partial class Program
             inbox.Clear();
             AgentStatus.Reset(owner: owner);
             SetAgentField(window, "_smtc", null);
+            if (music) PrivateCall(window, "ApplyNoMedia");
             SetAgentField(window, "_mediaSourceForeground", false);
             SetAgentField(window, "_musicIslandDismissed", false);
             SetAgentField(window, "_isPinned", false);
@@ -62,7 +63,6 @@ internal static partial class Program
         try
         {
             options.LyricsEnabled = false;
-            options.KeepCompactWhilePlaying = false;
             SettingsRegistry.Write(options, "MediaHideWhenPaused", true);
             for (int cycle = 0; cycle < 3; cycle++)
             {

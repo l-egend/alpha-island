@@ -97,7 +97,7 @@ internal static partial class Program
             PrivateCall(window, "ClearDesktopInbox"); layers.HideAll();
 
             SettingsRegistry.Write(options, "AgentStatusEnabled", true);
-            SetAgentField(window, "_lastAgentUiState", AgentRunState.Idle);
+            AgentStatus.Reset(owner: owner); PrivateCall(window, "UpdateAgentStatusUi");
             AgentStatus.Set(AgentRunState.Thinking, "测试思考", owner);
             PrivateCall(window, "UpdateAgentStatusUi"); PumpAnimations(80); root.UpdateLayout();
             Check(AgentStatus.State == AgentRunState.Thinking && window.AgentNotifyGlyph.IsVisible

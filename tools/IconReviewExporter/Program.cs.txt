@@ -21,7 +21,7 @@ using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
 using Image = System.Windows.Controls.Image;
 
-internal static class Program
+internal static partial class Program
 {
     private const int Tile = 96;
     private static readonly SolidColorBrush Cyan = new(Color.FromRgb(0x57, 0xDE, 0xFF));
@@ -37,6 +37,7 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--remaining", StringComparer.OrdinalIgnoreCase)) return ExportRemaining(args);
             Root = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
             if (!File.Exists(Path.Combine(Root, "alpha-island.csproj"))) throw new InvalidDataException("The project directory is required.");
             Out = Path.Combine(Root, "bin", "IconReview-2026-10-11-v" + typeof(SemanticIcon).Assembly.GetName().Version!.ToString(3));

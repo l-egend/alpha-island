@@ -17,7 +17,6 @@ internal static partial class Program
             new AudioAppSessionViewModel { ProcessId = 100 + index, Name = "滚轮测试应用 " + index }).ToList());
         void Wheel(UIElement target, int delta)
         {
-            SetAgentField(window, "_lastWheelPageUtcTick", 0L);
             var e = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, delta)
                 { RoutedEvent = Mouse.PreviewMouseWheelEvent };
             target.RaiseEvent(e);

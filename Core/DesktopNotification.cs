@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace alpha_island.Core;
 
-public enum DesktopEventKind { Message, Volume, PowerConnected, PowerDisconnected, LowBattery, CriticalBattery, Locked, Unlocked, System, WifiRadio, BluetoothRadio, BootTiming, Weather, BluetoothLowBattery }
+public enum DesktopEventKind { Message, Volume, PowerConnected, PowerDisconnected, LowBattery, CriticalBattery, Locked, Unlocked, System, WifiRadio, BluetoothRadio, BootTiming, Weather, BluetoothLowBattery, Assistant, DeviceBatteryFull, DeviceCharging }
 public enum NotificationImportance { Normal, Important, Critical }
 
 public sealed record DesktopNotification(string Key, string AppId, string AppName, string Title, string Body,
@@ -12,6 +12,11 @@ public sealed record DesktopNotification(string Key, string AppId, string AppNam
     bool? RadioEnabled = null, int? WeatherCode = null, byte[]? ContentImage = null, bool ContentImageIsHero = false,
     NotificationImportance Importance = NotificationImportance.Normal)
 {
+    public AssistantReminder? Reminder { get; init; }
+    public AlphaIsland.PluginSdk.DeviceBatteryKind? DeviceKind { get; init; }
+    public bool IsPinned { get; init; }
+    public bool IsRead { get; init; }
+    public string ActionFeedback { get; init; } = "";
     public bool IsCritical => Kind is DesktopEventKind.LowBattery or DesktopEventKind.CriticalBattery or DesktopEventKind.BluetoothLowBattery;
     public bool CanOpenApp => Kind == DesktopEventKind.Message && !string.IsNullOrWhiteSpace(AppId);
     /// <summary>A one-line display preview; keep the original title and body intact for history.</summary>
@@ -38,8 +43,8 @@ internal sealed class DesktopNotificationPolicy
     public bool Accepts(DesktopNotification item)
     {
         if (item.Kind != DesktopEventKind.Message) return true;
-        if (MessengerIdentity.FromNotification(item) is { } client
-            && !SettingsRegistry.GetBool(_options, client == MessengerClient.QQ ? "NotificationQQEnabled" : "NotificationWeChatEnabled", true)) return false;
+        if (MessengerIdentity.FromNotification(item) != null
+            && !SettingsRegistry.GetBool(_options, "NotificationMessengerEnabled", true)) return false;
         if (item.AppId.StartsWith("AlphaIsland.Desktop", StringComparison.OrdinalIgnoreCase) || item.AppName == "Alpha Island") return false;
         if (MatchesApp(item, "NotificationBlockedApps")) return false;
         if (Tokens(SettingsRegistry.GetText(_options, "NotificationAllowedApps", "")).Length > 0 && !MatchesApp(item, "NotificationAllowedApps")) return false;
@@ -71,17 +76,41 @@ internal sealed class DesktopNotificationInbox
     public int PendingCount => _pending.Count;
     public bool Add(DesktopNotification item, bool queue, DesktopNotificationPolicy? policy = null)
     {
+        if (AssistantReminderRules.PendingGroup(item) is { } group)
+        {
+            static DesktopNotification Merged(DesktopNotification value) => value with
+            {
+                IsPinned = false, IsRead = true, ActionFeedback = "",
+                Body = value.Body + "\n已合并到更新的同类提醒",
+                Reminder = value.Reminder! with { Pending = false, Actions = [] }
+            };
+            var superseded = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < _history.Count; i++)
+            {
+                var previous = _history[i];
+                if (previous.Key == item.Key || AssistantReminderRules.PendingGroup(previous) != group) continue;
+                if (previous.Created > item.Created) { item = Merged(item); queue = false; break; }
+                _history[i] = Merged(previous); superseded.Add(previous.Key);
+            }
+            _pending.RemoveAll(value => superseded.Contains(value.Key));
+        }
         int existing = _history.FindIndex(x => x.Key == item.Key);
         if (existing >= 0)
         {
+            bool requeue = queue && item.Reminder is { Pending: true } && _history[existing].Reminder is { Pending: false };
             _history[existing] = item;
             int pending = _pending.FindIndex(x => x.Key == item.Key);
             if (pending >= 0) _pending[pending] = item;
+            else if (requeue) { _pending.Add(item); while (_pending.Count > 50) _pending.RemoveAt(0); }
             Changed?.Invoke();
             return false;
         }
         _history.Insert(0, item);
-        while (_history.Count > 100) _history.RemoveAt(_history.Count - 1);
+        while (_history.Count > 100)
+        {
+            int oldest = _history.FindLastIndex(x => !x.IsPinned);
+            _history.RemoveAt(oldest >= 0 ? oldest : _history.Count - 1);
+        }
         if (queue)
         {
             _pending.Add(item);
@@ -101,6 +130,27 @@ internal sealed class DesktopNotificationInbox
         return next;
     }
     public void Dismiss(string key) { _history.RemoveAll(x => x.Key == key); _pending.RemoveAll(x => x.Key == key); Changed?.Invoke(); }
+    internal void SetPinned(string key, bool pinned) => Update(key, item => item with { IsPinned = pinned });
+    internal void MarkRead(string key) => Update(key, item => item with { IsRead = true });
+    internal void MarkAllRead()
+    { for (int i = 0; i < _history.Count; i++) _history[i] = _history[i] with { IsRead = true }; Changed?.Invoke(); }
+    internal void ResolveReminder(string key, string result = "已处理")
+    {
+        Update(key, item => item.Reminder is { Pending: true } reminder
+            ? item with { IsPinned = false, IsRead = true, Reminder = reminder with { Pending = false, Actions = [] }, Body = item.Body + "\n" + result, ActionFeedback = "" } : item);
+        _pending.RemoveAll(item => item.Key == key);
+    }
+    internal void ExpireReminders(DateTimeOffset now)
+    { foreach (var item in _history.Where(n => n.Reminder is { Pending: true } r && r.Expires <= now).ToArray()) ResolveReminder(item.Key, "提醒已过期，请以当前应用状态为准"); }
+    private void Update(string key, Func<DesktopNotification, DesktopNotification> update)
+    {
+        int index = _history.FindIndex(item => item.Key == key);
+        if (index < 0) return;
+        var next = update(_history[index]); if (next == _history[index]) return;
+        _history[index] = next;
+        int pending = _pending.FindIndex(item => item.Key == key); if (pending >= 0) _pending[pending] = next;
+        Changed?.Invoke();
+    }
     internal DesktopNotification[] TakePendingMessages(DesktopNotificationPolicy policy, bool locked, DateTimeOffset now)
     {
         _pending.RemoveAll(item => now - item.Created > TimeSpan.FromMinutes(2) || !policy.CanPopup(item, locked));
@@ -108,5 +158,5 @@ internal sealed class DesktopNotificationInbox
         _pending.RemoveAll(item => item.Kind == DesktopEventKind.Message); return messages;
     }
     public void DropPending() => _pending.Clear();
-    public void Clear() { _history.Clear(); _pending.Clear(); Changed?.Invoke(); }
+    public void Clear(bool keepPinned = false) { if (keepPinned) _history.RemoveAll(n => !n.IsPinned); else _history.Clear(); _pending.Clear(); Changed?.Invoke(); }
 }

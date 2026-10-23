@@ -41,7 +41,7 @@ internal static partial class Program
             }
             foreach (var (controlName, pageName) in new[] {
                 ("PomodoroFocusMinutesBox", "Page_Focus"), ("PomodoroSoundBox", "Page_Focus"),
-                ("MediaWindowHandoffToggle", "Page_Media"), ("UpNextToggle", "Page_Media"),
+                ("MediaWindowHandoffToggle", "Page_Media"), ("MediaPlaybackNotifyToggle", "Page_Media"),
                 ("VolumeNotifyToggle", "Page_Notifications"), ("BluetoothNotifySlider", "Page_Notifications"),
                 ("NotificationQuietToggle", "Page_Notifications"), ("GreetingToggle", "Page_Notifications"),
                 ("CpuMonitorToggle", "Page_System"), ("BatteryNotifyToggle", "Page_System"),

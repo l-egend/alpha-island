@@ -22,8 +22,6 @@ internal static partial class Program
         var oldVolume = AgentField<VolumeService?>(window, "_volumeService");
         bool oldLyrics = options.LyricsEnabled, oldPause = options.PauseNotifyEnabled,
             oldPlay = options.PlayNotifyEnabled, oldNext = options.UpNextEnabled;
-        bool oldAirplane = AgentField<bool>(window, "_airplaneOn"), oldAirplaneKnown = AgentField<bool>(window, "_airplaneKnown"),
-            oldBarAirVisible = AgentField<bool>(window, "_barAirVisible");
         var transitions = AgentField<WirelessRadioTransitions>(window, "_radioTransitions");
         var previousRadios = AgentField<Dictionary<RadioKind, bool?>>(transitions, "_previous");
         var savedRadios = new Dictionary<RadioKind, bool?>(previousRadios);
@@ -119,12 +117,6 @@ internal static partial class Program
             ClearRadioNotice(); Radios(RadioState.On, RadioState.On); PumpAnimations(100);
             Check(summary.Icon.Shape == IconShape.Bluetooth && summary.Icon.Active, "真实蓝牙开启状态选择内部启用目标");
 
-            ClearRadioNotice(); SettingsRegistry.Write(options, "AirplaneNotifyEnabled", true);
-            SetAgentField(window, "_airplaneKnown", true); SetAgentField(window, "_airplaneOn", false);
-            PrivateCall(window, "ApplyAirplaneState", true);
-            Check(window.SysNotifyGlyph.Active, "飞行模式开启由明确状态参数传给通用提示图标");
-            PrivateCall(window, "ApplyAirplaneState", false);
-            Check(!window.SysNotifyGlyph.Active, "飞行模式关闭通过状态参数更新内部目标，不猜测开关文案");
         }
         finally
         {
@@ -132,8 +124,6 @@ internal static partial class Program
                 window.VolumeIcon, window.SysNotifyGlyph, window.BatteryIcon, summary.IconContent }) ActionIconMotion.Stop(icon);
             PrivateCall(window, "DismissUpNext"); layers.HideAll(); PrivateCall(window, "ClearDesktopInbox");
             previousRadios.Clear(); foreach (var pair in savedRadios) previousRadios.Add(pair.Key, pair.Value);
-            SetAgentField(window, "_airplaneOn", oldAirplane); SetAgentField(window, "_airplaneKnown", oldAirplaneKnown);
-            SetAgentField(window, "_barAirVisible", oldBarAirVisible);
             SetAgentField(window, "_smtc", oldSmtc); SetAgentField(window, "_volumeService", oldVolume);
             if (oldSmtc?.Current is { } original) PrivateCall(window, "ApplyMedia", original);
             else PrivateCall(window, "ApplyNoMedia");

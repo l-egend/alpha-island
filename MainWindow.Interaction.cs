@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Gestures (swipe up to collapse) and hover/click hit testing.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -37,6 +36,8 @@ namespace alpha_island
 
         private void IslandBody_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            if (GameDoNotDisturbActive) { e.Handled = true; return; }
+            if (VoiceIslandVisible) { _isSwiping = false; _dragStartedInsideIsland = true; return; }
             _mediaOpenPointer = IsMediaOpenSurface(e.OriginalSource as DependencyObject) ? e.GetPosition(this) : null;
             _clipboardOpenPointer = IsClipboardLinkOpenSurface(e.OriginalSource as DependencyObject) && _clipboard?.CurrentWebLink is Uri link
                 ? (e.GetPosition(this), link) : null;
@@ -47,7 +48,7 @@ namespace alpha_island
                 || IsDescendantOf(e.OriginalSource as DependencyObject, CardVolumeSliderTrack)
                 || IsDescendantOf(e.OriginalSource as DependencyObject, VolumeTrackContainer)
                 || IsInsideTransferItem(e.OriginalSource)
-                || IsSliderSource(e.OriginalSource as DependencyObject))
+                || IsCardControlSource(e.OriginalSource as DependencyObject))
             {
                 _isSwiping = false;
                 _dragStartedInsideIsland = true;
@@ -93,18 +94,29 @@ namespace alpha_island
             return false;
         }
 
-        private static bool IsSliderSource(DependencyObject? node)
+        private static bool IsCardControlSource(DependencyObject? node)
         {
-            while (node is Visual)
+            while (node != null)
             {
-                if (node is System.Windows.Controls.Slider) return true;
-                node = VisualTreeHelper.GetParent(node);
+                if (node is System.Windows.Controls.Primitives.RangeBase
+                    or System.Windows.Controls.Primitives.Thumb or System.Windows.Controls.Primitives.ButtonBase
+                    or System.Windows.Controls.Primitives.TextBoxBase or System.Windows.Controls.Primitives.Selector
+                    or System.Windows.Controls.ScrollViewer or System.Windows.Controls.PasswordBox
+                    or System.Windows.Documents.Hyperlink) return true;
+                node = node switch
+                {
+                    Visual => VisualTreeHelper.GetParent(node),
+                    ContentElement content => ContentOperations.GetParent(content) ?? (content as FrameworkContentElement)?.Parent,
+                    _ => null
+                };
             }
             return false;
         }
 
         private void IslandBody_PreviewMouseMove(object sender, MouseEventArgs e)
         {
+            if (_isSwiping && IsCardControlSource(Mouse.Captured as DependencyObject))
+            { _isSwiping = false; return; }
             if (_isSwiping && e.LeftButton == MouseButtonState.Pressed)
             {
                 Point current = e.GetPosition(this);
@@ -159,6 +171,8 @@ namespace alpha_island
 
         private void IslandBody_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
         {
+            if (GameDoNotDisturbActive) { e.Handled = true; return; }
+            if (VoiceIslandVisible) { e.Handled = true; return; }
             // Handle the battery before the parent card's pin gesture in this tunnelling event.
             if (_state == IslandState.Card && _pages.ActiveId == IslandPageIds.System
                 && IsDescendantOf(e.OriginalSource as DependencyObject, SystemBatterySummary))
@@ -180,7 +194,7 @@ namespace alpha_island
                 return;
             }
 
-            // 卡片态也支持右键置顶（用户要求：卡片能像音乐播放器一样右键常驻）。
+            // 卡片态支持右键置顶。
             // 例外：文件传输列表项的右键是"从列表里移除这一项"，那个手势要让给它。
             if (_state == IslandState.Card && !IsInsideTransferItem(e.OriginalSource))
             {
@@ -230,7 +244,7 @@ namespace alpha_island
 
         /// <summary>
         /// 让置顶提示跟着主岛宽度走。
-        /// 用户反馈：长歌词把岛撑宽之后，固定 X=226 的气泡会被压在岛上，所以改成按当前岛宽现算。
+        /// 按当前岛宽定位置顶气泡，避免长歌词撑宽后发生重叠。
         /// </summary>
         private void SyncPinBubbleOffset()
         {
@@ -353,7 +367,7 @@ namespace alpha_island
         /// 钉住 / 取消钉住**某一层**（③A）。右键路由与调试钩子共用这一条路径，
         /// 免得验收脚本走的是另一套语义（改语义时只改这里）。返回钉住后的状态。
         /// </summary>
-        private bool SetLayerPinned(string layer, bool pinned, bool promoteToMain = true)
+        private bool SetLayerPinned(string layer, bool pinned, bool promoteToMain = true, bool preserveCard = false)
         {
             if (layer == GameQuietNoticeKey) return false; // The game-entry notice is transient.
             if (pinned)
@@ -411,15 +425,15 @@ namespace alpha_island
             {
                 UpdateSatelliteOrbVisual(layer, orb);
             }
-            ShowPinBubble(now, LayerDisplayName(layer));
             SyncNotificationLayers();
             SyncSatelliteOrbs();
             TryMorphPillWidth();
 
-            if (!now && !HasVisibleMusicPin && !_layers.AnyPinned && !HasActiveNotification)
+            if (!now && !(preserveCard && _state == IslandState.Card) && !HasVisibleMusicPin && !_layers.AnyPinned && !HasActiveNotification)
             {
                 CollapseToBar(force: !ShouldHidePausedMedia);
             }
+            ShowPinBubble(now, LayerDisplayName(layer));
             return now;
         }
 
@@ -557,6 +571,7 @@ namespace alpha_island
 
         private void ExpandIslandFromBar()
         {
+            if (GameDoNotDisturbActive) return;
             bool showingNotification = HasActiveNotification || _approvalCurrent != null || _layers.AnyPinned;
             string page = LastOpenedCardPage();
             if (ShouldHideForegroundMedia && !showingNotification && page == IslandPageIds.Music) return;
@@ -571,7 +586,7 @@ namespace alpha_island
 
         private void IslandBody_MouseEnter(object sender, MouseEventArgs e)
         {
-            if (_exiting) return;
+            if (_exiting || GameDoNotDisturbActive) return;
             if (_approvalCurrent != null) { PresentCurrentApproval(); return; }
             if (_clipboardLocked) return;
             _hoverOutTicks = 0;
@@ -579,17 +594,14 @@ namespace alpha_island
             {
                 ExpandIslandFromBar();
             }
-            // An automatic desktop notification stays small until the user explicitly clicks it.
-            else if (_state == IslandState.Pill && !_options.TwoStepExpand
-                && !IsAgentIslandKey(PinTargetLayer())
-                && !(_desktopCurrent != null && _notificationAutoPill && _activeMainIslandKey == DesktopToastKey))
-                OpenCardFromPill();
+
         }
 
-        /// <summary>一级 → 二级：用户要求"鼠标经过时第一次展开"是一级，再点一下才进完整卡片。</summary>
+        /// <summary>悬停展开一级胶囊，点击进入完整卡片。</summary>
         private void IslandBody_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (_exiting) return;
+            if (_exiting || GameDoNotDisturbActive) return;
+            if (VoiceIslandVisible) { e.Handled = true; return; }
             if (_state == IslandState.Pill && IsAgentIslandKey(PinTargetLayer()) && TryOpenAgentIsland(PinTargetLayer()))
             {
                 e.Handled = true;
@@ -648,10 +660,12 @@ namespace alpha_island
 
             // Games can consume the low-level hook. Reuse this timer only while a
             // card is open to detect an outside press without another global loop.
+            if (_state == IslandState.Card && IsCardControlSource(Mouse.Captured as DependencyObject))
+            { _hoverOutTicks = 0; return; }
             if (_state == IslandState.Card) PollOutsideCardClick();
             else _outsideCardButtonDown = false;
 
-            if (ComponentSwitchGestureActive || _fileDragActive) { _hoverOutTicks = 0; return; }
+            if (VoiceIslandVisible || ComponentSwitchGestureActive || _fileDragActive) { _hoverOutTicks = 0; return; }
             if (_isDraggingVolumeSlider
                 || IsDescendantOf(System.Windows.Input.Mouse.Captured as DependencyObject, VolumeCardLayer)
                 || HoldSelectedComponentCard(IsCursorInHotZone())) { _hoverOutTicks = 0; return; }
@@ -849,8 +863,10 @@ namespace alpha_island
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (_exiting) return;
-                // 选页前入队的旧点击不能在选页后按新几何误判为岛外点击。
-                if (_state == IslandState.Card && e.Timestamp <= _componentSelectedTick) return;
+                // Ignore the opening click and its possible double-click tail while the
+                // launcher/menu hands input over to the selected card's new geometry.
+                if (_state == IslandState.Card && e.Timestamp <= _componentSelectedTick
+                    + System.Windows.Forms.SystemInformation.DoubleClickTime) return;
 
                 if (HandleComponentMenuGlobalClick(e.X, e.Y)) return;
 
@@ -889,7 +905,8 @@ namespace alpha_island
             bool pressed = (!_outsideCardButtonDown && down) || ((left | right) & 1) != 0;
             _outsideCardButtonDown = down;
             if (!pressed || ComponentSwitchGestureActive || _fileDragActive || _isDraggingVolumeSlider
-                || Environment.TickCount64 - _componentSelectedTick < 150 || _approvalCurrent != null) return;
+                || Environment.TickCount64 - _componentSelectedTick < System.Windows.Forms.SystemInformation.DoubleClickTime
+                || _approvalCurrent != null) return;
             if (NativeMethods.TryGetCursorPos(out var point) && !IsPointInsideInteractiveZone(point.X, point.Y))
                 HandleOutsideIslandClick();
         }

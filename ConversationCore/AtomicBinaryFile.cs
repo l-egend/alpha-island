@@ -17,9 +17,9 @@ internal static class AtomicBinaryFile
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);
             }
-            if (File.Exists(fullPath)) File.Replace(temporary, fullPath, keepBackup ? fullPath + ".bak" : null);
-            else File.Move(temporary, fullPath);
+            AtomicJsonFile.CommitTemporary(temporary, fullPath, keepBackup ? fullPath + ".bak" : null);
+
         }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        finally { AtomicJsonFile.TryDeleteTemporary(temporary); }
     }
 }

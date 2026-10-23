@@ -168,7 +168,7 @@ internal static partial class Program
             Complete((Task)PrivateCall(window, "SendAiAsync", "从入口发送测试问题")!);
             Check(store.Load()[^1].Content == "模拟回复成功" && store.Load()[^2].Content == "从入口发送测试问题" && !AgentField<bool>(window, "_aiStreaming"), "岛内发送、流式回复、结束状态与落盘完成整个对话流程");
             using var sent = JsonDocument.Parse(sentBody!);
-            Check(sent.RootElement.GetProperty("messages").GetArrayLength() == 20 && !sent.RootElement.GetProperty("messages").EnumerateArray().Any(m => m.GetProperty("content").GetString() == "测试消息 1"), "实际请求只携带有限上下文，不发送已删除或很旧的内容");
+            Check(sent.RootElement.GetProperty("messages").EnumerateArray().Count(m => m.GetProperty("role").GetString() is "user" or "assistant") == 20 && !sent.RootElement.GetProperty("messages").EnumerateArray().Any(m => m.GetProperty("content").GetString() == "测试消息 1"), "实际请求只携带有限上下文，不发送已删除或很旧的内容");
             Check(!sentBody!.Contains(TestApiKey) && !IslandLog.DumpText().Contains(TestApiKey), "测试密钥不进入消息正文或日志");
             history.SessionList.SelectedItem = history.SessionList.Items.Cast<ChatSessionSummary>().First(s => s.Id == fresh);
             Click(history.ContinueButton);

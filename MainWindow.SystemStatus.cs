@@ -9,7 +9,7 @@ using alpha_island.Core;
 using alpha_island.Interop;
 using alpha_island.Services;
 
-// A 组「系统状态」类功能在 UI 侧的装配：低频采样节拍（IslandTicker）、细条常驻指示、
+// 系统状态功能在 UI 侧的装配：低频采样节拍（IslandTicker）、细条常驻指示、
 // 阈值提示（通知图层）。采样本体在 Services\NetworkSpeedService.cs 里，这里只做接线与显示。
 namespace alpha_island
 {
@@ -17,10 +17,10 @@ namespace alpha_island
     {
         // ================= 低频采样调度（阶段 3.6 的 IslandTicker 的第一个消费者） =================
 
-        /// <summary>网速 / 内存 / 功率 / 飞行模式 / 隐私灯共用的采样定时器（一个 timer + 命名订阅）。</summary>
+        /// <summary>网速 / 内存 / 功率 / 无线开关 / 隐私灯共用的采样定时器（一个 timer + 命名订阅）。</summary>
         private readonly IslandTicker _ticker;
 
-        // ================= 网速（A 组①） =================
+        // ================= 网速 =================
 
         private NetworkSpeedService? _netSpeed;
 
@@ -188,18 +188,12 @@ namespace alpha_island
             // 等主弹簧基本收满（_reveal ≥ 0.9）再亮；反方向（展开）立刻熄灭。
             // 网速与内存共用这一层：任一侧有内容就点亮（没流量时内存百分比单独占位）。
             bool show = BarIndicatorsEnabled
-                        && (_barSpeedVisible || _barMemVisible || _barAirVisible || _barMicVisible || _barCamVisible || _barAgentVisible)
+                        && (_barSpeedVisible || _barMemVisible || _barMicVisible || _barCamVisible || _barAgentVisible)
                         && _state == IslandState.Bar && _reveal >= 0.9;
             double target = show ? 1.0 : 0.0;
             if (Math.Abs(BarSpeedLayer.Opacity - target) > 0.001) BarSpeedLayer.Opacity = target;
 
-            // 飞行模式图标只在自己那一侧有内容时出现（细条上没有别的无线图标会打架）
-            if (BarAirText != null)
-            {
-                BarAirText.Visibility = _barAirVisible ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            // 麦克风 / 摄像头小圆点（A 组⑤）
+            // 麦克风 / 摄像头小圆点
             if (BarPrivacyDots != null)
             {
                 BarPrivacyDots.Visibility = (_barMicVisible || _barCamVisible) ? Visibility.Visible : Visibility.Collapsed;
@@ -213,13 +207,13 @@ namespace alpha_island
                 BarCamDot.Visibility = _barCamVisible ? Visibility.Visible : Visibility.Collapsed;
             }
 
-            // agent 状态色点（B 组③）：颜色由 UpdateAgentStatusUi 每次刷新时写入，这里只管亮灭。
+            // agent 状态色点：颜色由 UpdateAgentStatusUi 每次刷新时写入，这里只管亮灭。
             if (BarAgentDot != null)
             {
                 BarAgentDot.Visibility = _barAgentVisible ? Visibility.Visible : Visibility.Collapsed;
             }
 
-            // 占用灯（A 组⑤）的诊断：只有真的在占用时才打，用来断言「细条上那两枚点亮没亮」，
+            // 占用灯的诊断：只有真的在占用时才打，用来断言「细条上那两枚点亮没亮」，
             // 因为岛窗是分层窗口 + DWM 背板，本机 `CopyFromScreen` 抓不到它的内容（见 README §15）。
             // 形变期间本方法每帧都被调，所以同一内容**只在变化时**打一行，否则日志会被刷爆
             // （实测 20s 能刷 350+ 行，512KB 轮转很快就顶掉别的现场）。
@@ -278,11 +272,11 @@ namespace alpha_island
             string value = downHigh && upHigh ? $"↓{downMBps:0.#} ↑{upMBps:0.#} MB/s"
                 : NetworkSpeedService.FormatSpeedFull(downHigh ? sample.DownBytesPerSecond : sample.UpBytesPerSecond);
             string glyph = downHigh && upHigh ? "\uE895" : downHigh ? "\uE896" : "\uE898";
-            ShowSystemNotify(glyph, title, $"阈值 {thresholdMBps:0.#} MB/s", value, NetSpeedAlertSeconds,
+            ShowSystemNotify(glyph, title, $"阈值 {thresholdMBps:0.###} MB/s", value, NetSpeedAlertSeconds,
                 shape: downHigh && !upHigh ? IconShape.Download : IconShape.Auto, compact: true, targetPage: IslandPageIds.NetSpeed);
 
             IslandLog.Debug("NetworkSpeed",
-                $"{(isDown ? "下行" : "上行")} {(isDown ? downMBps : upMBps):0.0} MB/s 超过阈值 {thresholdMBps:0.#} MB/s，弹出提示（state={_state} action={GetCurrentActionType()}）");
+                $"{(isDown ? "下行" : "上行")} {(isDown ? downMBps : upMBps):0.0} MB/s 超过阈值 {thresholdMBps:0.###} MB/s，弹出提示（state={_state} action={GetCurrentActionType()}）");
         }
 
         /// <summary>设置页改了网速相关的开关/阈值后立即生效（不用等下一次 ApplyOptions）。</summary>
@@ -301,7 +295,7 @@ namespace alpha_island
             _ticker?.TriggerNow("netspeed");
         }
 
-        // ================= 内存占用 + 一键整理（A 组②） =================
+        // ================= 内存占用 + 一键整理 =================
 
         // Native resource probes are owned by SystemResourceMonitor.
 
@@ -319,7 +313,7 @@ namespace alpha_island
 
         private static readonly TimeSpan MemoryAlertCooldown = TimeSpan.FromMinutes(5);
 
-        /// <summary>系统状态提示的默认停留秒数（内存/功率/飞行模式/隐私灯共用）。</summary>
+        /// <summary>系统状态提示的默认停留秒数（内存/功率/无线开关/隐私灯共用）。</summary>
         private const double SystemNotifySeconds = 4;
         private const double CompactSystemNotifyWidth = 280;
         private bool _systemNotifyCompact;
@@ -405,7 +399,7 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 弹出"系统状态"通用提示（A 组②③④⑤共用一层）。
+        /// 弹出"系统状态"通用提示（共用一层）。
         /// 内容全部在弹出前写入，所以新增一类提示不需要再加 XAML 图层。
         /// </summary>
         private string _systemNotifyTargetPage = IslandPageIds.System;
@@ -461,7 +455,7 @@ namespace alpha_island
             _ticker?.TriggerNow("memory");
         }
 
-        // ─────────────────────────── A 组③：功率检测 ───────────────────────────
+        // ─────────────────────────── 功率检测 ───────────────────────────
         // 复用 BatteryService（不新建服务）：电池供电时取放电功率与剩余时长，
         // 功率持续高于阈值就弹一条 system 提示；插着电源不提示。
         private int _powerHighTicks;
@@ -537,8 +531,8 @@ namespace alpha_island
 
             string detail = $"当前放电 {BatteryService.FormatPower(info.DischargeRateMilliwatts)}" +
                             $"｜预计剩余 {BatteryService.FormatRemaining(info.RemainingLifeSeconds)}" +
-                            $"｜阈值 {thresholdWatts:0.#} W";
-            IslandLog.Debug("Power", $"放电 {watts:0.#} W 超过阈值 {thresholdWatts:0.#} W，弹出提示");
+                            $"｜阈值 {thresholdWatts:0.###} W";
+            IslandLog.Debug("Power", $"放电 {watts:0.#} W 超过阈值 {thresholdWatts:0.###} W，弹出提示");
             ShowSystemNotify("\uE945", "功耗偏高", detail, BatteryService.FormatPower(info.DischargeRateMilliwatts));
         }
 
@@ -549,19 +543,13 @@ namespace alpha_island
             _ticker?.TriggerNow("power");
         }
 
-        // ─────────────────────────── A 组④：飞行模式（只读） ───────────────────────────
-        // 只读不切换：Radio.GetRadiosAsync() 看所有无线电是不是都关了；
-        // NetworkStatusChanged 事件负责"立刻重查"（拨开关/插网线），ticker 兜底每 10s 复查。
-        private bool _airplaneOn;
-        private bool _airplaneKnown;
-        private bool _barAirVisible;
+        // Wi-Fi / Bluetooth radio states are independent; no inferred airplane-mode state.
         private bool _radioBusy;
         private bool _radioMonitoring, _radioResample;
         private int _radioVersion;
         private long _radioEventSequence;
         private readonly WirelessRadioTransitions _radioTransitions = new();
         private readonly List<Windows.Devices.Radios.Radio> _observedRadios = new();
-        private bool? _airplaneFake;              // 调试钩子：伪造飞行模式状态
         private const double RadioSampleSeconds = 10;
 
         private void StartTelemetryService()
@@ -598,9 +586,6 @@ namespace alpha_island
             catch { /* 退出阶段忽略 */ }
 
             _ticker?.Unregister("radio");
-            _airplaneOn = false;
-            _airplaneKnown = false;
-            _barAirVisible = false;
             SyncBarIndicators();
         }
 
@@ -647,22 +632,12 @@ namespace alpha_island
 
             try
             {
-                bool on;
-                if (_airplaneFake.HasValue)
-                {
-                    on = _airplaneFake.Value;
-                }
-                else
-                {
                     var radios = await Windows.Devices.Radios.Radio.GetRadiosAsync().AsTask();
                     if (!_radioMonitoring || _exiting || version != _radioVersion) return;
                     foreach (var radio in _observedRadios) radio.StateChanged -= OnWirelessRadioChanged;
                     _observedRadios.Clear();
                     foreach (var radio in radios) { _observedRadios.Add(radio); radio.StateChanged += OnWirelessRadioChanged; }
                     ApplyWirelessRadioStates(radios.Select(r => (r.Kind, r.State)));
-                    // 每台无线电的开关不能证明系统飞行模式的开关状态。
-                    _airplaneKnown = false;
-                    _barAirVisible = false;
                     string summary = radios.Count == 0 ? "未检测到无线设备" : string.Join(" / ", radios.Select(r =>
                         r.Kind + " " + (r.State == Windows.Devices.Radios.RadioState.On ? "开" :
                             r.State is Windows.Devices.Radios.RadioState.Off or Windows.Devices.Radios.RadioState.Disabled ? "关" : "未知")));
@@ -670,18 +645,13 @@ namespace alpha_island
                     _wirelessSummary = summary;
                     SyncBarIndicators();
                     if (IsSystemCardVisible) SyncSystemCard();
-                    return;
-                }
 
-                ApplyAirplaneState(on);
             }
             catch (Exception ex)
             {
                 if (!_radioMonitoring || version != _radioVersion) return;
                 _radioTransitions.Reset();
-                IslandLog.Warn("Radio", "读取飞行模式失败: " + ex.Message);
-                _airplaneKnown = false;
-                _barAirVisible = false;
+                IslandLog.Warn("Radio", "读取无线开关状态失败: " + ex.Message);
                 _wirelessSummary = "无线设备状态读取失败";
                 SyncBarIndicators();
                 if (IsSystemCardVisible) SyncSystemCard();
@@ -693,42 +663,9 @@ namespace alpha_island
             }
         }
 
-        private void ApplyAirplaneState(bool on)
-        {
-            bool changed = _airplaneKnown && on != _airplaneOn;
-            _airplaneOn = on;
+        private void OnTelemetryOptionsChanged() => _ticker?.TriggerNow("radio");
 
-            bool barEnabled = _options == null || SettingsRegistry.GetBool(_options, "AirplaneBarEnabled", true);
-            _barAirVisible = on && barEnabled;
-            SyncBarIndicators();
-            IslandLog.Debug("Radio", $"飞行模式 = {(on ? "开" : "关")}，细条图标 = {(_barAirVisible ? "显示" : "隐藏")}" +
-                                     $"，首次已知 = {(!changed && !_airplaneKnown ? "是" : "否")}，变化 = {(changed ? "是" : "否")}");
-
-            if (changed && _options != null && SettingsRegistry.GetBool(_options, "AirplaneNotifyEnabled", false))
-            {
-                IslandLog.Debug("Radio", on ? "飞行模式已开启，弹出提示" : "飞行模式已关闭，弹出提示");
-                ShowSystemNotify("\uE709",
-                    on ? "已进入飞行模式" : "已退出飞行模式",
-                    on ? "无线网络已关闭｜网速检测将没有数据" : "无线网络已恢复",
-                    on ? "开" : "关", active: on);
-            }
-
-            _airplaneKnown = true;
-
-            // 系统状态卡片页的飞行模式格（必须在 _airplaneKnown = true 之后刷，否则还会写"未知"）。
-            if (IsSystemCardVisible) SyncSystemCard();
-        }
-
-        /// <summary>设置页改了飞行模式相关开关后立即生效。</summary>
-        private void OnTelemetryOptionsChanged()
-        {
-            bool barEnabled = _options == null || SettingsRegistry.GetBool(_options, "AirplaneBarEnabled", true);
-            _barAirVisible = _airplaneOn && barEnabled;
-            SyncBarIndicators();
-            _ticker?.TriggerNow("radio");
-        }
-
-        // ─────────────────────────── A 组⑤：麦克风 / 摄像头占用灯 ───────────────────────────
+        // ─────────────────────────── 麦克风 / 摄像头占用灯 ───────────────────────────
         // 只读 ConsentStore 注册表（免提权免授权）。有应用开用就亮细条小圆点 + 弹一条提示，
         // 「从无人使用 → 有人使用」的那一拍才提示（不是每次采样都提示）。
         private PrivacyIndicatorService? _privacy;
@@ -750,7 +687,7 @@ namespace alpha_island
 
         private void StartPrivacyService()
         {
-            _privacy ??= new PrivacyIndicatorService();
+            _privacy ??= _desktopAssistant?.Privacy ?? new PrivacyIndicatorService();
             if (_ticker != null)
             {
                 _ticker.Register("privacy", TimeSpan.FromSeconds(PrivacySampleSeconds), SamplePrivacy, runImmediately: true);
@@ -778,7 +715,7 @@ namespace alpha_island
             string? camApp = null;
             try
             {
-                foreach (var usage in _privacy.Sample())
+                foreach (var usage in _desktopAssistant?.PrivacySnapshot ?? _privacy.Sample())
                 {
                     if (usage.Capability == PrivacyCapability.Microphone) micApp ??= usage.AppName;
                     else camApp ??= usage.AppName;
@@ -867,7 +804,7 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 屏幕右上角的占用灯（A 组⑤ 角落版）：和细条上那两枚点是同一份状态，但独立成窗、常驻屏幕右上角，
+        /// 屏幕右上角的占用灯（独立窗口）：和细条上那两枚点是同一份状态，但独立成窗、常驻屏幕右上角，
         /// 岛收成细条（甚至岛被隐藏）时它照样在。窗口按需创建 —— 从没用过麦克风/摄像头的人不会多一个窗。
         /// </summary>
         private void SyncPrivacyIndicator(string? micApp, string? camApp)

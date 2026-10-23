@@ -18,14 +18,14 @@ public partial class SettingsWindow
         panel.Children.Add(new TextBlock { Text = "通知与事件", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
         var group = new StackPanel();
         foreach (var descriptor in SettingsRegistry.All.Where(x => x.Key.StartsWith("Notification", StringComparison.Ordinal)
-            || x.Key is "SystemToastEnabled" or "SessionEventNotifyEnabled" or "CpuMonitorEnabled"))
+            || x.Key is "SystemToastEnabled" or "SessionEventNotifyEnabled" or "CpuMonitorEnabled" or "BluetoothLowBatteryEnabled" or "DeviceBatteryFullEnabled" or "DeviceBatteryChargingEnabled"))
         {
             var row = new Grid { Style = (Style)FindResource("W11Row") };
             row.ColumnDefinitions.Add(new ColumnDefinition()); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var text = new StackPanel { Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = descriptor.Label, Style = (Style)FindResource("W11RowLabel") });
             if (!string.IsNullOrWhiteSpace(descriptor.Hint))
-                text.Children.Add(new TextBlock { Text = descriptor.Hint, Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, MaxWidth = 370 });
+                text.Children.Add(new TextBlock { Text = descriptor.Hint, Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, MaxWidth = 370, HorizontalAlignment = HorizontalAlignment.Left });
             row.Children.Add(text);
             FrameworkElement control;
             if (descriptor.Kind == SettingKind.Bool)
@@ -49,16 +49,16 @@ public partial class SettingsWindow
             if (descriptor.PageId == SettingsPageIds.System)
             {
                 Page_System.Children.Insert(1, new TextBlock { Text = "处理器", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
-                Page_System.Children.Insert(2, new Border { Style = (Style)FindResource("W11Card"), Child = row });
+                Page_System.Children.Insert(2, SettingCard(row));
             }
             else
             {
-                group.Children.Add(row); group.Children.Add(new Border { Style = (Style)FindResource("W11RowDivider") });
+                group.Children.Add(SettingCard(row));
             }
         }
         var open = new Button { Style = (Style)FindResource("W11Button"), Content = "通知中心与权限", Margin = new Thickness(14, 12, 14, 12), Padding = new Thickness(10, 6, 10, 6), HorizontalAlignment = HorizontalAlignment.Left };
         open.Click += (_, _) => NotificationCenterRequested?.Invoke(this, EventArgs.Empty); group.Children.Add(open);
-        panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = group });
+        panel.Children.Add(group);
         Page_Notifications.Children.Insert(1, panel);
     }
 }

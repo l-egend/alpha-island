@@ -50,7 +50,7 @@
             </Style>
         </ResourceDictionary>
     </UserControl.Resources>
-    <StackPanel>
+    <StackPanel x:Name="AiSettingsRoot">
         <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="AI 对话"/>
         <Border Style="{StaticResource W11Card}">
             <StackPanel>
@@ -132,11 +132,21 @@
                         <icons:GlyphIcon Style="{StaticResource W11IconGlyph}" Text="&#xE8D2;"/>
                     </Border>
                     <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
-                        <TextBlock Style="{StaticResource AiLabel}" Text="系统提示词"/>
+                        <TextBlock x:Name="AiPersonaTitleText" Style="{StaticResource AiLabel}" Text="人格提示词"/>
+                        <TextBlock Style="{StaticResource AiHint}" Text="角色与语气；会话首次发送"/>
                     </StackPanel>
-                    <TextBox x:Name="AiSystemPromptBox" Grid.Column="2" Style="{StaticResource AiEditor}" Height="64"
-                             VerticalContentAlignment="Top" AcceptsReturn="True" TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto" TextChanged="TextBox_Changed"/>
+                    <StackPanel Grid.Column="2">
+                        <TextBox x:Name="AiSystemPromptBox" Style="{StaticResource AiEditor}" Height="80" MaxLength="8000"
+                                 VerticalContentAlignment="Top" AcceptsReturn="True" TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto" TextChanged="TextBox_Changed"/>
+                        <TextBlock x:Name="AiPersonaStatusText" Style="{StaticResource AiHint}" TextWrapping="NoWrap"
+                                   TextTrimming="CharacterEllipsis" Margin="0,6,0,8"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                            <Button x:Name="AiPersonaImportButton" Content="导入 TXT" Style="{StaticResource AiActionButton}" Click="ImportPersona_Click"/>
+                            <Button x:Name="AiPersonaFolderButton" Grid.Column="2" Content="人格文件夹" Style="{StaticResource AiActionButton}" Click="OpenPersonaFolder_Click"/>
+                        </Grid>
+                    </StackPanel>
                 </Grid>
                 <Button x:Name="OpenAiConversationButton" Content="打开 AI 对话" Click="OpenAiConversation_Click"
                         Style="{StaticResource AiActionButton}" HorizontalAlignment="Right" Margin="16,0,16,16"/>

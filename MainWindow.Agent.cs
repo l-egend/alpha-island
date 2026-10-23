@@ -6,7 +6,7 @@ using alpha_island.Core;
 using alpha_island.Animation;
 using Color = System.Windows.Media.Color;
 
-// B 组③：agent 运行状态的可视化（细条色点 + 一级胶囊）。
+// agent 运行状态的可视化（细条色点 + 一级胶囊）。
 // 状态本身（State/Detail/SinceUtc/Elapsed/Changed/ColorHex）全部在 Core\AgentStatus.cs，
 // 这里只负责把它画出来：
 //   · 细条上一个小圆点，颜色随状态变（思考紫 / 输出青 / 等待授权黄 / 出错红），Idle 时收起；
@@ -106,7 +106,7 @@ namespace alpha_island
 
         private void AgentStatus_Changed(object? sender, EventArgs e)
         {
-            // 将来的桥接（B 组④）可能从非 UI 线程写状态，一律切回 UI 线程再动控件。
+            // 桥接回调可能从非 UI 线程写状态，一律切回 UI 线程再动控件。
             try
             {
                 if (Dispatcher.CheckAccess() && !_updatingAgentSessions) UpdateAgentStatusUi();

@@ -173,12 +173,12 @@ namespace alpha_island
         private bool _btNotifying => _layers.IsShowing("bluetooth");
         private bool BtNotifyActive => _layers.IsActive("bluetooth");
 
-        // ================= 网速提示（A 组①） =================
+        // ================= 网速提示 =================
         /// <summary>下行速率持续超过阈值时的一级胶囊提示。</summary>
         private bool _netSpeedNotifying => _layers.IsShowing("netspeed");
         private bool NetSpeedNotifyActive => _layers.IsActive("netspeed");
 
-        // ================= 系统状态通用提示（A 组②③④⑤共用一层） =================
+        // ================= 系统状态通用提示（共用一层） =================
         /// <summary>内存整理/内存偏高/功率/飞行模式/隐私灯共用 "system" 图层，弹出前写内容。</summary>
         private bool _sysNotifying => _layers.IsShowing("system");
         private bool SysNotifyActive => _layers.IsActive("system");
@@ -235,6 +235,8 @@ namespace alpha_island
         // ================= 启动问候 =================
         private bool _greetingShowing => _layers.IsShowing("greeting");
         private bool GreetingActive => _layers.IsActive("greeting");
+        // Lifetime is independent of the layer: another event can hide it before its timer fires.
+        private bool _greetingPending;
         private DispatcherTimer? _greetingTimer;
         private TaskCompletionSource<bool>? _greetingFinishedTcs;
 
@@ -332,7 +334,8 @@ namespace alpha_island
             // _layers 统一算（见 SyncNotificationLayers），不再逐个图层手写三行。
             // Priority = 同屏仲裁优先级（数值大者赢，只有一个层能画在那块 328x32 上）：
             // 必须回应的用户动作/提醒 > 持续性背景状态。
-            _layers.Register(new IslandLayerSpec(IslandLayerHost.GreetingKey, GreetingLayer, Priority: 100));
+            _layers.Register(new IslandLayerSpec(IslandLayerHost.GreetingKey, GreetingLayer,
+                OnVisibilityChanged: OnGreetingPresentationChanged, Priority: 100));
             _layers.Register(new IslandLayerSpec("bluetooth", BtNotifyLayer,
                 Priority: 76));
             _layers.Register(new IslandLayerSpec("volume", VolumeNotifyLayer, Priority: 80));
@@ -349,16 +352,16 @@ namespace alpha_island
             _layers.Register(new IslandLayerSpec(ChargingIslandKey, ChargingNotifyLayer, Priority: -5,
                 ForceActive: () => ChargingIslandActive));
             _layers.Register(new IslandLayerSpec(ChargingPreviewIslandKey, ChargingPreviewNotifyLayer, Priority: -4));
-            // A 组②③④⑤：内存/功率/飞行模式/隐私灯共用的"系统状态"提示层
+            // 内存/功率/飞行模式/隐私灯共用的"系统状态"提示层
             // （弹出前由 ShowSystemNotify 写字形/标题/说明/数值，所以加新提示不用再加 XAML 层）
             _layers.Register(new IslandLayerSpec("system", SystemNotifyLayer, Priority: 68));
-            // B 组③：agent 运行状态（思考/输出/等待授权/出错）。状态只要不是 Idle 就靠 ForceActive
+            // agent 运行状态（思考/输出/等待授权/出错）。状态只要不是 Idle 就靠 ForceActive
             // 一直占住胶囊，音乐图层自动让位；归零后由 SyncNotificationLayers 收回。
             _layers.Register(new IslandLayerSpec("agentstatus", AgentNotifyLayer,
                 // 有审批请求在等的时候让位：两层都是 328x32 居中，同时显示会叠在一起（审批本身已经说明"等待授权"）。
                 ForceActive: () => PrimaryAgentClaimActive,
                 Priority: 48, PriorityOverride: () => AgentSessionPriority(AgentTickerKey)));
-            // B 组④：agent 工具权限审批（外部队列 → 用户点允许/拒绝或按 Y/N → 结果回传）。
+            // agent 工具权限审批（外部队列 → 用户点允许/拒绝或按 Y/N → 结果回传）。
             // 有待裁决请求时 ForceActive 一直占住，不靠超时续期；裁决后立刻 Hide。
             _layers.Register(new IslandLayerSpec("approval", ApprovalLayer,
                 ForceActive: () => _approvalCurrent != null,
@@ -398,7 +401,7 @@ namespace alpha_island
                 visible: () => SideBubble.Visibility == Visibility.Visible && SideBubble.Opacity > 0.01);
 
             // 写入口立刻重算显隐：没有这一句，一次弹出要等下一拍别的同步才画出来，
-            // 而这段时间里音乐胶囊还占着同一块位置（A 组系统提示的叠层就是这个成因）。
+            // 而这段时间里音乐胶囊还占着同一块位置（系统提示的叠层就是这个成因）。
             _layers.SyncRequested = SyncNotificationLayers;
 
             _options = isolatedOptions ?? IslandOptions.Load();
@@ -521,6 +524,9 @@ namespace alpha_island
         private SettingsWindow CreateSettingsWindow()
         {
             var window = new SettingsWindow();
+            window.AssistantToolsRequested += OpenAssistantCenter;
+            window.SetScreenToolsStatus(_screenHotkeyStatus);
+            window.SetVoiceHotkeyStatus(_voiceHotkeyStatus);
             if (_resourceMonitor.Power is { } power) window.UpdateHardwarePowerState(power);
             if (_plugins != null) window.BindPluginHost(_plugins);
             window.IsVisibleChanged += (_, _) => SyncResourceSampling();
@@ -531,8 +537,6 @@ namespace alpha_island
                 ApplyOptions();
             };
             window.ResetRequested += Settings_ResetRequested;
-            window.BatteryAnimationPreviewRequested += (_, powerEvent) => PreviewBatteryAnimation(powerEvent);
-            window.ChargingIslandPreviewRequested += (_, _) => PreviewChargingIsland();
             window.SetLauncherStatus(_launcherHotkeyStatus);
             window.NotificationCenterRequested += (_, _) =>
             {
@@ -617,18 +621,18 @@ namespace alpha_island
 
         private void ApplyOptions()
         {
+            ApplyGreetingMedia();
+            ConfigureDesktopAssistant();
             ConfigureLauncher();
             _productivity?.SetEnabled(SettingsRegistry.GetBool(_options, "ProductivityEnabled", true));
             _workspace.Focus.Configure(PomodoroOptions.From(_options));
             SyncFocus();
-            EnsureBackdrop();
-            SyncBackdrop();
-            ApplyGlassAppearance();
+            ApplyVisualOptions();
 
             if (_audio != null) _audio.Sensitivity = (float)_options.Sensitivity;
             if (_lyrics != null) _lyrics.Enabled = _options.LyricsEnabled;
 
-            PillCoverHost.Visibility = _options.ShowCover ? Visibility.Visible : Visibility.Collapsed;
+            PillCoverHost.Visibility = Visibility.Visible;
             CardWave.Visibility = _options.ShowWaveLayer ? Visibility.Visible : Visibility.Collapsed;
 
             // 封面会占掉歌词的可用宽度（32px），开关一变就要重算胶囊该多宽。
@@ -666,14 +670,12 @@ namespace alpha_island
 
             // AI 卡片页头部文字（模型名 / 密钥状态）跟着设置走。
 
-            // agent 状态色点 / 胶囊（B 组③）也吃设置里的开关。
+            // agent 状态色点 / 胶囊也吃设置里的开关。
             OnAgentOptionsChanged();
 
-            // 「减弱动效」「节能模式」（C 组②）：策略灌进 MotionPolicy，并按当前形态重算节能节奏。
-            ApplyMotionPolicy();
             SyncMediaWindowOptions();
 
-            // 「3D 封面」（C 组④）：默认关闭；开启时先过渲染层级门槛，再探一次 3D 到底画不画得出来。
+            // 3D 封面默认启用，削减动效或硬件不支持时使用 2D。
             ApplyCover3DMode();
 
             if (_state == IslandState.Card) SetState(IslandState.Card, force: true);
@@ -693,6 +695,7 @@ namespace alpha_island
 
         private void ExitApplication()
         {
+            CancelGameQuietIntro();
             _overlayZOrder?.Dispose(); _overlayZOrder = null;
             RememberOpenCardPage();
             StopMediaWindowHandoff();
@@ -734,6 +737,7 @@ namespace alpha_island
                 _progressTimer?.Stop();
                 _mediaLostTimer?.Stop();
                 _greetingTimer?.Stop();
+                _greetingAudio?.Dispose();
 
                 // 低频采样节拍先停（阶段 3.6）：服务释放期间不该再有任何 tick 回调进来
                 _ticker?.Dispose();

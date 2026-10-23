@@ -1090,6 +1090,32 @@ namespace alpha_island.Services
             Publish(_current with { State = target, Position = position, PlaybackStateInferred = false });
         }
 
+        public async Task<bool> TryControlAsync(string action)
+        {
+            var session = _session;
+            if (session == null || _disposed) return false;
+            try
+            {
+                var playback = session.GetPlaybackInfo(); var controls = playback?.Controls;
+                if (action is "play" or "pause")
+                {
+                    var target = action == "play" ? PlaybackState.Playing : PlaybackState.Paused;
+                    if (Current is { PlaybackStateInferred: false } current && current.State == target) return true;
+                    Func<Task<bool>>? request = action == "play" && controls?.IsPlayEnabled == true ? () => session.TryPlayAsync().AsTask()
+                        : action == "pause" && controls?.IsPauseEnabled == true ? () => session.TryPauseAsync().AsTask() : null;
+                    if (request == null) return false;
+                    bool accepted = false;
+                    await ExecutePlaybackCommandAsync(SessionId(session), target, async () => accepted = await request());
+                    CheckFastPlaybackState(); QueueRefresh(); return accepted;
+                }
+                bool success = action == "next" && controls?.IsNextEnabled == true ? await session.TrySkipNextAsync().AsTask()
+                    : action == "previous" && controls?.IsPreviousEnabled == true && await session.TrySkipPreviousAsync().AsTask();
+                if (success) { AudioEvidenceEpoch++; QueueRefresh(); _ = RecheckTrackAsync(SessionId(session), _artworkKey); }
+                return success;
+            }
+            catch (Exception) { return false; }
+        }
+
         public async Task NextAsync()
         {
             var s = _session;

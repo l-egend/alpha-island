@@ -18,9 +18,23 @@ public partial class SettingsWindow
             NativeMethods.DwmSetWindowAttribute(handle, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE, ref rounded, sizeof(int));
             UpdateSettingsFrame();
         };
+        IsVisibleChanged += (_, _) => { if (IsVisible) FitSettingsToWorkArea(); };
+        System.ComponentModel.PropertyChangedEventHandler workAreaChanged = (_, args) =>
+        {
+            if (args.PropertyName == nameof(SystemParameters.WorkArea) && IsVisible)
+                Dispatcher.BeginInvoke(new Action(() => FitSettingsToWorkArea()));
+        };
+        SystemParameters.StaticPropertyChanged += workAreaChanged;
+        Closed += (_, _) => SystemParameters.StaticPropertyChanged -= workAreaChanged;
         RootGrid.SizeChanged += (_, _) => UpdateSettingsFrame();
         StateChanged += (_, _) => UpdateSettingsFrame();
-        DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(UpdateSettingsFrame));
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(() => { FitSettingsToWorkArea(); UpdateSettingsFrame(); }));
+    }
+
+    private void FitSettingsToWorkArea(Rect? area = null)
+    {
+        WindowWorkArea.Fit(this, area, 780, 540);
+        if (Width < 780 && _navExpanded) ApplyNavExpanded(false, false);
     }
 
     private void UpdateSettingsFrame()

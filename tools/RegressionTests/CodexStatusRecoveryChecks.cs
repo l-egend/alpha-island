@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -78,6 +78,9 @@ internal static partial class Program
             Check(AwaitPlugin(Send(readiness)) && !Active(),"提交之后迟到的会话初始化只表示接入，不冒充任务开始或结束");
             Until(Active);
             Check(Active() && watch.ElapsedMilliseconds<1800,"丢失的首次提交在现有状态周期中自动补报，不需要重新打开 Codex");
+            // The journal updates the registry on the bridge thread. Wait for the
+            // dispatched UI update independently of the registry recovery deadline.
+            Until(()=>layers.IsActive("agentstatus") && window.AgentNotifyLayer.Visibility==Visibility.Visible,300);
             root.UpdateLayout();
             Check(NativeMethods.IsIconic(destination.Handle) && layers.IsActive("agentstatus") && window.AgentNotifyLayer.Visibility==Visibility.Visible,
                 "提交后已最小化的 Codex 仍正确显示工作岛，即使前台切换信息尚未更新");
@@ -92,7 +95,8 @@ internal static partial class Program
             Until(()=>Directory.GetFiles(directory,"*.json").Length==0);
             Check(Activity()==second,"旧任务的补报晚于新任务到达时，不覆盖当前任务或重新弹出");
             Check(AwaitPlugin(Hook("Stop","recovery-turn-2")),"真实结束事件在 HTTP 失败时保留到补报队列");
-            Until(()=>!Active());root.UpdateLayout();
+            // Registry changes happen on the bridge thread; await the dispatched UI update too.
+            Until(()=>!Active() && !layers.IsActive("agentstatus"));root.UpdateLayout();
             Check(!Active() && !layers.IsActive("agentstatus"),"完成事件漏报后，最小化助手的思考状态也自动收回");
             string late=Queue("working","recovery-turn-2",DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             Check(AwaitPlugin(Send(late)) && !Active(),"完成之后迟到的同轮工具回包不重新创建助手岛");

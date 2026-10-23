@@ -163,7 +163,8 @@ test('Event status has a bounded lease and Stop clears it without a background p
   assert.equal(calls.at(-1).body.state, 'thinking');
   assert.equal(calls.at(-1).body.ttlSec, 300);
   await handleHook(hook('SessionStart', { source: 'compact' }), config);
-  assert.equal(calls.at(-1).body.state, 'thinking');
+  assert.equal(calls.at(-1).body.state, 'idle');
+  assert.equal(calls.at(-1).body.connectOnly, true);
   await handleHook(hook('Stop'), config, { background: true });
   assert.equal(calls.at(-1).body.state, 'idle');
   assert.deepEqual((await readdir(root)).filter(name => name !== 'status-events'), []);

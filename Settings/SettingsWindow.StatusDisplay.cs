@@ -11,6 +11,7 @@ public partial class SettingsWindow
 {
     private StackPanel _statusDisplayRows = null!;
     private readonly Dictionary<string, Grid> _statusDisplayControls = new();
+    private readonly Dictionary<string, Border> _statusDisplayCards = new();
     private string[] _statusDisplayOrder = StatusDisplayOptions.All.ToArray();
     internal void UpdateHardwarePowerState(AlphaIsland.Hardware.HardwarePowerReading reading)
     {
@@ -44,9 +45,9 @@ public partial class SettingsWindow
                     ToolTip = direction < 0 ? "向前显示" : "向后显示" };
                 move.Click += (_, _) => MoveStatusDisplayItem(key, direction); controls.Children.Add(move);
             }
-            Grid.SetColumn(controls, 1); row.Children.Add(controls); _statusDisplayControls[key] = row;
+            Grid.SetColumn(controls, 1); row.Children.Add(controls); _statusDisplayControls[key] = row; _statusDisplayCards[key] = SettingCard(row);
         }
-        panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = group });
+        panel.Children.Add(group);
         panel.Children.Add(new TextBlock { Text = "硬件功耗", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 20, 0, 8) });
         var power = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
         power.Children.Add(new TextBlock { Text = "显示 CPU 封装＋独立 GPU 的实际功耗，接通电源也可读取。核显包含在 CPU 封装中。",
@@ -92,7 +93,7 @@ public partial class SettingsWindow
                 var controls = (StackPanel)row.Children[1];
                 ((Button)controls.Children[1]).IsEnabled = i > 0;
                 ((Button)controls.Children[2]).IsEnabled = i < group.Length - 1;
-                _statusDisplayRows.Children.Add(row);
+                _statusDisplayRows.Children.Add(_statusDisplayCards[group[i]]);
             }
         }
     }

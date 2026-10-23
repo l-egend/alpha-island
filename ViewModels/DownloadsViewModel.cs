@@ -14,10 +14,11 @@ internal sealed class DownloadsViewModel : ObservableObject
     private string? _lastKey, _pendingFinish;
     private DownloadState? _lastState;
     public IReadOnlyList<DownloadTask> Current { get; private set; } = [];
+    internal DateTime SampledUtc { get; private set; }
     internal double Speed(DownloadTask task) => task.CanMeasureSpeed ? _speeds.GetValueOrDefault(task.Key) : 0;
     internal DownloadPresentation Update(IReadOnlyList<DownloadTask> tasks, DateTime now)
     {
-        Current = tasks.ToArray(); OnPropertyChanged(nameof(Current));
+        Current = tasks.ToArray(); SampledUtc = now.Kind == DateTimeKind.Local ? now.ToUniversalTime() : DateTime.SpecifyKind(now, DateTimeKind.Utc); OnPropertyChanged(nameof(Current));
         var live = tasks.Select(task => task.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var task in tasks)
         {
@@ -56,6 +57,6 @@ internal sealed class DownloadsViewModel : ObservableObject
     internal void Reset()
     {
         _previous.Clear(); _speeds.Clear(); _lastKey = null; _lastState = null; _pendingFinish = null;
-        Current = []; OnPropertyChanged(nameof(Current));
+        Current = []; SampledUtc = default; OnPropertyChanged(nameof(Current));
     }
 }

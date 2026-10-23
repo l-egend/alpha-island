@@ -1,10 +1,12 @@
 using System.IO;
+using System.ComponentModel;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using C = System.Windows.Controls;
+using ScrollBar = System.Windows.Controls.Primitives.ScrollBar;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
@@ -26,6 +28,12 @@ internal sealed class RemotePluginView : C.Grid
     private readonly Action<Exception> _failed;
     private bool _applying, _sending, _closed;
     private string _lastBackground = "";
+    private static readonly DependencyPropertyDescriptor AncestorOpacity = DependencyPropertyDescriptor.FromProperty(UIElement.OpacityProperty, typeof(UIElement));
+    private readonly List<UIElement> _presentationAncestors = new();
+    private bool _presented;
+    internal bool IsPresented => !_closed && IsLoaded && IsVisible && _presentationAncestors.Count > 0
+        && _presentationAncestors.All(element => element.Opacity > .01);
+    internal event Action? PresentationChanged;
     internal string Key { get; }
     internal RemotePluginView(string key, Func<RemoteCommand, Task> send, Action<Exception> failed)
     {
@@ -33,18 +41,51 @@ internal sealed class RemotePluginView : C.Grid
         Key = key; _send = send; _failed = failed; NameScope.SetNameScope(this, new NameScope());
         ClipToBounds = true; _canvas.ClipToBounds = true; _canvas.Children.Add(_background);
         Children.Add(new C.Viewbox { Stretch = Stretch.Fill, Child = _canvas });
+        Loaded += (_, _) => ObservePresentation();
+        Unloaded += (_, _) => { UnobservePresentation(); RefreshPresentation(); };
+        IsVisibleChanged += (_, _) => RefreshPresentation();
         PreviewMouseWheel += (_, args) =>
         {
             if (args.OriginalSource is C.TextBox text && text.IsReadOnly) return;
+            // At the remote viewport's edge the containing settings page must
+            // receive the wheel; swallowing it makes the lower options unreachable.
+            if (!_controls.Values.OfType<ScrollBar>().Any(bar => bar.Orientation == C.Orientation.Vertical
+                && (args.Delta < 0 ? bar.Value < bar.Maximum - .01 : bar.Value > bar.Minimum + .01))) return;
             Point at = args.GetPosition(_canvas);
             Queue(new(Key, "wheel", Number: args.Delta, X: at.X, Y: at.Y)); args.Handled = true;
         };
     }
+    private void ObservePresentation()
+    {
+        UnobservePresentation();
+        for (DependencyObject? node = this; node != null; node = VisualTreeHelper.GetParent(node))
+            if (node is UIElement element) { _presentationAncestors.Add(element); AncestorOpacity.AddValueChanged(element, OnPresentationChanged); }
+        RefreshPresentation();
+    }
+    private void UnobservePresentation()
+    {
+        foreach (var element in _presentationAncestors) AncestorOpacity.RemoveValueChanged(element, OnPresentationChanged);
+        _presentationAncestors.Clear();
+    }
+    private void OnPresentationChanged(object? sender, EventArgs args) => RefreshPresentation();
+    private void RefreshPresentation()
+    {
+        bool presented = IsPresented;
+        if (_presented == presented) return;
+        _presented = presented;
+        if (!presented) { _background.Source = null; _lastBackground = ""; }
+        PresentationChanged?.Invoke();
+    }
     private void Queue(RemoteCommand command)
     {
         if (_applying || _closed) return;
+        if (command.Action == "scroll")
+        {
+            var pending = _commands.Where(item => item.Action != "scroll" || item.Element != command.Element).ToArray();
+            _commands.Clear(); foreach (var item in pending) _commands.Enqueue(item);
+        }
         if (_commands.Count >= 256) { _failed(new IOException("插件操作队列已满")); return; }
-        if (command.Action is "text" or "value" or "choice") _editing.Add(command.Element);
+        if (command.Action is "text" or "value" or "choice" or "scroll") _editing.Add(command.Element);
         _commands.Enqueue(command);
         if (!_sending) { _sending = true; _ = Dispatcher.InvokeAsync(Send).Task.Unwrap(); }
     }
@@ -64,6 +105,7 @@ internal sealed class RemotePluginView : C.Grid
     }
     internal void Close()
     {
+        UnobservePresentation();
         _closed = true; IsEnabled = false; _commands.Clear(); _editing.Clear(); _controls.Clear();
         _canvas.Children.Clear(); _background.Source = null; NameScope.SetNameScope(this, new NameScope());
     }
@@ -150,6 +192,15 @@ internal sealed class RemotePluginView : C.Grid
                     case C.Slider slider when !_editing.Contains(item.Id):
                         if (!double.IsFinite(item.Minimum) || !double.IsFinite(item.Maximum) || !double.IsFinite(item.Value) || item.Maximum < item.Minimum) break;
                         slider.Minimum = item.Minimum; slider.Maximum = item.Maximum; slider.Value = Math.Clamp(item.Value, item.Minimum, item.Maximum); break;
+                    case ScrollBar bar when !_editing.Contains(item.Id):
+                        if (!double.IsFinite(item.Minimum) || !double.IsFinite(item.Maximum) || !double.IsFinite(item.Value)
+                            || !double.IsFinite(item.Viewport) || item.Maximum < item.Minimum || item.Viewport < 0) break;
+                        bar.Orientation = item.Alignment == "Horizontal" ? C.Orientation.Horizontal : C.Orientation.Vertical;
+                        bar.Minimum = item.Minimum; bar.Maximum = item.Maximum;
+                        bar.ViewportSize = item.Viewport;
+                        bar.Value = Math.Clamp(item.Value, item.Minimum, item.Maximum);
+                        bar.LargeChange = Math.Max(1, item.Viewport); bar.SmallChange = 16;
+                        break;
                 }
             }
         }
@@ -173,6 +224,11 @@ internal sealed class RemotePluginView : C.Grid
                 var check = new C.CheckBox(); check.Click += (_, _) => Queue(new(Key, "check", item.Id, Checked: check.IsChecked)); view = check; break;
             case "slider":
                 var slider = new C.Slider(); slider.ValueChanged += (_, _) => Queue(new(Key, "value", item.Id, Number: slider.Value)); view = slider; break;
+            case "scrollbar":
+                var bar = new ScrollBar();
+                bar.ValueChanged += (_, _) => Queue(new(Key, "scroll", item.Id, Number: bar.Value));
+                System.Windows.Automation.AutomationProperties.SetName(bar, "插件滚动条");
+                view = bar; break;
             case "button":
                 var button = new C.Button { Padding = new Thickness(0) }; button.Click += (_, _) =>
                 {

@@ -96,9 +96,9 @@ test('Codex session initialization only registers readiness and does not cancel 
   assert.deepEqual(JSON.parse(await readFile(marker, 'utf8')), { id });
 });
 
-test('Codex compact session start remains active thinking, not connection-only idle', async t => {
+test('Codex compact readiness cannot invent a running task', async t => {
   const f = await fixture(t);
   await codex({ session_id: 'task', cwd: f.root, hook_event_name: 'SessionStart', source: 'compact' }, f.config);
-  assert.equal(f.states.at(-1).state, 'thinking');
-  assert.equal(f.states.at(-1).connectOnly, undefined);
+  assert.equal(f.states.at(-1).state, 'idle');
+  assert.equal(f.states.at(-1).connectOnly, true);
 });

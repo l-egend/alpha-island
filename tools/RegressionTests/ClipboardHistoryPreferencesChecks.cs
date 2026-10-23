@@ -60,9 +60,13 @@ internal static partial class Program
         var box=(TextBox)settings.FindName("ClipboardHistoryLimitBox");int changed=0;settings.OptionsChanged+=(_,_)=>changed++;
         Check(box.Text=="75" && SettingsRegistry.All.Any(d=>d.Key=="ClipboardHistoryLimit" && ReferenceEquals(settings.FindName(d.ControlName!),box)),"设置窗口正确回填保存条数并绑定对应控件");
         box.Text="";Check(changed==0,"清空数字进行编辑时不会立即改变保存条数");
-        box.Text="100";typeof(alpha_island.Settings.SettingsWindow).GetMethod("CommitClipboardHistoryLimit",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(settings,null);
+        box.Text="1"; box.Text="10"; box.Text="100";
+        Check(changed==0,"连续输入期间不使用中间数字裁剪历史");
+        PumpAnimations(450);
         Check(changed==1 && (int)SettingsRegistry.Read((IslandOptions)typeof(alpha_island.Settings.SettingsWindow).GetField("_options",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(settings)!,"ClipboardHistoryLimit")! ==100,
-            "确认输入后保存精确条数");
+            "输入完成后自动保存精确条数，无需回车或切换焦点");
+        typeof(alpha_island.Settings.SettingsWindow).GetMethod("CommitClipboardHistoryLimit",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(settings,null);
+        Check(changed==1,"离开已经生效的输入框不重复应用设置");
         box.Text="";typeof(alpha_island.Settings.SettingsWindow).GetMethod("CommitClipboardHistoryLimit",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(settings,null);
         Check(box.Text=="100","无效或空输入保留上次条数，不意外回退到 10 条");
         Check(SettingsRegistry.SearchWordsForPage(SettingsPageIds.Behavior).Contains("剪切板历史保存条数"),"设置搜索可以找到历史条数选项");

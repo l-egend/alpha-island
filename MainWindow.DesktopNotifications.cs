@@ -31,6 +31,7 @@ public partial class MainWindow
     private TextBlock _notificationAccessText = null!;
     private DesktopNotificationPill _notificationSummary = null!;
     private CheckBox _notificationQuiet = null!;
+    private Button _notificationUnreadOnly = null!;
     private IslandTimer? _notificationUiTimer;
     private DateTimeOffset _desktopExpires { get => _workspace.Notifications.Expires; set => _workspace.Notifications.Expires = value; }
     private DateTime _notificationCalendarDate = DateTime.MinValue;
@@ -66,7 +67,9 @@ public partial class MainWindow
         _notificationStackBack = DesktopNotificationCard.ActionButton("全部通知", ShowAllDesktopNotifications);
         _notificationStackBack.HorizontalAlignment = HorizontalAlignment.Left; _notificationStackBack.Visibility = Visibility.Collapsed; heading.Children.Add(_notificationStackBack);
         heading.Children.Add(UtilityButtons(DesktopNotificationCard.ActionButton("授权读取", async () => await RequestToastAccessAsync()),
-            DesktopNotificationCard.ActionButton("权限设置", OpenNotificationPrivacySettings), DesktopNotificationCard.ActionButton("清空记录", ClearDesktopInbox)));
+            DesktopNotificationCard.ActionButton("权限设置", OpenNotificationPrivacySettings), DesktopNotificationCard.ActionButton("清空全部", ClearDesktopInbox)));
+        _notificationUnreadOnly = DesktopNotificationCard.ActionButton("仅看未读", () => { _workspace.Notifications.UnreadOnly = !_workspace.Notifications.UnreadOnly; RefreshDesktopInbox(); });
+        heading.Children.Add(UtilityButtons(_notificationUnreadOnly, DesktopNotificationCard.ActionButton("全部已读", () => { _desktopInbox.MarkAllRead(); RefreshDesktopInbox(); })));
         var filters = new Grid { Margin = new Thickness(0, 5, 0, 0) };
         filters.ColumnDefinitions.Add(new ColumnDefinition()); filters.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var search = new System.Windows.Controls.TextBox { MinHeight = 25, Margin = new Thickness(0, 0, 6, 0), ToolTip = "搜索应用、联系人或消息内容" };
@@ -95,7 +98,7 @@ public partial class MainWindow
         };
         Grid.SetRow(scroll, 1); _notificationsView.Children.Add(scroll); CardViewport.Children.Add(_notificationsView);
         _pages.Register(new DelegateIslandPage(IslandPageIds.Notifications, "通知中心", _notificationsView, 8,
-            366, activated: RefreshDesktopInbox, deactivated: () => { _workspace.Notifications.ExpandedKeys = null; _workspace.Notifications.ExpandedApplications.Clear(); },
+            366, activated: RefreshDesktopInbox, deactivated: () => { _workspace.Notifications.ExpandedKeys = null; _workspace.Notifications.ExpandedApplications.Clear(); _workspace.Notifications.UnreadOnly = false; },
             viewportChanged: height => _notificationsView.Height = height));
         RefreshDesktopInbox();
     }
@@ -145,12 +148,13 @@ public partial class MainWindow
     private void RefreshDesktopInbox()
     {
         if (_notificationList == null) return;
+        _notificationUnreadOnly.Content = _workspace.Notifications.UnreadOnly ? "查看全部" : "仅看未读";
         _refreshingQuiet = true; _notificationQuiet.IsChecked = NotificationQuietEffective; _refreshingQuiet = false;
         _notificationQuiet.IsEnabled = !GameDoNotDisturbActive;
         _notificationQuiet.ToolTip = GameDoNotDisturbActive ? "游戏退出后恢复你原来的静默设置" : "普通消息仅保留在通知中心";
         RefreshDesktopAccess();
         if (_pages.ActiveId != IslandPageIds.Notifications) return;
-        RenderDesktopNotificationStacks();
+        if (_notificationRemovalBatches == 0) RenderDesktopNotificationStacks();
         RefreshDesktopAccess();
     }
     private bool _openingDesktopApp;
@@ -158,6 +162,8 @@ public partial class MainWindow
         ? MessengerWindowReader.TryOpen(client) : NotificationAppLauncher.TryOpen(item.AppId);
     private async void OpenDesktopNotificationApp(DesktopNotification item)
     {
+        if (!_sessionLocked && item.Reminder != null)
+        { _desktopInbox.MarkRead(item.Key); _workspace.Notifications.ExpandedKeys = null; _workspace.Notifications.UnreadOnly = false; FinishDesktopPopup(); SelectComponent(IslandPageIds.Notifications); return; }
         if (!_sessionLocked && item.Kind == DesktopEventKind.Weather)
         { FinishDesktopPopup(); SelectComponent("weather"); return; }
         if (_sessionLocked || !item.CanOpenApp || _openingDesktopApp) return;
@@ -169,7 +175,7 @@ public partial class MainWindow
             if (_sessionLocked) return;
             if (!opened) _notificationAccessText.Text = MessengerIdentity.FromNotification(item) is { } messenger
                 ? "无法调用" + MessengerIdentity.Name(messenger) + "入口，请从右下角托盘打开。" : "无法打开此应用，请从开始菜单打开。";
-            else if (_desktopCurrent?.Key == popupKey) FinishDesktopPopup();
+            else { _desktopInbox.MarkRead(item.Key); if (_desktopCurrent?.Key == popupKey) FinishDesktopPopup(); }
         }
         catch (Exception ex) { IslandLog.Debug("Notifications", "应用跳转失败：" + ex.GetType().Name); }
         finally { _openingDesktopApp = false; }
@@ -217,8 +223,13 @@ public partial class MainWindow
         }
         else if (_desktopCurrent != null && !_desktopPolicy.CanPopup(_desktopCurrent, _sessionLocked)) FinishDesktopPopup();
         RefreshDesktopInbox();
+        _assistantReminders?.TickNow();
     }
-    private void ClearDesktopInbox() { _workspace.Notifications.ExpandedApplications.Clear(); _desktopInbox.Clear(); FinishDesktopPopup(); RefreshDesktopInbox(); }
+    private void ClearDesktopInbox() => RemoveNotificationViews(_notificationList.Children.OfType<FrameworkElement>(), () =>
+    {
+        _workspace.Notifications.ExpandedApplications.Clear(); _workspace.Notifications.ExpandedKeys = null;
+        _desktopInbox.Clear(); FinishDesktopPopup();
+    });
     private void StartNotificationUiTimer()
     {
         if (_notificationUiTimer != null) return;
@@ -307,6 +318,8 @@ public partial class MainWindow
     internal void ApplySessionNotification(bool locked)
     {
         _sessionLocked = locked;
+        if (locked) { _screenTools?.StopSubtitles(); _screenTools?.Hide(); }
+        if (locked && _voiceAssistant?.Visible == true) _ = _voiceAssistant.CancelAsync();
         SyncVolumeFlyoutTakeover();
         if (locked) { CloseComponentSwitcher(); _desktopInbox.DropPending(); FinishDesktopPopup(); }
         if (_notificationRoot != null) _notificationRoot.Visibility = locked ? Visibility.Hidden : Visibility.Visible;
@@ -315,6 +328,8 @@ public partial class MainWindow
     }
     private void RecordBatteryDesktopEvent(BatteryStatusInfo info)
     {
+        if (info.IsCharging || info.IsOnAcPower == true || info.Percent > 20)
+            foreach (var prior in _desktopInbox.History.Where(n => n.Reminder is { Rule: "battery", Pending: true }).ToArray()) _desktopInbox.ResolveReminder(prior.Key, "电源或电量状态已恢复");
         var kind = info.EventType switch
         {
             BatteryPowerEvent.PluggedIn => DesktopEventKind.PowerConnected,
@@ -325,8 +340,11 @@ public partial class MainWindow
         };
         if (kind == DesktopEventKind.System) return;
         var title = kind switch { DesktopEventKind.PowerConnected => "已接通电源", DesktopEventKind.PowerDisconnected => "已拔出电源", DesktopEventKind.CriticalBattery => "电池电量严重不足", _ => "电池电量不足" };
-        _desktopInbox.Add(new("battery-" + DateTimeOffset.UtcNow.UtcTicks, "", "Windows", title,
-            info.Percent >= 0 ? $"当前电量 {info.Percent}%" : "电量未知", DateTimeOffset.Now, kind), false); RefreshDesktopInbox();
+        string context = kind is DesktopEventKind.LowBattery or DesktopEventKind.CriticalBattery ? BatteryContextDescription() : "";
+        var item = new DesktopNotification(context.Length > 0 ? "assistant:battery:current" : "battery-" + DateTimeOffset.UtcNow.UtcTicks, "", "Windows", title,
+            (info.Percent >= 0 ? $"当前电量 {info.Percent}%" : "电量未知") + (context.Length > 0 ? "\n" + context : ""), DateTimeOffset.Now, kind);
+        if (context.Length > 0) item = item with { IsPinned = true, Reminder = new("battery", true, DateTimeOffset.Now.AddHours(4), [new("power", "电源设置")]) };
+        _desktopInbox.Add(item, false); RefreshDesktopInbox();
     }
     private void RecordVolumeDesktopEvent(VolumeInfo info)
     {

@@ -20,6 +20,8 @@ internal static partial class Program
 
     private static async Task Main(string[] args)
     {
+        Console.OutputEncoding = new UTF8Encoding(false);
+        Console.InputEncoding = new UTF8Encoding(false);
         try { await RunChecks(args); }
         catch (Exception error)
         {
@@ -31,6 +33,101 @@ internal static partial class Program
     private static async Task RunChecks(string[] args)
     {
         IslandLog.FileSinkEnabled = false;
+        if (args.Contains("--voice-dictation-fixture"))
+        {
+            string dictationRoot = Path.Combine(Path.GetTempPath(), "alpha-voice-dictation-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(dictationRoot); IslandUi(dictationRoot, iconEntryProbe: "voice-dictation-fixture"); }
+            finally { if (Directory.Exists(dictationRoot)) Directory.Delete(dictationRoot, true); }
+            return;
+        }
+        if (args.Contains("--voice-failure-layout-only"))
+        {
+            string layoutRoot = Path.Combine(Path.GetTempPath(), "alpha-voice-layout-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(layoutRoot); IslandUi(layoutRoot, iconEntryProbe: "voice-failure-layout"); }
+            finally { if (Directory.Exists(layoutRoot)) Directory.Delete(layoutRoot, true); }
+            return;
+        }
+        if (args.Contains("--voice-capture-live"))
+        {
+            string captureRoot = Path.Combine(Path.GetTempPath(), "alpha-voice-capture-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(captureRoot); IslandUi(captureRoot, iconEntryProbe: "voice-capture-live"); }
+            finally { if (Directory.Exists(captureRoot)) Directory.Delete(captureRoot, true); }
+            return;
+        }
+        if (args.Contains("--receiver-latency-live")) { await ReceiverLatencyLiveProbe(); return; }
+        if (args.Contains("--earbud-identity-live"))
+        {
+            string identityRoot = Path.Combine(Path.GetTempPath(), "alpha-earbud-identity-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(identityRoot); IslandUi(identityRoot, iconEntryProbe: "earbud-identity-live"); Console.WriteLine($"All {_checks} live earbud identity checks passed."); }
+            finally { if (Directory.Exists(identityRoot)) Directory.Delete(identityRoot, true); }
+            return;
+        }
+        if (args.Contains("--bluetooth-identity-only")) { BluetoothIdentityChecks(); Console.WriteLine($"All {_checks} Bluetooth identity checks passed."); return; }
+        if (args.Contains("--speech-audio-live")) { await SpeechAudioSourceLiveChecks(); Console.WriteLine($"All {_checks} live speech audio checks passed."); return; }
+        if (args.Contains("--speech-protocol-only")) { await SpeechProtocolChecks(); Console.WriteLine($"All {_checks} speech protocol checks passed."); return; }
+        if (args.Contains("--speech-caption-only"))
+        {
+            string speechRoot = Path.Combine(Path.GetTempPath(), "alpha-speech-caption-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(speechRoot); IslandUi(speechRoot, iconEntryProbe: "speech-caption"); Console.WriteLine($"All {_checks} speech caption checks passed."); }
+            finally { if (Directory.Exists(speechRoot)) Directory.Delete(speechRoot, true); }
+            return;
+        }
+        if (args.Contains("--voice-assistant-only"))
+        {
+            string voiceRoot = Path.Combine(Path.GetTempPath(), "alpha-voice-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(voiceRoot); IslandUi(voiceRoot, iconEntryProbe: "voice-assistant"); Console.WriteLine($"All {_checks} voice assistant checks passed."); }
+            finally { if (Directory.Exists(voiceRoot)) Directory.Delete(voiceRoot, true); }
+            return;
+        }
+        if (args.Contains("--receiver-latency-only")) { ReceiverLatencyChecks(); return; }
+        if (args.Contains("--speech-platform-probe"))
+        {
+            foreach (var recognizer in System.Speech.Recognition.SpeechRecognitionEngine.InstalledRecognizers())
+                Console.WriteLine("Desktop speech recognizer: " + recognizer.Culture.Name + " | " + recognizer.Id);
+            Console.WriteLine("Metadata only; --voice-capture-live verifies actual microphone startup.");
+            return;
+        }
+        if (args.Contains("--bluetooth-connection-live"))
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var peers = await BluetoothService.ReadConnectionSnapshotAsync(timeout.Token);
+            foreach (var peer in peers) Console.WriteLine($"Windows Bluetooth: {peer.Name} | Connected={peer.Connected?.ToString() ?? "unknown"}");
+            Check(peers.Any(p => p.Name.Contains("OPPO", StringComparison.OrdinalIgnoreCase) && p.Connected.HasValue),
+                "实际 Windows 查询可以读取 OPPO 耳机的明确连接状态");
+            return;
+        }
+        if (args.Contains("--earbuds-connection-live")) { await EarbudConnectionLiveCheck(); return; }
+        if (args.Contains("--earbuds-isolated-live"))
+        {
+            string earbudRoot=Path.Combine(Path.GetTempPath(),"alpha-earbud-live-"+Guid.NewGuid().ToString("N"));
+            try{Directory.CreateDirectory(earbudRoot);IslandUi(earbudRoot,iconEntryProbe:"earbuds-isolated-live");}
+            finally{if(Directory.Exists(earbudRoot))Directory.Delete(earbudRoot,true);}
+            return;
+        }
+        if (args.Contains("--peripheral-interactions-only"))
+        {
+            string peripheralRoot = Path.Combine(Path.GetTempPath(), "alpha-peripheral-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(peripheralRoot); IslandUi(peripheralRoot, iconEntryProbe: "peripheral-interactions"); Console.WriteLine($"All {_checks} peripheral interaction checks passed."); }
+            finally { if (Directory.Exists(peripheralRoot)) Directory.Delete(peripheralRoot, true); }
+            return;
+        }
+        if (args.Contains("--personal-reminders-only")) { PersonalReminderChecks(); Console.WriteLine($"All {_checks} personal reminder checks passed."); return; }
+        if (args.Contains("--desktop-insights-only")) { DesktopInsightsChecks(); Console.WriteLine($"All {_checks} desktop insight checks passed."); return; }
+        if (args.Contains("--screen-tools-open-only"))
+        {
+            string screenRoot = Path.Combine(Path.GetTempPath(), "alpha-screen-tools-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(screenRoot); IslandUi(screenRoot, iconEntryProbe: "screen-tools-open"); Console.WriteLine($"All {_checks} screen tools opening checks passed."); }
+            finally { if (Directory.Exists(screenRoot)) Directory.Delete(screenRoot, true); }
+            return;
+        }
+        if (args.Contains("--device-batteries-live")) { await DeviceBatteryLiveProbe(); return; }
+        if (args.Contains("--device-batteries-only"))
+        {
+            string batteryRoot = Path.Combine(Path.GetTempPath(), "alpha-device-battery-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(batteryRoot); DeviceBatteryPolicyChecks(); IslandUi(batteryRoot, iconEntryProbe: "device-batteries"); Console.WriteLine($"All {_checks} device battery checks passed."); }
+            finally { if (Directory.Exists(batteryRoot)) Directory.Delete(batteryRoot, true); }
+            return;
+        }
         if (args.Contains("--island-zorder-peer")) { IslandZOrderPeer(args[1]); return; }
         if (args.Contains("--core-logic-only")) { CoreLogicChecks(); Console.WriteLine($"All {_checks} core logic checks passed."); return; }
         if (args.Contains("--optimization-core-only"))
@@ -158,6 +255,7 @@ internal static partial class Program
         }
         if (args.Contains("--notification-assets-live-check")) { await NotificationAssetLiveChecks(); return; }
         if (args.Contains("--toast-live-check")) { RealWindowsNotificationChecks(); return; }
+        if (args.Contains("--desktop-hardware-probe")) { var privacy=new PrivacyIndicatorService();var usage=privacy.Sample();var mic=MicrophoneStateReader.Read();Console.WriteLine(JsonSerializer.Serialize(new {PrivacyAvailable=privacy.DegradedReason==null,UsageCount=usage.Count,MicrophoneAvailable=mic.Available,MicrophoneMuted=mic.Available?(bool?)mic.Muted:null}));return; }
         if (args.Contains("--read-browser-downloads")) { Console.WriteLine(JsonSerializer.Serialize(BrowserDownloadProbe.ScanWindows())); return; }
         if (args.Contains("--inspect-browser-partial")) { Console.WriteLine(JsonSerializer.Serialize(new { Owner = BrowserPartialOwner.Read(args[1]), Readings = BrowserDownloadProbe.Read() })); return; }
         if (args.Contains("--toast-popup-race-check")) { await ToastPopupRaceChecks(); return; }
@@ -190,9 +288,15 @@ internal static partial class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (args.Contains("--device-battery-enhancements-only")) { IslandUi(root, iconEntryProbe: "device-battery-enhancements"); Console.WriteLine($"All {_checks} battery enhancement checks passed."); return; }
+            if (args.Contains("--card-wheel-only")) { IslandUi(root, iconEntryProbe: "card-wheel"); Console.WriteLine($"All {_checks} card wheel checks passed."); return; }
+            if (args.Contains("--component-menu-input-only")) { IslandUi(root, iconEntryProbe: "component-menu-input"); Console.WriteLine($"All {_checks} component menu input checks passed."); return; }
+            if (args.Contains("--launcher-input-only")) { IslandUi(root, iconEntryProbe: "launcher-input"); Console.WriteLine($"All {_checks} launcher input checks passed."); return; }
             if (args.Contains("--agent-startup-latency-only")) { IslandUi(root, iconEntryProbe: "agent-startup-latency"); Console.WriteLine($"All {_checks} agent startup latency checks passed."); return; }
             if (args.Contains("--agent-window-responsiveness-only")) { IslandUi(root, iconEntryProbe: "agent-window-responsiveness"); Console.WriteLine($"All {_checks} agent window responsiveness checks passed."); return; }
             if (args.Contains("--handoff-responsiveness-only")) { IslandUi(root, iconEntryProbe: "handoff-responsiveness"); Console.WriteLine($"All {_checks} handoff responsiveness checks passed."); return; }
+            if (args.Contains("--assistant-reminders-only")) { AssistantReminderChecks(); IslandUi(root, iconEntryProbe: "assistant-reminders"); Console.WriteLine($"All {_checks} assistant reminder checks passed."); return; }
+            if (args.Contains("--desktop-assistant-only")) { await DesktopToolChecks(root); DesktopLocalChecks(root); IslandUi(root, iconEntryProbe: "desktop-assistant"); Console.WriteLine($"All {_checks} desktop assistant checks passed."); return; }
             if (args.Contains("--clipboard-history-preferences-only")) { IslandUi(root, iconEntryProbe: "clipboard-history-preferences"); Console.WriteLine($"All {_checks} clipboard history preference checks passed."); return; }
             if (args.Contains("--ai-settings-layout-only")) { IslandUi(root, iconEntryProbe: "ai-settings-layout"); Console.WriteLine($"All {_checks} AI settings layout checks passed."); return; }
             if (args.Contains("--plugin-settings-surface-only")) { IslandUi(root, iconEntryProbe: "plugin-settings-surface"); Console.WriteLine($"All {_checks} plugin settings surface checks passed."); return; }
@@ -211,9 +315,26 @@ internal static partial class Program
             if (args.Contains("--volume-flash-live")) { IslandUi(root, iconEntryProbe: "volume-flash-live"); Console.WriteLine($"All {_checks} volume flash checks passed."); return; }
             if (args.Contains("--volume-game-quiet-live")) { IslandUi(root, iconEntryProbe: "volume-game-quiet-live"); Console.WriteLine($"All {_checks} game volume feedback checks passed."); return; }
             if (args.Contains("--game-quiet-only")) { await GameActivityChecks(); IslandUi(root, iconEntryProbe: "game-quiet"); Console.WriteLine($"All {_checks} game quiet checks passed."); return; }
+            if (args.Contains("--daily-traffic-only")) { DailyTrafficChecks(root); Console.WriteLine($"All {_checks} daily traffic checks passed."); return; }
+            if (args.Contains("--settings-consolidation-only")) { IslandUi(root, iconEntryProbe: "settings-consolidation"); Console.WriteLine($"All {_checks} consolidated settings checks passed."); return; }
+            if (args.Contains("--keyboard-battery-live")) { IslandUi(root, iconEntryProbe: "keyboard-battery-live"); Console.WriteLine($"All {_checks} live keyboard battery checks passed."); return; }
+            if (args.Contains("--keyboard-spectrum-only")) { IslandUi(root, iconEntryProbe: "keyboard-spectrum"); Console.WriteLine($"All {_checks} keyboard and spectrum checks passed."); return; }
+            if (args.Contains("--resident-memory-only")) { IslandUi(root, iconEntryProbe: "resident-memory"); Console.WriteLine($"All {_checks} resident memory checks passed."); return; }
+            if (args.Contains("--settings-icon-media-pin-only")) { IslandUi(root, iconEntryProbe: "settings-icon-media-pin"); Console.WriteLine($"All {_checks} settings icons and media pin checks passed."); return; }
+            if (args.Contains("--media-peripheral-lifecycle-only")) { IslandUi(root, iconEntryProbe: "media-peripheral-lifecycle"); Console.WriteLine($"All {_checks} media and peripheral lifecycle checks passed."); return; }
+            if (args.Contains("--gaming-memory-only")) { IslandUi(root, iconEntryProbe: "gaming-memory"); Console.WriteLine($"All {_checks} game memory checks passed."); return; }
+            if (args.Contains("--speech-setup-only")) { await SpeechSetupProtocolChecks(); IslandUi(root, iconEntryProbe: "speech-setup"); Console.WriteLine($"All {_checks} speech setup checks passed."); return; }
+            if (args.Contains("--boot-timing-only")) { BootTimingPolicyChecks(); Console.WriteLine($"All {_checks} boot timing checks passed."); return; }
+            if (args.Contains("--boot-timing-live")) { BootTimingLiveReadChecks(); Console.WriteLine($"All {_checks} boot timing live checks passed."); return; }
+            if (args.Contains("--notification-logo-fit-only")) { IslandUi(root, iconEntryProbe: "notification-logo-fit"); Console.WriteLine($"All {_checks} logo fit checks passed."); return; }
+            if (args.Contains("--short-hints-only")) { IslandUi(root, iconEntryProbe: "short-hints"); Console.WriteLine($"All {_checks} short hint checks passed."); return; }
+            if (args.Contains("--hint-bounds-only")) { IslandUi(root, iconEntryProbe: "hint-bounds"); Console.WriteLine($"All {_checks} hint bounds checks passed."); return; }
+            if (args.Contains("--gaming-notifications-only")) { IslandUi(root, iconEntryProbe: "gaming-notifications"); Console.WriteLine($"All {_checks} game notification checks passed."); return; }
+            if (args.Contains("--game-compact-lock-only")) { IslandUi(root, iconEntryProbe: "game-compact-lock"); Console.WriteLine($"All {_checks} game compact lock checks passed."); return; }
             if (args.Contains("--agent-avatar-only")) { IslandUi(root, iconEntryProbe: "agent-avatar"); Console.WriteLine($"All {_checks} agent avatar checks passed."); return; }
             if (args.Contains("--agent-avatar-routing-only")) { IslandUi(root, iconEntryProbe: "agent-avatar-routing"); Console.WriteLine($"All {_checks} agent avatar routing checks passed."); return; }
             if (args.Contains("--agent-avatar-loop-only")) { IslandUi(root, iconEntryProbe: "agent-avatar-loop"); Console.WriteLine($"All {_checks} agent avatar loop checks passed."); return; }
+            if (args.Contains("--agent-completion-visual-only")) { IslandUi(root, iconEntryProbe: "agent-completion-visual"); Console.WriteLine($"All {_checks} completion and satellite checks passed."); return; }
             if (args.Contains("--agent-multi-session-only")) { IslandUi(root, iconEntryProbe: "agent-multi-session"); Console.WriteLine($"All {_checks} multi-session agent checks passed."); return; }
             if (args.Contains("--agent-background-resume-only")) { IslandUi(root, iconEntryProbe: "agent-background-resume"); Console.WriteLine($"All {_checks} agent background resume checks passed."); return; }
             if (args.Contains("--background-agent-visibility-only")) { IslandUi(root, iconEntryProbe: "background-agent"); Console.WriteLine($"All {_checks} background agent visibility checks passed."); return; }
@@ -236,6 +357,12 @@ internal static partial class Program
             if (args.Contains("--screen-tools-theme-only")) { IslandUi(root, iconEntryProbe: "screen-tools-theme"); Console.WriteLine($"All {_checks} screen tools theme checks passed."); return; }
             if (args.Contains("--media-traffic-only")) { MediaAndTrafficChecks(root); IslandUi(root, iconEntryProbe: "media-events"); Console.WriteLine($"All {_checks} media, traffic and download checks passed."); return; }
             if (args.Contains("--bundled-plugin-isolation-only")) { IslandUi(root, iconEntryProbe: "bundled-isolation"); Console.WriteLine($"All {_checks} bundled process checks passed."); return; }
+            if (args.Contains("--cross-machine-compatibility-only")) { CrossMachineCompatibilityChecks(root); IslandUi(root, iconEntryProbe: "small-screen-compatibility"); Console.WriteLine($"All {_checks} cross-machine compatibility checks passed."); return; }
+            if (args.Contains("--api-model-avatar-only")) { IslandUi(root, iconEntryProbe: "api-model-avatar"); Console.WriteLine($"All {_checks} API model avatar checks passed."); return; }
+            if (args.Contains("--runtime-reliability-only")) { await RuntimeReliabilityChecks(root); Console.WriteLine($"All {_checks} runtime reliability checks passed."); return; }
+            if (args.Contains("--interaction-feedback-only")) { IslandUi(root, iconEntryProbe: "interaction-feedback"); Console.WriteLine($"All {_checks} interaction feedback checks passed."); return; }
+            if (args.Contains("--greeting-handoff-only")) { IslandUi(root, iconEntryProbe: "greeting-handoff"); Console.WriteLine($"All {_checks} greeting handoff checks passed."); return; }
+            if (args.Contains("--greeting-media-only")) { IslandUi(root, iconEntryProbe: "greeting-media"); Console.WriteLine($"All {_checks} greeting media checks passed."); return; }
             if (args.Contains("--maintenance-only")) { IslandUi(root, iconEntryProbe: "maintenance"); Console.WriteLine($"All {_checks} maintenance checks passed."); return; }
             if (args.Contains("--plugin-isolation-only")) { IslandUi(root, iconEntryProbe: "plugin-isolation"); Console.WriteLine($"All {_checks} process isolation checks passed."); return; }
             if (args.Contains("--plugin-lifecycle-only")) { IslandUi(root, iconEntryProbe: "plugin-lifecycle"); Console.WriteLine($"All {_checks} plugin lifecycle checks passed."); return; }
@@ -352,6 +479,28 @@ internal static partial class Program
             {
                 await LocalAgentProtocolChecks(root);
                 Console.WriteLine($"All {_checks} local agent checks passed."); return;
+            }
+            if (args.Contains("--notification-refinement-only"))
+            {
+                IslandUi(root, iconEntryProbe: "notification-refinement");
+                Console.WriteLine($"All {_checks} notification refinement checks passed."); return;
+            }
+            if (args.Contains("--api-persona-only"))
+            {
+                await ApiPersonaDeliveryChecks(root);
+                IslandUi(root, iconEntryProbe: "api-persona");
+                Console.WriteLine($"All {_checks} API persona checks passed."); return;
+            }
+            if (args.Contains("--island-information-only"))
+            {
+                await IslandInformationAgentChecks();
+                IslandUi(root, iconEntryProbe: "island-information");
+                Console.WriteLine($"All {_checks} island information checks passed."); return;
+            }
+            if (args.Contains("--api-chat-input-only"))
+            {
+                IslandUi(root, iconEntryProbe: "api-chat-input");
+                Console.WriteLine($"All {_checks} API chat input checks passed."); return;
             }
             if (args.Contains("--ai-conversations-only"))
             {
@@ -854,6 +1003,7 @@ internal static partial class Program
                     return;
                 }
                 if (aiConfigOnly) { AiSettingsConfigurationUiChecks(testRoot); AiModelPickerUiChecks(testRoot); return; }
+                if (iconEntryProbe == "settings-consolidation") { SettingsConsolidationChecks(testRoot); return; }
                 var options = new IslandOptions { LyricsEnabled = true, GlassOpacity = 0.08, GreetingEnabled = false, FileTransferEnabled = true };
                 window = new alpha_island.MainWindow(options);
                 object? Call(string name, params object?[] values)
@@ -866,6 +1016,11 @@ internal static partial class Program
                 T Field<T>(string name) => (T)ReadWindowMember(window, name)!;
                 void SetField(string name, object? value) => WriteWindowMember(window, name, value);
                 var root = (System.Windows.Controls.Grid)window.Content;
+                if (iconEntryProbe == "notification-refinement") { NotificationRefinementChecks(window); return; }
+                if (iconEntryProbe == "api-persona") { ApiPersonaUiChecks(testRoot); return; }
+                if (iconEntryProbe == "island-information") { IslandInformationUiChecks(window, testRoot); return; }
+                if (iconEntryProbe == "desktop-assistant") { DesktopAssistantUiChecks(window, testRoot); return; }
+                if (iconEntryProbe == "assistant-reminders") { AssistantReminderUiChecks(window, testRoot); return; }
                 if (iconEntryProbe == "clipboard-history-preferences") { ClipboardHistoryPreferencesChecks(window, testRoot); return; }
                 if (iconEntryProbe == "ai-settings-layout") { AiSettingsLayoutChecks(window, testRoot); return; }
                 if (iconEntryProbe == "plugin-settings-surface") { PluginSettingsSurfaceChecks(window, testRoot); return; }
@@ -878,6 +1033,36 @@ internal static partial class Program
                 { Width = 1200, Height = 340, PositionX = -32000, PositionY = -32000, WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle = 0x08000080 });
                 source.RootVisual = root;
                 root.UpdateLayout();
+                if (iconEntryProbe == "small-screen-compatibility") { SmallScreenCompatibilityChecks(root); return; }
+                if (iconEntryProbe == "api-model-avatar") { ApiModelAvatarChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "interaction-feedback") { InteractionFeedbackChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "greeting-handoff") { GreetingHandoffChecks(window, root); return; }
+                if (iconEntryProbe == "greeting-media") { GreetingMediaChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "speech-setup") { SpeechSetupUiChecks(testRoot); return; }
+                if (iconEntryProbe == "notification-logo-fit") { NotificationLogoFitChecks(); return; }
+                if (iconEntryProbe == "short-hints") { ShortHintChecks(window); return; }
+                if (iconEntryProbe == "hint-bounds") { HintBoundsChecks(window, root); return; }
+                if (iconEntryProbe == "earbud-identity-live") { EarbudBatteryIdentityLiveChecks(window, root); return; }
+                if (iconEntryProbe == "speech-caption") { SpeechCaptionUiChecks(window, testRoot); return; }
+                if (iconEntryProbe == "voice-assistant") { VoiceAssistantUiChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "voice-capture-live") { VoiceCaptureLiveChecks(); return; }
+                if (iconEntryProbe == "voice-dictation-fixture") { VoiceDictationFixtureChecks(); return; }
+                if (iconEntryProbe == "voice-failure-layout") { VoiceFailureUiChecks(root); return; }
+                if (iconEntryProbe == "screen-tools-open") { ScreenToolsOpenChecks(window, root); return; }
+                if (iconEntryProbe == "keyboard-battery-live") { KeyboardBatteryLiveChecks(window); return; }
+                if (iconEntryProbe == "keyboard-spectrum") { KeyboardSpectrumChecks(window, root); return; }
+                if (iconEntryProbe == "resident-memory") { ResidentMemoryChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "settings-icon-media-pin") { SettingsIconMediaPinChecks(window, root); return; }
+                if (iconEntryProbe == "media-peripheral-lifecycle") { MediaPeripheralLifecycleChecks(window, root); return; }
+                if (iconEntryProbe == "gaming-memory") { GamingMemoryChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "gaming-notifications") { GamingNotificationChecks(window, root); return; }
+                if (iconEntryProbe == "peripheral-interactions") { PeripheralInteractionChecks(window, root); return; }
+                if (iconEntryProbe == "earbuds-isolated-live") { EarbudIsolatedLiveChecks(window, testRoot); return; }
+                if (iconEntryProbe == "device-battery-enhancements") { DeviceBatteryEnhancementChecks(window, root); return; }
+                if (iconEntryProbe == "card-wheel") { CardWheelInputChecks(window, root); return; }
+                if (iconEntryProbe == "component-menu-input") { ComponentMenuInputChecks(window, root); return; }
+                if (iconEntryProbe == "launcher-input") { LauncherInputChecks(window, root); return; }
+                if (iconEntryProbe == "device-batteries") { DeviceBatteryCardChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "liquid-cell-motion") { LiquidCellMotionChecks(window, root); return; }
                 if (iconEntryProbe == "codex-status-recovery") { CodexStatusRecoveryChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "agent-startup-latency") { AgentStartupLatencyChecks(window, root); return; }
@@ -888,6 +1073,7 @@ internal static partial class Program
                 if (iconEntryProbe == "volume-flash-live") { VolumeFlashLiveChecks(window, root); return; }
                 if (iconEntryProbe == "volume-game-quiet-live") { VolumeFlashLiveChecks(window, root, gameQuiet: true); return; }
                 if (iconEntryProbe == "game-quiet") { GameQuietUiChecks(window, root); return; }
+                if (iconEntryProbe == "game-compact-lock") { GameCompactLockChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "status-split") { StatusSplitUiChecks(window, root); return; }
                 if (iconEntryProbe == "power-frame-stall") { PowerFrameStallChecks(window, root); return; }
                 if (iconEntryProbe == "charger-type") { ChargerTypeUiChecks(window, root); return; }
@@ -908,6 +1094,7 @@ internal static partial class Program
                 if (iconEntryProbe == "screen-tools-theme") { ScreenToolsThemeChecks(window, root); return; }
                 if (iconEntryProbe == "media-events") { DownloadAndMediaEventUiChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "bundled-isolation") { BundledPluginIsolationChecks(window, testRoot); return; }
+                if (iconEntryProbe == "api-chat-input") { ApiChatInputRoutingChecks(testRoot); return; }
                 if (iconEntryProbe == "maintenance") { MaintenanceChecks(window, testRoot); return; }
                 if (iconEntryProbe == "plugin-isolation") { PluginIsolationChecks(window, testRoot); return; }
                 if (iconEntryProbe == "plugin-lifecycle") { PluginAndSettingsChecks(window, testRoot); return; }
@@ -941,6 +1128,7 @@ internal static partial class Program
                 if (iconEntryProbe == "agent-avatar") { AgentAvatarChecks(window, root); return; }
                 if (iconEntryProbe == "agent-avatar-routing") { AgentAvatarRoutingChecks(window, root); return; }
                 if (iconEntryProbe == "agent-avatar-loop") { AgentAvatarLoopChecks(window, root); return; }
+                if (iconEntryProbe == "agent-completion-visual") { AgentCompletionVisualChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "agent-multi-session") { AgentMultiSessionChecks(window, root); return; }
                 if (iconEntryProbe == "agent-background-resume") { AgentBackgroundResumeChecks(window, root); return; }
                 if (iconEntryProbe == "background-agent") { BackgroundVisibilityChecks(window, root, false); return; }

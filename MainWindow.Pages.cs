@@ -77,7 +77,7 @@ namespace alpha_island
                 activated: () => SyncVolumeCardContent(),
                 viewportChanged: SetVolumeCardLayerHeight));
 
-            // 实时网速页（C 组②）：实时上下行 + 最近 60 秒曲线。
+            // 实时网速页：实时上下行 + 最近 60 秒曲线。
             // **不设 available** —— 用户需求是"新增功能必须看得到、测得到"，
             // 所以哪怕设置里没开网速监控，这一页也始终能翻到，页内写"未开启"提示。
             RegisterSeparateStatusPages();
@@ -93,6 +93,7 @@ namespace alpha_island
                 activated: SyncDownloadCard,
                 viewportChanged: SetDownloadCardLayerHeight));
 
+            RegisterDeviceBatteryPage();
             RegisterDesktopNotificationPage();
             RegisterUtilityPages();
             RegisterProductivityPage();

@@ -20,7 +20,7 @@ internal static partial class Program
         int tier = MotionPolicy.RenderTier;
         bool reduce = MotionPolicy.ReduceMotion, power = MotionPolicy.PowerSave;
         var options = AgentField<IslandOptions>(window, "_options");
-        bool gel = options.GelAnimation;
+        bool reducedSetting = SettingsRegistry.GetBool(options, "ReduceEffectsEnabled", false);
         var animator = AgentField<IslandAnimator>(window, "_animator");
         var contour = AgentField<LiquidIslandShape>(window, "_liquidShape");
         var tick = typeof(IslandAnimator).GetField("_lastTick", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -35,7 +35,7 @@ internal static partial class Program
         }
         try
         {
-            MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false); options.GelAnimation = true;
+            MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
             animator.SetImmediate(new(130, 10, 0, new CornerRadius(0, 0, 10, 10)));
             PrivateCall(window, "SetState", IslandState.Pill, true);
             Advance(10);
@@ -61,8 +61,16 @@ internal static partial class Program
             Check(!contour.IsDeformed && AgentField<IslandTimer?>(window, "_glassLightTimer")?.IsEnabled == false, "省电模式停止光源采样并使用简单轮廓");
             Check(!window.LiquidFrameLoopActive && window.GlassLightSamples == 0, "隔离或静止视图没有额外常驻渲染/采样循环");
             LiquidChromePixelChecks();
+            SettingsRegistry.SetExtra(options, "ReduceEffectsEnabled", true);
+            PrivateCall(window, "ApplyMotionPolicy");
+            Check(MotionPolicy.ReduceMotion && MotionPolicy.PowerSave && !window.LiquidFrameLoopActive,
+                "统一削减动效设置同时关闭动画并启用节能策略");
+            SettingsRegistry.SetExtra(options, "ReduceEffectsEnabled", false);
+            PrivateCall(window, "ApplyMotionPolicy");
+            Check(!MotionPolicy.ReduceMotion && !MotionPolicy.PowerSave,
+                "关闭削减动效立即恢复默认视觉策略");
         }
-        finally { options.GelAnimation = gel; MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduce, power); }
+        finally { SettingsRegistry.SetExtra(options, "ReduceEffectsEnabled", reducedSetting); MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduce, power); }
     }
 
     private static void LiquidChromePixelChecks()

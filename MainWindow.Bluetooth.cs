@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Bluetooth connection and battery notifications.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -37,7 +36,7 @@ namespace alpha_island
 
         private void OnBluetoothDeviceConnected(object? sender, BluetoothDeviceInfo info)
         {
-            CheckBluetoothLowBattery(info);
+            SyncDeviceBatteryCard();
             if (_exiting || _sessionLocked || GameDoNotDisturbActive || !_options.BluetoothNotifyEnabled) return;
             if (_greetingShowing && GreetingActive) return;
             ShowBluetoothNotify(info, isConnected: true);
@@ -45,7 +44,7 @@ namespace alpha_island
 
         private void OnBluetoothDeviceDisconnected(object? sender, BluetoothDeviceInfo info)
         {
-            _bluetoothLowBattery.ShouldNotify(info with { IsConnected = false });
+            SyncDeviceBatteryCard();
             if (_exiting || _sessionLocked || GameDoNotDisturbActive || !_options.BluetoothNotifyEnabled) return;
             ShowBluetoothNotify(info, isConnected: false);
         }
@@ -54,25 +53,13 @@ namespace alpha_island
         private bool _btDisplayedConnected;
         private BluetoothDeviceCategory _btDisplayedCategory;
         private int _btMotionRevision;
-        private readonly BluetoothLowBatteryPolicy _bluetoothLowBattery = new();
         private void OnBluetoothBatteryUpdated(object? sender, BluetoothDeviceInfo info)
         {
-            CheckBluetoothLowBattery(info);
+            SyncDeviceBatteryCard();
             if (_btNotifying && BtNotifyActive && _btDisplayedConnected && info.IsConnected && info.Id == _btDisplayedDeviceId)
             {
                 UpdateBluetoothBattery(info.BatteryPercent);
             }
-        }
-
-        private void CheckBluetoothLowBattery(BluetoothDeviceInfo info)
-        {
-            if (_exiting || !SettingsRegistry.GetBool(_options, "BluetoothLowBatteryEnabled", true)
-                || !_bluetoothLowBattery.ShouldNotify(info)) return;
-            var item = new DesktopNotification("bluetooth-low-" + info.Id + "-" + DateTimeOffset.UtcNow.UtcTicks,
-                "", "蓝牙设备", info.Name + " · 电量低", $"剩余电量 {info.BatteryPercent}%，请及时充电", DateTimeOffset.Now,
-                DesktopEventKind.BluetoothLowBattery);
-            _desktopInbox.Add(item, _desktopPolicy.CanPopup(item, _sessionLocked), _desktopPolicy);
-            StartNotificationUiTimer(); RefreshDesktopInbox(); TickDesktopNotifications();
         }
 
         private void UpdateBluetoothBattery(int? percent)
@@ -199,7 +186,7 @@ namespace alpha_island
         {
             if (_backdrop != null) return;   // 幂等：构造期已经建过就不再建第二个
 
-            if (!_options.LiquidGlassBackdrop)
+            if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave)
             {
                 _backdrop = null;
                 return;
@@ -244,13 +231,11 @@ namespace alpha_island
         private bool _backdropTried;
 
         /// <summary>
-        /// 液态玻璃开关的落点：打开就（必要时）把真实 HostBackdrop 玻璃窗建起来，
-        /// 关掉就把它藏起来、本色退回纯渐变。设置里那个 <c>LiquidGlassBackdrop</c>
-        /// 开关就是走这里生效的。
+        /// 默认创建真实 HostBackdrop 玻璃窗；削减动效或硬件回退时隐藏并使用纯渐变。
         /// </summary>
         private void EnsureBackdrop()
         {
-            if (!_options.LiquidGlassBackdrop)
+            if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave)
             {
                 _backdrop?.SetVisible(false);
                 return;
@@ -304,6 +289,7 @@ namespace alpha_island
         {
             if (_audio != null) _audio.VisualizationEnabled =
                 (PillSpectrum.IsActive && PillSpectrum.IsVisible) || (CardWave.IsActive && CardWave.IsVisible);
+            SyncGlassLightPacing();
         }
 
         private static void SetActive(SpectrumVisualizer v, bool active)
@@ -352,11 +338,13 @@ namespace alpha_island
             // 实测就是"淡出被跳过后 3ms 内 show→hide"的一帧闪。
             _layers.BeginMorph(prev, IslandState.Bar);
             _hoverOutTicks = 0;
-            _isPinned = false;
+            // Game mode temporarily hides the island; every collapse path must
+            // retain the user's music pin until normal presentation resumes.
+            if (!GameDoNotDisturbActive) _isPinned = false;
             HidePinBubble(immediate: true);
             CollapseAllSatellitesWithMainIsland();
             _upNextTimer?.Stop();
-            _greetingTimer?.Stop();
+            CompleteGreetingLifetime();
 
             // 收回意味着换曲提示结束：把胶囊内容还原，下次展开不会还挂着"接下来"
             _upNextUntil = DateTime.MinValue;

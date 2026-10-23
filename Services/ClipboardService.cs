@@ -58,6 +58,17 @@ namespace alpha_island.Services
         /// <summary>当前是否有尚未粘贴/取消的已复制驻留状态。</summary>
         public bool IsCopiedPending => _isCopiedPending;
         public Uri? CurrentWebLink { get; private set; }
+        public bool SensitiveGuardEnabled { get; private set; } = true;
+        public string LastSensitiveKind { get; private set; } = "";
+        public void SetSensitiveGuard(bool enabled)
+        {
+            if (SensitiveGuardEnabled == enabled) return;
+            SensitiveGuardEnabled = enabled;
+            if (!enabled) return;
+            bool removed;
+            lock (_lock) removed = _history.RemoveAll(e => SensitiveTextDetector.Inspect(e.Text).Sensitive) > 0;
+            if (removed) SaveHistory(keepBackup: false);
+        }
 
         internal bool TryGetPendingWebLink(out Uri? link)
         {
@@ -77,6 +88,7 @@ namespace alpha_island.Services
                 lock (_lock) return _history.ToArray();
             }
         }
+        internal int HistoryCount { get { lock (_lock) return _history.Count; } }
 
         /// <summary>检测到新复制内容时触发（参数：文本摘要，是否为剪切）。</summary>
         public event EventHandler<(string Summary, bool IsCut)>? ContentCopied;
@@ -258,7 +270,9 @@ namespace alpha_island.Services
         private void ProcessClipboardText(string? text, bool isCut)
         {
             _stateVersion++;
-            CurrentWebLink = WebLinkDetector.Detect(text);
+            var safety = SensitiveGuardEnabled ? SensitiveTextDetector.Inspect(text) : new SensitiveTextReport(false, "", text ?? "");
+            LastSensitiveKind = safety.Kind;
+            CurrentWebLink = safety.Sensitive ? null : WebLinkDetector.Detect(text);
             if (string.IsNullOrWhiteSpace(text))
             {
                 // 文件/图片取代文本后取消旧的文本驻留与右键代粘贴，不能误贴新的文件载荷。
@@ -269,8 +283,8 @@ namespace alpha_island.Services
             }
             // 相同文字被重新复制也是新的操作；重复系统消息由序号过滤，不按文本吞掉。
             _isCopiedPending = true;
-            AddHistory(text);
-            string summary = text.Replace("\r", " ").Replace("\n", " ").Trim();
+            if (!safety.Sensitive) AddHistory(text);
+            string summary = safety.Sensitive ? safety.Kind + " · 已跳过历史" : text.Replace("\r", " ").Replace("\n", " ").Trim();
             if (summary.Length > 28) summary = summary.Substring(0, 28) + "...";
             ContentCopied?.Invoke(this, (summary, isCut));
         }
@@ -417,9 +431,10 @@ namespace alpha_island.Services
                         lock (_lock)
                         {
                             _history.Clear();
-                            _history.AddRange(list.Where(x => x != null && !string.IsNullOrWhiteSpace(x.Text)).Take(_historyLimit));
+                            _history.AddRange(list.Where(x => x != null && !string.IsNullOrWhiteSpace(x.Text)
+                                && (!SensitiveGuardEnabled || !SensitiveTextDetector.Inspect(x.Text).Sensitive)).Take(_historyLimit));
                         }
-                        if (list.Count > HistoryLimit) SaveHistory(keepBackup: false);
+                        if (list.Count != History.Count) SaveHistory(keepBackup: false);
                         return;
                     }
                 }

@@ -88,11 +88,18 @@ internal static partial class Program
         PrivateCall(window, "PresentBootTiming", pending);
         var pill = AgentField<alpha_island.Controls.DesktopNotificationPill>(window, "_notificationSummary");
         var inbox = AgentField<DesktopNotificationInbox>(window, "_desktopInbox");
-        Check(pill.Title.Text == "本次开机" && pill.Detail.Text.Contains("正在等待")
+        Check(pill.Title.Text == "本次开机" && pill.Detail.Text.Contains("正在读取")
             && AgentField<DesktopNotification>(window, "_desktopCurrent").Kind == DesktopEventKind.BootTiming,
             "自启动在等待日志时立即显示提示，不等待 Event 100 才响应");
         Check(AgentField<IslandTimer>(window, "_notificationUiTimer").IsEnabled,
             "关闭其他通知监听时，开机提示仍有独立计时器消费队列");
+        var reference = new BootTimingReading(DateTimeOffset.UtcNow.AddMinutes(-2), TimeSpan.FromSeconds(30.5), "缺少精确记录", "桌面初始化完成", IsEstimate: true);
+        PrivateCall(window, "PresentBootTiming", reference);
+        PumpAnimations(350); root.UpdateLayout();
+        Check(pill.Detail.Text.Contains("参考") && pill.Detail.Text.Contains("30.5 秒") && inbox.History.Count == 1
+            && inbox.PendingCount == 0 && window.IslandBody.ActualHeight <= IslandMetrics.PillHeight + .5,
+            "当前启动没有性能记录时立即显示参考值，保持一条通知且文字可见");
+        SaveThemePreview(window.IslandBody, "bin/launch-previews/boot-time-reference.png");
         var exact = new BootTimingReading(DateTimeOffset.UtcNow.AddMinutes(-2), TimeSpan.FromMilliseconds(12345), "", "test");
         PrivateCall(window, "PresentBootTiming", exact);
         Check(pill.Detail.Text.Contains("12.3 秒") && inbox.History.Count == 1 && inbox.PendingCount == 0
@@ -152,12 +159,9 @@ internal static partial class Program
             && pill.Title.Text == message.AppName && pill.Detail.Text == message.Title,
             "新消息使用 48 高度的小岛展示应用和标题，不自动展开完整卡片");
         SaveThemePreview(window.IslandBody, "bin/launch-previews/windows-notification-pill.png");
-        bool twoStepExpand = options.TwoStepExpand;
-        options.TwoStepExpand = false;
         PrivateCall(window, "IslandBody_MouseEnter", window.IslandBody,
             new System.Windows.Input.MouseEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0));
-        options.TwoStepExpand = twoStepExpand;
-        Check(AgentField<IslandState>(window, "_state") == IslandState.Pill, "即使关闭两步展开，移入通知小岛也不会自动放大");
+        Check(AgentField<IslandState>(window, "_state") == IslandState.Pill, "移入通知小岛不会自动放大");
         SetAgentField(window, "_desktopExpires", DateTimeOffset.Now.AddSeconds(-1));
         PrivateCall(window, "TickDesktopNotifications");
         Check(AgentField<IslandState>(window, "_state") == IslandState.Bar

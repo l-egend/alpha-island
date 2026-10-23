@@ -22,6 +22,8 @@ namespace alpha_island.Core
     /// </summary>
     public static class SettingsPageIds
     {
+        public const string General = "general";
+        public const string Assistant = "assistant";
         public const string Appearance = "appearance";
         public const string Island = "island";
         public const string Media = "media";
@@ -66,7 +68,7 @@ namespace alpha_island.Core
         /// <summary>所属设置页（<see cref="SettingsPageIds"/>）。</summary>
         public string PageId { get; init; } = SettingsPageIds.Behavior;
 
-        /// <summary>控件的 x:Name。Bool → CheckBox/ToggleButton；Int/Double → Slider；Text/Secret → TextBox。</summary>
+        /// <summary>控件的 x:Name。Bool → CheckBox/ToggleButton；Int/Double → Slider 或数字 TextBox；Text/Secret → TextBox。</summary>
         public string ControlName { get; init; } = "";
 
         /// <summary>数值文本的 x:Name（可选，滑杆右侧的 W11Value TextBlock）。</summary>

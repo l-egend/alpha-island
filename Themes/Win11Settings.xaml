@@ -66,7 +66,9 @@
     <Style x:Key="W11RowHint" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{StaticResource W11TextSecondary}"/>
-        <Setter Property="Margin" Value="0,3,0,0"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="Margin" Value="0,4,0,0"/>
+        <Setter Property="LineHeight" Value="18"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
 
@@ -89,6 +91,11 @@
         <Setter Property="CornerRadius" Value="8"/>
     </Style>
 
+    <Style x:Key="W11SettingCard" TargetType="Border" BasedOn="{StaticResource W11Card}">
+        <Setter Property="Margin" Value="0,0,0,8"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
     <!-- 同一张卡片内的行分隔线：左侧从图标之后起，Win11 就是这么缩进的 -->
     <Style x:Key="W11RowDivider" TargetType="Border">
         <Setter Property="Height" Value="1"/>
@@ -97,8 +104,8 @@
     </Style>
 
     <Style x:Key="W11Row" TargetType="Grid">
-        <Setter Property="Margin" Value="16,0,16,0"/>
-        <Setter Property="MinHeight" Value="64"/>
+        <Setter Property="Margin" Value="16,12,16,12"/>
+        <Setter Property="MinHeight" Value="40"/>
     </Style>
 
     <!-- 行首的图标槽：32x32 圆角方块，用户后续把图标填进 Content -->

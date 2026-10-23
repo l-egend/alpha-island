@@ -143,11 +143,7 @@ export async function handleHook(input, rawConfig, { configPath, background = fa
   const key = identity.session;
   config.statusIdentity = { ...identity,
     ...(typeof input.turn_id === 'string' && /^[a-zA-Z0-9_.:-]{1,64}$/.test(input.turn_id) ? { nativeTurnId: input.turn_id } : {}), ...(event === 'UserPromptSubmit' && startsRootActivity ? { beginsActivity: true } : {}),
-    ...(event === 'SessionStart' && input.source !== 'compact' ? { connectOnly: true } : {}) };
-  if (event === 'SessionStart' && input.source === 'compact') {
-    await report(config, key, 'thinking', 'Codex · 整理上下文', configPath, background);
-    return {};
-  }
+    ...(event === 'SessionStart' ? { connectOnly: true } : {}) };
   if (idleEvents.has(event)) {
     if (event !== 'SessionStart') await cancelSession(config, key);
     await report(config, key, 'idle', '', configPath, background);

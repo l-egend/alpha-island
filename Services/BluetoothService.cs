@@ -52,7 +52,7 @@ namespace alpha_island.Services
     ///     的上线与激活状态，确保无线耳机（如 AirPods、vivo TWS、OPPO Enco 等）插拔/开盖即连 100% 触发。
     /// </summary>
     [SupportedOSPlatform("windows10.0.17763.0")]
-    public sealed class BluetoothService : IDisposable
+    public sealed partial class BluetoothService : IDisposable
     {
         private static readonly Guid BatteryServiceUuid =
             new("0000180f-0000-1000-8000-00805f9b34fb");
@@ -126,6 +126,7 @@ namespace alpha_island.Services
                 _classicWatcher = DeviceInformation.CreateWatcher(classicSelector);
                 _classicWatcher.Added += OnClassicDeviceAdded;
                 _classicWatcher.Updated += OnClassicDeviceUpdated;
+                _classicWatcher.Removed += (_, update) => OnDeviceRemoved(update.Id);
                 _classicWatcher.EnumerationCompleted += (_, _) => CheckAllEnumerated();
                 _classicWatcher.Start();
 
@@ -134,8 +135,10 @@ namespace alpha_island.Services
                 _bleWatcher = DeviceInformation.CreateWatcher(bleSelector);
                 _bleWatcher.Added += OnBleDeviceAdded;
                 _bleWatcher.Updated += OnBleDeviceUpdated;
+                _bleWatcher.Removed += (_, update) => OnDeviceRemoved(update.Id);
                 _bleWatcher.EnumerationCompleted += (_, _) => CheckAllEnumerated();
                 _bleWatcher.Start();
+                _ = RefreshConnectionStateAsync();
 
                 Debug.WriteLine("[Bluetooth] WinRT 蓝牙 DeviceWatchers 已启动");
             }
@@ -226,6 +229,7 @@ namespace alpha_island.Services
             }
             _bleDevices.Clear();
             _knownDeviceNames.Clear();
+            _batterySnapshots.Clear();
             _preExistingConnected.Clear();
         }
 
@@ -249,6 +253,7 @@ namespace alpha_island.Services
                 if (device.ConnectionStatus == BluetoothConnectionStatus.Connected)
                 {
                     _preExistingConnected[device.DeviceId] = true;
+                    _ = HandleConnectedAsync(device.DeviceId, cleanName, category, announce: false);
                 }
 
                 device.ConnectionStatusChanged += (dev, _) =>
@@ -261,15 +266,15 @@ namespace alpha_island.Services
                     if (isConnected)
                     {
                         _preExistingConnected[dev.DeviceId] = true;
-                        if (!wasConnected && !IsInStartupGracePeriod && _enumerated)
+                        if (!wasConnected)
                         {
-                            _ = HandleConnectedAsync(dev.DeviceId, cleanName, category);
+                            _ = HandleConnectedAsync(dev.DeviceId, cleanName, category, announce: !IsInStartupGracePeriod && _enumerated);
                         }
                     }
                     else
                     {
                         _preExistingConnected[dev.DeviceId] = false;
-                        if (wasConnected && !IsInStartupGracePeriod && _enumerated)
+                        if (wasConnected)
                         {
                             HandleDisconnected(dev.DeviceId, cleanName, category);
                         }
@@ -300,6 +305,7 @@ namespace alpha_island.Services
                 if (device.ConnectionStatus == BluetoothConnectionStatus.Connected)
                 {
                     _preExistingConnected[device.DeviceId] = true;
+                    _ = HandleConnectedAsync(device.DeviceId, cleanName, category, announce: false);
                 }
 
                 device.ConnectionStatusChanged += (dev, _) =>
@@ -312,15 +318,15 @@ namespace alpha_island.Services
                     if (isConnected)
                     {
                         _preExistingConnected[dev.DeviceId] = true;
-                        if (!wasConnected && !IsInStartupGracePeriod && _enumerated)
+                        if (!wasConnected)
                         {
-                            _ = HandleConnectedAsync(dev.DeviceId, cleanName, category);
+                            _ = HandleConnectedAsync(dev.DeviceId, cleanName, category, announce: !IsInStartupGracePeriod && _enumerated);
                         }
                     }
                     else
                     {
                         _preExistingConnected[dev.DeviceId] = false;
-                        if (wasConnected && !IsInStartupGracePeriod && _enumerated)
+                        if (wasConnected)
                         {
                             HandleDisconnected(dev.DeviceId, cleanName, category);
                         }
@@ -443,14 +449,17 @@ namespace alpha_island.Services
                 {
                     var prop = dev.Properties[i];
                     string val = prop.Value?.ToString() ?? "";
-                    if (val.Contains("BTHENUM", StringComparison.OrdinalIgnoreCase) ||
+                    bool bluetoothPath = val.Contains("BTHENUM", StringComparison.OrdinalIgnoreCase) ||
                         val.Contains("BTHLE", StringComparison.OrdinalIgnoreCase) ||
-                        val.Contains("Bluetooth", StringComparison.OrdinalIgnoreCase))
+                        val.Contains("Bluetooth", StringComparison.OrdinalIgnoreCase);
+                    if (bluetoothPath)
                     {
                         isBluetooth = true;
                     }
 
-                    if (string.IsNullOrEmpty(extractedMac))
+                    // Only Bluetooth paths carry address evidence. Other audio properties
+                    // include service/container GUIDs whose 12-hex tails are not MACs.
+                    if (bluetoothPath && string.IsNullOrEmpty(extractedMac))
                     {
                         string m = ExtractMacAddress(val);
                         if (!string.IsNullOrEmpty(m)) extractedMac = m;
@@ -490,9 +499,9 @@ namespace alpha_island.Services
         // ===================== 事件触发与去重 =====================
 
         private async Task HandleConnectedAsync(string deviceId, string name, BluetoothDeviceCategory category,
-            string? mac = null, string? containerId = null)
+            string? mac = null, string? containerId = null, bool announce = true)
         {
-            if (_disposed || IsInStartupGracePeriod) return;
+            if (_disposed) return;
 
             if (string.IsNullOrEmpty(mac)) mac = ExtractMacAddress(deviceId);
             string key = !string.IsNullOrEmpty(mac) ? "mac:" + mac.ToUpperInvariant()
@@ -504,7 +513,7 @@ namespace alpha_island.Services
 
             Debug.WriteLine($"[Bluetooth] 触发连接通知: {name} ({deviceId}, mac={mac}, container={containerId})");
             var info = new BluetoothDeviceInfo(deviceId, name, category, null, IsConnected: true);
-            _ = _dispatcher.BeginInvoke(() => { if (IsCurrent()) DeviceConnected?.Invoke(this, info); });
+            _ = _dispatcher.BeginInvoke(() => { if (IsCurrent()) { StoreBatterySnapshot(key, info); if (announce && !IsInStartupGracePeriod) DeviceConnected?.Invoke(this, info); } });
             try
             {
                 int attempt = 0;
@@ -513,7 +522,7 @@ namespace alpha_island.Services
                     int? battery = await TryReadBatteryAsync(deviceId, name, mac, containerId);
                     if (!IsCurrent()) return;
                     var updated = info with { BatteryPercent = battery is >= 0 and <= 100 ? battery : null };
-                    _ = _dispatcher.BeginInvoke(() => { if (IsCurrent()) BatteryUpdated?.Invoke(this, updated); });
+                    _ = _dispatcher.BeginInvoke(() => { if (IsCurrent()) { StoreBatterySnapshot(key, updated); if (!IsInStartupGracePeriod) BatteryUpdated?.Invoke(this, updated); } });
                     await Task.Delay(battery.HasValue || ++attempt > 5 ? 60000 : 1000 * attempt, _lifetime.Token);
                 }
             }
@@ -523,13 +532,13 @@ namespace alpha_island.Services
 
         private void HandleDisconnected(string deviceId, string name, BluetoothDeviceCategory category)
         {
-            if (_disposed || IsInStartupGracePeriod) return;
+            if (_disposed) return;
             string key = _connectionKeys.GetValueOrDefault(deviceId, "mac:" + ExtractMacAddress(deviceId).ToUpperInvariant());
             _connectionEpochs.TryRemove(key, out _);
 
             Debug.WriteLine($"[Bluetooth] 触发断开通知: {name} ({deviceId})");
             var info = new BluetoothDeviceInfo(deviceId, name, category, BatteryPercent: null, IsConnected: false);
-            _ = _dispatcher.BeginInvoke(() => { if (!_disposed && !_connectionEpochs.ContainsKey(key)) DeviceDisconnected?.Invoke(this, info); });
+            _ = _dispatcher.BeginInvoke(() => { if (!_disposed && !_connectionEpochs.ContainsKey(key)) { StoreBatterySnapshot(key, info); if (!IsInStartupGracePeriod) DeviceDisconnected?.Invoke(this, info); } });
         }
 
         // ===================== 电量读取与多轮重试 =====================
@@ -815,17 +824,34 @@ namespace alpha_island.Services
         private static string ExtractMacAddress(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return "";
-            var m = Regex.Match(input, @"([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}");
+            // WinRT IDs contain local-adapter AND remote-device addresses, e.g.
+            // BluetoothLE#BluetoothLE11:22:33:44:55:66-aa:bb:cc:dd:ee:01.
+            // Taking the first address merges every peripheral on that adapter.
+            const string address = @"(?:[0-9a-f]{12}|(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2})";
+            var m = Regex.Match(input, @"^Bluetooth(?:LE)?#Bluetooth(?:LE)?" + address + "-(?<remote>" + address + @")(?:$|[#\\])", RegexOptions.IgnoreCase);
+            if (m.Success) return m.Groups["remote"].Value.Replace(":", "").Replace("-", "").ToUpperInvariant();
+
+            // A Bluetooth profile UUID ends in 12 hex digits (e.g. 00805F9B34FB).
+            // Remove complete GUIDs before scanning PnP paths for a remote address.
+            string path = Regex.Replace(input, @"(?i)\{?[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\}?", "");
+            m = Regex.Match(path, @"(?i)(?<![0-9a-f])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])");
             if (m.Success)
             {
                 return m.Value.Replace(":", "").Replace("-", "").ToUpperInvariant();
             }
-            m = Regex.Match(input, @"DEV_([0-9a-fA-F]{12})", RegexOptions.IgnoreCase);
+            m = Regex.Match(path, @"DEV_([0-9a-fA-F]{12})(?![0-9a-fA-F])", RegexOptions.IgnoreCase);
             if (m.Success)
             {
                 return m.Groups[1].Value.ToUpperInvariant();
             }
-            m = Regex.Match(input, @"([0-9a-fA-F]{12})");
+            // CoreAudio exposes BTHENUM paths with the remote address before _C....
+            if ((path.Contains("BTH", StringComparison.OrdinalIgnoreCase) || path.Contains("Bluetooth", StringComparison.OrdinalIgnoreCase))
+                && (path.Contains('\\') || path.Contains('#')))
+            {
+                var matches = Regex.Matches(path, @"(?i)(?<![0-9a-f])([0-9a-f]{12})(?![0-9a-f])");
+                if (matches.Count > 0) return matches[^1].Groups[1].Value.ToUpperInvariant();
+            }
+            m = Regex.Match(path.Trim(), @"^(?:mac:)?([0-9a-fA-F]{12})$", RegexOptions.IgnoreCase);
             if (m.Success)
             {
                 return m.Groups[1].Value.ToUpperInvariant();
@@ -861,6 +887,7 @@ namespace alpha_island.Services
                 {
                     _owner.CheckAudioEndpoint(pwstrDeviceId);
                 }
+                else _ = _owner.RefreshConnectionStateAsync();
             }
 
             public void OnDeviceAdded(string pwstrDeviceId)
@@ -868,7 +895,7 @@ namespace alpha_island.Services
                 _owner.CheckAudioEndpoint(pwstrDeviceId);
             }
 
-            public void OnDeviceRemoved(string pwstrDeviceId) { }
+            public void OnDeviceRemoved(string pwstrDeviceId) => _ = _owner.RefreshConnectionStateAsync();
 
             public void OnDefaultDeviceChanged(DataFlow flow, Role role, string pwstrDefaultDeviceId)
             {

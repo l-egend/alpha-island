@@ -60,13 +60,13 @@ namespace alpha_island
         private bool ShouldHidePausedMedia => SettingsRegistry.GetBool(_options, "MediaHideWhenPaused", false)
             && !_isPinned && _smtc?.Current?.State == PlaybackState.Paused
             && !(_upNextKind == "pause" && UpNextActive);
-        private bool MusicIslandCanShow => MusicIslandHasMedia && !ShouldHidePausedMedia && !ShouldHideForegroundMedia && (!GameDoNotDisturbActive || _isPinned);
-        private bool HasVisibleMusicPin => _isPinned && MusicIslandHasMedia && !ShouldHideForegroundMedia;
+        private bool MusicIslandCanShow => MusicIslandHasMedia && !ShouldHidePausedMedia && !ShouldHideForegroundMedia && !GameDoNotDisturbActive;
+        private bool HasVisibleMusicPin => _isPinned && MusicIslandHasMedia && !ShouldHideForegroundMedia && !GameDoNotDisturbActive;
 
-        // Window handoff owns the player's foreground/background lifetime. A playing
-        // background player stays available until it pauses, opens or is explicitly dismissed.
+        // Playback alone does not pin the island. Only a live prompt, a manual pin
+        // or an in-flight window handoff may keep the compact player open.
         private bool KeepPlayingMusicIslandVisible => !_musicIslandDismissed && MusicIslandCanShow
-            && _smtc?.Current?.IsPlaying == true && (_options.KeepCompactWhilePlaying || MediaWindowHandoffEnabled);
+            && (HasVisibleMusicPin || UpNextActive || _mediaHandoffInFlight);
         private bool CanRetainIsland(string key) => IsIslandActive(key);
 
         /// <summary>
@@ -329,6 +329,7 @@ namespace alpha_island
         /// </summary>
         private void SyncSatelliteOrbs()
         {
+            if (GameDoNotDisturbActive) { HideAllSatellites(immediate: true); return; }
             // 欢迎界面期间，绝不显示任何卫星小岛
             bool greetingAny = _layers.IsShowing(IslandLayerHost.GreetingKey) || _layers.IsActive(IslandLayerHost.GreetingKey);
             if (greetingAny)
@@ -968,7 +969,7 @@ namespace alpha_island
             else SetLayerPinned(key, !_layers.IsPinned(key), promoteToMain: false);
         }
 
-        private void SetMusicPinned(bool pinned, bool promoteToMain = false)
+        private void SetMusicPinned(bool pinned, bool promoteToMain = false, bool preserveCard = false)
         {
             if (pinned && !MusicIslandHasMedia) return;
             _isPinned = pinned;
@@ -977,13 +978,14 @@ namespace alpha_island
             if (pinned && promoteToMain) SwitchMainIsland("music");
             if (!pinned) _activeSatelliteOrder.Remove("music");
             UpdateMusicOrbPinIndicator();
-            ShowPinBubble(pinned, "媒体播放器");
             SyncPausedMediaVisibility();
+            if (pinned && HasVisibleMusicPin && _state == IslandState.Bar) SetState(IslandState.Pill);
             TryMorphPillWidth();
-            if (!pinned && !_layers.AnyPinned && !HasActiveNotification)
+            if (!pinned && !(preserveCard && _state == IslandState.Card) && !_layers.AnyPinned && !HasActiveNotification)
             {
                 CollapseToBar(force: true);
             }
+            ShowPinBubble(pinned, "媒体播放器");
         }
 
         private void AnimateHideSatelliteOrb(Border orb)

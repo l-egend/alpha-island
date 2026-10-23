@@ -14,6 +14,7 @@ internal static partial class Program
 {
     private static void AiSettingsLayoutChecks(alpha_island.MainWindow window,string root)
     {
+        PluginScrollingChecks();
         string target=Path.Combine(root,"api-settings-worker");Directory.CreateDirectory(target);
         string source=Path.GetFullPath($"examples/ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach(string file in Directory.GetFiles(source).Where(f=>f.EndsWith(".dll")||f.EndsWith(".deps.json"))) File.Copy(file,Path.Combine(target,Path.GetFileName(file)));
@@ -39,10 +40,18 @@ internal static partial class Program
             Check(save.Y>=Control("AiApiKeyBox").Y+Control("AiApiKeyBox").Height+7, $"{width}px：密钥输入和操作按钮不挤在一起");
             Check(connect.Y>=Control("AiModelBox").Y+Control("AiModelBox").Height+7, $"{width}px：模型选择和操作按钮有足够留白");
             Check(buttons.All(e=>e.Height>=32 && e.X>=0 && e.X+e.Width<=width), $"{width}px：按钮尺寸统一且不会超出设置页");
+            var importPersona=Control("AiPersonaImportButton"); var openPersonas=Control("AiPersonaFolderButton");
+            Check(Math.Abs(importPersona.Y-openPersonas.Y)<1 && openPersonas.X-importPersona.X-importPersona.Width>=7, $"{width}px：人格导入与文件夹按钮并排且有间距");
+            Check(importPersona.ClipHeight>=importPersona.Height-1 && openPersonas.ClipHeight>=openPersonas.Height-1, $"{width}px：人格操作按钮完整可见");
             var prompt=Control("AiSystemPromptBox");
             Console.WriteLine($"AI settings {width}px: height={frame.Height:F1}, promptBottom={prompt.Y+prompt.Height:F1}, promptClip={prompt.ClipHeight:F1}/{prompt.Height:F1}");
-            Check(prompt.ClipHeight>=prompt.Height-1 && prompt.Y+prompt.Height+12<=frame.Height, $"{width}px：系统提示词和卡片底部完整显示");
-            Check(frame.Height<650, $"{width}px：设置高度随实际内容收敛");
+            Check(prompt.ClipHeight>=prompt.Height-1 && prompt.Y+prompt.Height+12<=frame.Height, $"{width}px：人格提示词和卡片底部完整显示");
+            Check(frame.Height<=650, $"{width}px：扩展设置不超过宿主可滚动视口上限");
+            AwaitPlugin(session.Request<bool>("input",new RemoteCommand("$settings","wheel",Number:-3000,X:width/2d,Y:frame.Height-20)));
+            var bottom=AwaitPlugin(session.Request<RemoteFrame>("frame",new RemoteViewRequest("$settings",width,650)));
+            var guard=bottom.Elements.Single(e=>e.Name=="AiSensitiveSendGuardEnabledToggle");
+            Check(guard.ClipHeight>=guard.Height-1 && guard.Y>=0 && guard.Y+guard.Height<=bottom.Height, $"{width}px：滚轮可到达最后一个新增保护开关，未被截断");
+            AwaitPlugin(session.Request<bool>("input",new RemoteCommand("$settings","wheel",Number:3000,X:width/2d,Y:bottom.Height-20)));
             var toggle=(CheckBox)remote.FindName("AiEnabledToggle");
             var icon=new DrawingVisual(); using(var draw=icon.RenderOpen()) draw.DrawRectangle(new VisualBrush(toggle){AutoLayoutContent=false,Stretch=Stretch.Fill},null,new Rect(0,0,toggle.ActualWidth,toggle.ActualHeight));
             int w=(int)Math.Ceiling(toggle.ActualWidth),h=(int)Math.Ceiling(toggle.ActualHeight);

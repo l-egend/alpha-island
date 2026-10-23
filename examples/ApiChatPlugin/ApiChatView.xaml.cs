@@ -28,6 +28,8 @@ namespace AlphaIsland.Plugins.ApiChat
     {
         /// <summary>发给模型的历史上限（不含 system），太长既费 token 又拖慢首 token。</summary>
         private const int AiMaxContextMessages = 20;
+        private const int AiMaxResidentMessages = 100, AiMaxVisibleBubbles = 40;
+        private int _aiMessageOffset;
 
         /// <summary>流式期间的 UI 合并间隔：模型一秒能吐几十段，每段都写 TextBlock 会让界面发飘。</summary>
         private const int AiUiUpdateIntervalMs = 50;
@@ -49,6 +51,9 @@ namespace AlphaIsland.Plugins.ApiChat
         private DispatcherTimer? _aiErrorTimer;
         private bool _aiStreaming;
         private bool _aiLoaded;
+        private Func<SensitiveTextReport, bool> _confirmSensitiveSend = sensitive => System.Windows.MessageBox.Show(
+            "检测到" + sensitive.Kind + "。内容将发送到你配置的接口，是否仅本次继续？历史会保存脱敏版本。", "敏感内容提醒",
+            MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.No) == MessageBoxResult.Yes;
         private string _aiLastUser = "";
 
         /// <summary>正在流式追加的那个气泡。</summary>
@@ -77,6 +82,7 @@ namespace AlphaIsland.Plugins.ApiChat
         /// <summary>设置页改了接口地址/模型后刷新头部文字。</summary>
         private void OnAiOptionsChanged()
         {
+            SyncAiWaitingMotion();
             UpdateAiStatusText();
             UpdateAiInputState();
         }
@@ -85,7 +91,9 @@ namespace AlphaIsland.Plugins.ApiChat
 
         private void LoadAiHistory()
         {
+            EndAiWaiting();
             _aiMessages.Clear();
+            _aiMessageOffset = 0;
             AiBubbleStack.Children.Clear();
             _aiLiveBubble = null;
             _aiLastUser = "";
@@ -93,10 +101,11 @@ namespace AlphaIsland.Plugins.ApiChat
             try
             {
                 var messages = _chatSessions.Load(_aiSessionId);
-                _aiMessages.AddRange(messages);
+                _aiMessageOffset = Math.Max(0, messages.Count - AiMaxResidentMessages);
+                _aiMessages.AddRange(messages.Skip(_aiMessageOffset));
                 _aiLastUser = messages.LastOrDefault(m => m.Role == ChatMessage.RoleUser)?.Content ?? "";
                 // Full records remain available in history; the island only renders the latest bubbles.
-                foreach (var message in messages.TakeLast(40))
+                foreach (var message in messages.TakeLast(AiMaxVisibleBubbles))
                 {
                     AddAiBubble(message.Content, message.Role == ChatMessage.RoleUser);
                 }
@@ -116,14 +125,20 @@ namespace AlphaIsland.Plugins.ApiChat
 
         private void SaveAiHistory()
         {
-            try { _chatSessions.Save(_aiSessionId, _aiMessages); }
+            try
+            {
+                _chatSessions.SaveTail(_aiSessionId, _aiMessageOffset,
+                    _aiMessages.Select(m => m with { Content = SensitiveTextDetector.Inspect(m.Content).Redacted }).ToArray());
+                int excess = _aiMessages.Count - AiMaxResidentMessages;
+                if (excess > 0) { _aiMessages.RemoveRange(0, excess); _aiMessageOffset += excess; }
+            }
             catch (Exception ex) { _context.Log("保存对话历史失败: " + ex.Message); }
         }
 
         // ================= 气泡 =================
 
         /// <summary>加一个气泡，返回里面的 TextBlock（流式追加直接写它）。</summary>
-        private TextBlock AddAiBubble(string text, bool isUser)
+        private TextBlock AddAiBubble(string text, bool isUser, bool animate = false)
         {
             var content = new TextBlock
             {
@@ -153,6 +168,8 @@ namespace AlphaIsland.Plugins.ApiChat
             };
 
             AiBubbleStack.Children.Add(bubble);
+            if (animate) AnimateAiBubble(bubble);
+            while (AiBubbleStack.Children.Count > AiMaxVisibleBubbles) AiBubbleStack.Children.RemoveAt(0);
             if (AiEmptyText != null) AiEmptyText.Visibility = Visibility.Collapsed;
             ScrollAiToEnd();
             return content;
@@ -161,6 +178,7 @@ namespace AlphaIsland.Plugins.ApiChat
         /// <summary>把最后一条助手气泡改写成错误文案（红字），并返回它的文本。</summary>
         private void MarkAiLiveBubbleError(string reason)
         {
+            EndAiWaiting();
             if (_aiLiveBubble == null) return;
             _aiLiveBubble.Text = reason;
             _aiLiveBubble.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x8A, 0x8A));
@@ -204,13 +222,31 @@ namespace AlphaIsland.Plugins.ApiChat
             if (AiInputBox == null) return;
             string prompt = AiInputBox.Text?.Trim() ?? "";
             if (prompt.Length == 0) return;
-            _ = SendAiAsync(prompt);
+            _ = SendAiPromptAsync(prompt);
         }
 
-        private async Task SendAiAsync(string prompt)
+        // Event handlers must observe failures before the streaming lifecycle starts,
+        // including settings/secret loading and local command preparation.
+        private async Task SendAiPromptAsync(string prompt)
+        {
+            try { await SendAiAsync(prompt); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                if (_disposed) return;
+                string reason = SensitiveTextDetector.Inspect(ex.GetBaseException().Message).Redacted;
+                AddAiBubble("未能发送，输入内容已保留。" + reason, isUser: false);
+                _context.Log("发送前失败: " + reason);
+            }
+            finally { if (!_disposed) UpdateAiInputState(); }
+        }
+
+        private async Task SendAiAsync(string prompt, CancellationToken cancellationToken = default)
         {
             if (_aiStreaming) return;
             if (_options == null) return;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await TryHandleLocalReminderAsync(prompt, cancellationToken)) return;
             if (!Ready)
             {
                 UpdateAiStatusText();
@@ -226,12 +262,18 @@ namespace AlphaIsland.Plugins.ApiChat
                 return;
             }
 
+            if (_context.ReadConfiguration("AiSensitiveSendGuardEnabled", true) && SensitiveTextDetector.Inspect(prompt) is { Sensitive: true } sensitive
+                && !_confirmSensitiveSend(sensitive)) return;
+            cancellationToken.ThrowIfCancellationRequested();
+
             // 出错态在下一次提问时清掉（细条状态点不用等自动复位）。
             _activity.Reset(owner: "ai");
 
+            bool personaPending = !_chatSessions.HasStartedApi(_aiSessionId);
+            string personaSession = _aiSessionId;
             _aiLastUser = prompt;
             _aiMessages.Add(new ChatMessage(ChatMessage.RoleUser, prompt));
-            AddAiBubble(prompt, isUser: true);
+            AddAiBubble(SensitiveTextDetector.Inspect(prompt).Redacted, isUser: true, animate: true);
             SaveAiHistory();
 
             if (AiInputBox != null) AiInputBox.Text = string.Empty;
@@ -245,9 +287,9 @@ namespace AlphaIsland.Plugins.ApiChat
             UpdateAiStatusText();
             
 
-            _aiLiveBubble = AddAiBubble("", isUser: false);
+            BeginAiReply();
             var captured = new StringBuilder();
-            var cts = new CancellationTokenSource();
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _context.Lifetime);
             _aiCts = cts;
             int generation = ++_aiGeneration;
             int chunks = 0;
@@ -258,13 +300,35 @@ namespace AlphaIsland.Plugins.ApiChat
             {
                 var request = BuildAiRequest(config);
 
-                await foreach (string delta in _ai.StreamAsync(request, config, cts.Token))
+                _aiStateReads.Clear();
+                var tools = new ApiToolDispatcher(_context, result => { if (generation == _aiGeneration) RecordAiStateRead(result); });
+                var agentConfig = config with { SystemPrompt = ApiAssistantPrompt.DefaultSystemPrompt };
+                string? initialPrompt = personaPending ? ApiAssistantPrompt.Compose(config.SystemPrompt) : null;
+                void OnFirstRequestAccepted()
+                {
+                    if (generation != _aiGeneration) return;
+                    try { _chatSessions.MarkApiStarted(personaSession); }
+                    catch (Exception ex) { _context.Log("保存会话首次发送状态失败: " + ex.Message); }
+                }
+                await foreach (var agentEvent in _ai.RunAgentAsync(request, agentConfig, tools, _aiSessionId, cts.Token,
+                    initialSystemPrompt: initialPrompt, onFirstRequestAccepted: personaPending ? OnFirstRequestAccepted : null))
                 {
                     if (generation != _aiGeneration) break;
+                    if (agentEvent.Kind != "text")
+                    {
+                        _activity.Set(AgentRunState.ToolWait, agentEvent.Text);
+                        if (_aiLiveBubble != null && _aiWaitingForReply && !string.IsNullOrWhiteSpace(agentEvent.Text)) _aiLiveBubble.Text = agentEvent.Text;
+                        continue;
+                    }
+                    string delta = agentEvent.Text;
+                    if (generation != _aiGeneration) break;
                     captured.Append(delta);
+                    if (_aiWaitingForReply && string.IsNullOrWhiteSpace(captured.ToString())) continue;
+                    bool wasWaiting = _aiWaitingForReply;
+                    EndAiWaiting();
                     chunks++;
 
-                    if (chunks == 1)
+                    if (_activity.State != AgentRunState.Streaming)
                     {
                         _activity.Set(AgentRunState.Streaming, config.Model, owner: "ai");
                         UpdateAiStatusText();
@@ -272,7 +336,7 @@ namespace AlphaIsland.Plugins.ApiChat
 
                     // 合并 UI 更新：每 50ms 刷一次，而不是每个 delta 都刷。
                     int now = Environment.TickCount;
-                    if (chunks == 1 || unchecked(now - lastUiTick) >= AiUiUpdateIntervalMs)
+                    if (wasWaiting || chunks == 1 || unchecked(now - lastUiTick) >= AiUiUpdateIntervalMs)
                     {
                         lastUiTick = now;
                         if (_aiLiveBubble != null) _aiLiveBubble.Text = captured.ToString();
@@ -281,10 +345,11 @@ namespace AlphaIsland.Plugins.ApiChat
                 }
 
                 if (generation != _aiGeneration) return;
+                EndAiWaiting();
                 if (_aiLiveBubble != null) _aiLiveBubble.Text = captured.ToString();
 
                 string answer = captured.ToString();
-                if (answer.Length == 0)
+                if (string.IsNullOrWhiteSpace(answer))
                 {
                     answer = "（模型没有返回内容）";
                     MarkAiLiveBubbleError(answer);
@@ -304,7 +369,12 @@ namespace AlphaIsland.Plugins.ApiChat
             {
                 if (generation != _aiGeneration) return;
                 string partial = captured.ToString();
-                if (partial.Length > 0) _aiMessages.Add(new ChatMessage(ChatMessage.RoleAssistant, partial));
+                EndAiWaiting();
+                if (!string.IsNullOrWhiteSpace(partial))
+                {
+                    _aiMessages.Add(new ChatMessage(ChatMessage.RoleAssistant, partial));
+                    if (_aiLiveBubble != null) _aiLiveBubble.Text = partial;
+                }
                 else if (_aiLiveBubble != null) _aiLiveBubble.Text = "（已停止）";
                 SaveAiHistory();
                 _context.Log($"用户停止生成，已保留 {partial.Length} 字");
@@ -313,8 +383,8 @@ namespace AlphaIsland.Plugins.ApiChat
             catch (Exception ex)
             {
                 if (generation != _aiGeneration) return;
-                string reason = string.IsNullOrWhiteSpace(_ai.LastError) ? ex.Message : _ai.LastError;
-                AiConnectionState.Invalidate(_options);
+                string reason = SensitiveTextDetector.Inspect(string.IsNullOrWhiteSpace(_ai.LastError) ? ex.Message : _ai.LastError).Redacted;
+                if (!string.IsNullOrEmpty(_ai.LastError)) AiConnectionState.Invalidate(_options);
                 _context.Refresh();
                 MarkAiLiveBubbleError("⚠ " + reason);
                 SaveAiHistory();
@@ -324,10 +394,12 @@ namespace AlphaIsland.Plugins.ApiChat
             }
             finally
             {
+                for (int i = 0; i < _aiMessages.Count; i++) _aiMessages[i] = _aiMessages[i] with { Content = SensitiveTextDetector.Inspect(_aiMessages[i].Content).Redacted };
                 cts.Dispose();
                 if (generation == _aiGeneration)
                 {
                     _aiStreaming = false;
+                    EndAiWaiting();
                     _aiLiveBubble = null;
                     _aiCts = null;
 
@@ -347,8 +419,7 @@ namespace AlphaIsland.Plugins.ApiChat
         {
             var list = new List<ChatMessage>();
 
-            int from = Math.Max(0, _aiMessages.Count - AiMaxContextMessages);
-            for (int i = from; i < _aiMessages.Count; i++) list.Add(_aiMessages[i]);
+            list.AddRange(_aiMessages.Where(message => !message.LocalOnly).TakeLast(AiMaxContextMessages));
 
             return list;
         }
@@ -361,6 +432,8 @@ namespace AlphaIsland.Plugins.ApiChat
 
         private void StopAiStreaming()
         {
+            if (_aiWaitingForReply && _aiLiveBubble != null) _aiLiveBubble.Text = "正在停止…";
+            EndAiWaiting();
             try { _aiCts?.Cancel(); }
             catch (Exception ex) { _context.Log("停止生成失败: " + ex.Message); }
         }
@@ -402,8 +475,10 @@ namespace AlphaIsland.Plugins.ApiChat
             if (AiStopButton != null) AiStopButton.Visibility = Visibility.Collapsed;
 
             _aiMessages.Clear();
+            _aiMessageOffset = 0;
             _aiLastUser = "";
             _aiLoaded = true;          // 清空就是新的起点，别再被 LoadAiHistory 覆盖回来
+            EndAiWaiting();
             AiBubbleStack?.Children.Clear();
             _aiLiveBubble = null;
             if (AiEmptyText != null) AiEmptyText.Visibility = Visibility.Visible;
@@ -455,7 +530,7 @@ namespace AlphaIsland.Plugins.ApiChat
                 AddAiBubble(message.Content, message.Role == ChatMessage.RoleUser);
             SaveAiHistory();
 
-            _ = SendAiAsync(prompt);
+            _ = SendAiPromptAsync(prompt);
         }
 
         private void RemoveLastAiBubble()
@@ -514,8 +589,12 @@ namespace AlphaIsland.Plugins.ApiChat
         private void UpdateAiInputState()
         {
             bool hasText = !string.IsNullOrEmpty(AiInputBox?.Text);
-            if (AiInputHint != null) AiInputHint.Visibility = hasText ? Visibility.Collapsed : Visibility.Visible;
-            if (AiSendButton != null) AiSendButton.IsEnabled = hasText && !_aiStreaming && Ready;
+            if (AiInputHint != null)
+            {
+                AiInputHint.Visibility = hasText ? Visibility.Collapsed : Visibility.Visible;
+                AiInputHint.Text = _aiStreaming ? "等待回复中，可先输入下一条…" : "输入消息…（Enter 发送）";
+            }
+            if (AiSendButton != null) AiSendButton.IsEnabled = hasText && !_aiStreaming && (Ready || IsLocalReminderInput(AiInputBox?.Text ?? ""));
             if (AiNewButton != null) AiNewButton.IsEnabled = !_aiStreaming;
         }
 
@@ -524,6 +603,7 @@ namespace AlphaIsland.Plugins.ApiChat
         private void UpdateAiStatusText()
         {
             if (AiStatusText == null) return;
+            SyncModelAvatar();
             if (AiEnableButton != null) AiEnableButton.Visibility = !_aiStreaming && !Ready
                 ? Visibility.Visible : Visibility.Collapsed;
 

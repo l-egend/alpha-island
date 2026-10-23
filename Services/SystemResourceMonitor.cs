@@ -25,6 +25,8 @@ internal sealed class SystemResourceMonitor : IDisposable
     internal bool CpuEnabled => _cpu != null;
     internal bool MemoryEnabled => _memory != null;
     internal bool CpuSampling => _cpuSampling;
+    internal DateTimeOffset CpuSampledAt { get; private set; }
+    internal DateTimeOffset MemorySampledAt { get; private set; }
     internal event Action<MemorySample>? MemorySampled;
     internal event Action? Changed;
 
@@ -112,18 +114,19 @@ internal sealed class SystemResourceMonitor : IDisposable
     {
         _dispatcher.VerifyAccess();
         if (_disposed || _memory == null) return;
-        _memory.Sample(); Publish(); MemorySampled?.Invoke(_memory.Current);
+        _memory.Sample(); MemorySampledAt = DateTimeOffset.UtcNow; Publish(); MemorySampled?.Invoke(_memory.Current);
     }
     internal async void SampleCpu()
     {
         var service = _cpu;
         if (_disposed || service == null || _cpuSampling) return;
         _cpuSampling = true;
-        try { await Task.Run(service.Sample).ConfigureAwait(false); }
+        bool sampled = false;
+        try { await Task.Run(service.Sample).ConfigureAwait(false); sampled = true; }
         catch (Exception ex) { IslandLog.Error("Cpu", ex); }
         finally
         {
-            Post(() => { _cpuSampling = false; if (!_disposed && ReferenceEquals(_cpu, service)) Publish(); });
+            Post(() => { _cpuSampling = false; if (!_disposed && ReferenceEquals(_cpu, service)) { CpuSampledAt = sampled ? DateTimeOffset.UtcNow : default; Publish(); } });
         }
     }
     private async void SamplePower()

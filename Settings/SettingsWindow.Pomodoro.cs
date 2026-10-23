@@ -19,7 +19,7 @@ public partial class SettingsWindow
     private void AddPomodoroSettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "番茄钟", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 24, 0, 8) });
+
         var group = new StackPanel();
         foreach (var descriptor in SettingsRegistry.All.Where(x => x.Key.StartsWith("Pomodoro", StringComparison.Ordinal)))
         {
@@ -71,9 +71,9 @@ public partial class SettingsWindow
             if (SettingsRegistry.Find(dependency) is { } source)
                 row.SetBinding(IsEnabledProperty, new Binding("IsChecked") { Source = FindName(source.ControlName), TargetNullValue = false });
             Grid.SetColumn(controls, 1); row.Children.Add(controls);
-            group.Children.Add(row); group.Children.Add(new Border { Style = (Style)FindResource("W11RowDivider") });
+            group.Children.Add(SettingCard(row));
         }
-        panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = group });
+        panel.Children.Add(group);
         _pomodoroSettingsPanel = panel;
         Page_Focus.Children.Add(panel);
     }

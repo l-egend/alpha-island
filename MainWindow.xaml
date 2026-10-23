@@ -102,7 +102,7 @@
                                          GlowRadius="14" GlowOpacity="0.55"
                                          IsActive="False">
                     <!-- 下缘化开：波浪的色量本来就堆在底部，正好压着进度条。
-                         用户要求"淡一点、融进其他元素"，所以整体再降一档 alpha。 -->
+                         使用较低透明度与背景融合。 -->
                     <controls:WaveVisualizer.OpacityMask>
                         <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                             <GradientStop Color="#FFFFFFFF" Offset="0"/>
@@ -149,7 +149,7 @@
                     </Rectangle.RenderTransform>
                 </Rectangle>
 
-                <!-- ③c 细条常驻指示（A 组①网速 / A 组②内存）：细条态右/中侧常驻数字。
+                <!-- ③c 细条常驻指示（网速 / 内存）：细条态右/中侧常驻数字。
                      细条只有 10px 高，字号压到 8px 才放得下（数字与箭头都没有下伸部，不会被裁）；
                      显隐由 MainWindow.SyncBarIndicators() 控制（只有 Bar 态 + 主弹簧收满 + 至少一侧有内容时才画），
                      整层不参与命中测试，细条整条仍是拖拽/点击热区。 -->
@@ -161,13 +161,10 @@
                                    Foreground="{StaticResource TextPrimary}" Text=""/>
                         <TextBlock x:Name="BarSpeedUpText" FontSize="8" FontWeight="SemiBold" Margin="6,0,0,0"
                                    Foreground="{StaticResource TextSecondary}" Text=""/>
-                        <!-- 内存占用百分比（A 组②）：没有流量时它就是细条上唯一的内容 -->
+                        <!-- 内存占用百分比：没有流量时它就是细条上唯一的内容 -->
                         <TextBlock x:Name="BarMemText" FontSize="8" FontWeight="SemiBold" Margin="8,0,0,0"
                                    Foreground="{StaticResource TextTertiary}" Text=""/>
-                        <!-- 飞行模式指示（A 组④）：只在飞行模式真的开着时亮（Warning 色），平时不可见 -->
-                        <icons:GlyphIcon x:Name="BarAirText" FontSize="9" FontFamily="Segoe MDL2 Assets" Margin="8,0,0,0"
-                                   Foreground="#FFFFB900" Text="&#xE709;" Visibility="Collapsed"/>
-                        <!-- 麦克风 / 摄像头占用小圆点（A 组⑤）：各自独立亮灭。
+                        <!-- 麦克风 / 摄像头占用小圆点：各自独立亮灭。
                              颜色与屏幕右上角那盏灯一致（橙=麦克风 / 绿=摄像头，对齐 iOS 17）。 -->
                         <StackPanel x:Name="BarPrivacyDots" Margin="8,0,0,0" Orientation="Horizontal"
                                     VerticalAlignment="Center" Visibility="Collapsed">
@@ -175,7 +172,7 @@
                             <Ellipse x:Name="BarCamDot" Fill="#FF30D158" Height="4" Margin="4,0,0,0"
                                      Visibility="Collapsed" Width="4"/>
                         </StackPanel>
-                        <!-- agent 运行状态色点（B 组③）：颜色随状态走（思考紫/输出青/等授权黄/出错红），
+                        <!-- agent 运行状态色点：颜色随状态走（思考紫/输出青/等授权黄/出错红），
                              空闲时整点收起 —— 细条上不能常驻一个"什么也没干"的点。 -->
                         <Ellipse x:Name="BarAgentDot" Fill="#FF8A5CFF" Height="6" Margin="8,0,0,0"
                                  Visibility="Collapsed" Width="6"/>
@@ -309,9 +306,12 @@
 
                     <!-- 圆框与兔子分层，耳朵出框但仍保留在岛体内。 -->
                     <controls:WelcomeRabbitIcon x:Name="GreetingIcon" Grid.Column="0"/>
+                    <Image x:Name="GreetingCustomImage" Grid.Column="0" Width="32" Height="32"
+                           Stretch="Uniform" Visibility="Collapsed" IsHitTestVisible="False"/>
+
 
                     <!-- 中间：欢迎文字 -->
-                    <TextBlock x:Name="GreetingText" Grid.Column="1"
+                    <TextBlock x:Name="GreetingText" Grid.Column="1" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
                                Margin="12,0" VerticalAlignment="Center"
                                FontSize="13" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimary}"
@@ -452,7 +452,7 @@
                     </Border>
 
                     <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="DownloadNotifyTitle" FontSize="13" FontWeight="SemiBold"
+                        <TextBlock x:Name="DownloadNotifyTitle" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" FontSize="13" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimary}" Text="正在下载"/>
                         <TextBlock x:Name="DownloadNotifyDetail" FontSize="10.5" Margin="0,1,0,0"
                                    TextTrimming="CharacterEllipsis"
@@ -464,8 +464,8 @@
                                Foreground="#34D399" Text=""/>
                 </Grid>
 
-                <!-- ================= 系统状态通用提示层（A 组②③④⑤ 共用） =================
-                     网速异常/内存偏高/功率/飞行模式/隐私灯都用这一层：图标字形、标题、说明、右侧数值
+                <!-- ================= 系统状态通用提示层（共用） =================
+                     网速异常/内存偏高/功率/无线开关/隐私灯都用这一层：图标字形、标题、说明、右侧数值
                      全部由代码在弹出前写入（SysNotifyGlyph/Title/Detail/Value），
                      所以加新提示不需要再加 XAML 层，只要 _layers.ShowSeconds("system", n)。 -->
                 <Grid x:Name="SystemNotifyLayer" Opacity="0" Width="328" Height="32"
@@ -496,7 +496,7 @@
                                Foreground="{StaticResource TextPrimary}" Text=""/>
                 </Grid>
 
-                <!-- ================= agent 运行状态层（B 组③：思考 / 输出 / 等待授权 / 出错） =================
+                <!-- ================= agent 运行状态层（思考 / 输出 / 等待授权 / 出错） =================
                      状态由 Core\AgentStatus.cs 统一持有（AI 卡片页与将来的桥接都写它）。
                      这一层是被 AgentStatus.Changed 与 1 秒 ticker 共同驱动的：只要状态不是 Idle 就占住胶囊，
                      音乐图层自动让位（IslandLayerHost 的 ForceActive 语义），归零时由 SyncNotificationLayers 收回。 -->
@@ -530,7 +530,7 @@
                                Foreground="{StaticResource TextSecondary}" Text=""/>
                 </Grid>
 
-                <!-- ================= agent 工具权限审批层（B 组④） =================
+                <!-- ================= agent 工具权限审批层 =================
                      外部 agent 通过本机回环 HTTP（Services\AgentBridgeService.cs）发起审批，
                      这里只负责"显示 + 收 Y/N + 把裁决回传"。标准 Button 负责按下、捕获与松手点击，
                      整层由 IslandLayerHost 在可见时才打开 IsHitTestVisible（见 SyncNotificationLayers）。 -->
@@ -767,8 +767,7 @@
                      用户感知为"点击后顿一下"）。隐藏靠 Opacity=0 + 岛体裁切 + IsHitTestVisible，不用 Collapsed。 -->
                 <Grid x:Name="CardCarouselHost" Opacity="0" Margin="16,10,12,10" Width="402"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                      IsHitTestVisible="False"
-                      PreviewMouseWheel="CardCarousel_PreviewMouseWheel">
+                      IsHitTestVisible="False">
                     <!-- 卡片视口：裁切边界，平滑垂直滑动 -->
                     <!-- 高度会被代码在抽屉展开时临时撑高（见 MainWindow.xaml.cs 的 SetCardDrawerExtra），
                          否则 194 的固定视口会把"输出设备/音量合成器"面板下半截连同命中测试一起裁掉。 -->
@@ -1417,7 +1416,7 @@
                             <!-- 行 2：底部提示 -->
                         </Grid>
 
-                        <!-- 第五层 (Page 4)：实时网速卡片（C 组②·需求①）
+                        <!-- 第五层 (Page 4)：实时网速卡片
                              网速是"一直想看"的量：这里给实时上下行 + 最近 60 秒曲线；
                              细条上的常驻数字与「下载期间常显」的胶囊都由同一份采样驱动。 -->
                         <Grid x:Name="NetSpeedCardLayer" VerticalAlignment="Center" Height="224" Opacity="0" IsHitTestVisible="False">
@@ -1462,8 +1461,8 @@
                             </Border>
                         </Grid>
 
-                        <!-- 第六层 (Page 5)：系统状态卡片（C 组②·需求①）
-                             内存 / 功耗 / 飞行模式 / 隐私 合并成一页（用户拍板），四个格子各显示实时值；
+                        <!-- 第六层 (Page 5)：系统状态卡片
+                             内存 / 功耗 / 无线开关 / 隐私 合并成一页（用户拍板），四个格子各显示实时值；
                              对应服务没开时格子写"未开启"并指出去哪儿打开 —— 这一页本身始终能翻到、能看。 -->
                         <Grid x:Name="SystemCardLayer" VerticalAlignment="Center" Height="250" Opacity="0" IsHitTestVisible="False">
                             <Grid.RenderTransform><TranslateTransform x:Name="CardPage5Translate" Y="582"/></Grid.RenderTransform>
@@ -1505,8 +1504,8 @@
                                 <Border CornerRadius="12" Background="#10FFFFFF" BorderBrush="#18FFFFFF" BorderThickness="1" Margin="0,0,3,0">
                                     <StackPanel Margin="10,7">
                                         <TextBlock Text="无线状态" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
-                                        <TextBlock x:Name="SysCardAirValue" Text="—" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,3,0,0"/>
-                                        <TextBlock x:Name="SysCardAirDetail" Text="" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock x:Name="SysCardWirelessValue" Text="—" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,3,0,0"/>
+                                        <TextBlock x:Name="SysCardWirelessDetail" Text="" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Grid.Column="1" CornerRadius="12" Background="#10FFFFFF" BorderBrush="#18FFFFFF" BorderThickness="1" Margin="3,0,0,0">
@@ -1735,6 +1734,7 @@
                 ClipToBounds="True"
                 Cursor="Hand"
                 MouseLeftButtonUp="SideBubble_MouseLeftButtonUp"
+                PreviewMouseRightButtonUp="SideBubble_PreviewMouseRightButtonUp"
                 IsHitTestVisible="True"
                 Visibility="Collapsed"
                 Opacity="0"

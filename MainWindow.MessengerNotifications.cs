@@ -11,8 +11,7 @@ public partial class MainWindow
     {
         if (_messengerNotifications != null) return;
         _messengerNotifications = new MessengerNotificationService(Dispatcher);
-        _messengerNotifications.SetEnabled(SettingsRegistry.GetBool(_options, "NotificationQQEnabled", true),
-            SettingsRegistry.GetBool(_options, "NotificationWeChatEnabled", true));
+        OnMessengerOptionsChanged();
         _messengerNotifications.Received += OnMessengerNotificationsReceived;
         _messengerNotifications.StatusChanged += RefreshDesktopAccess;
         _messengerNotifications.Start(); StartNotificationUiTimer();
@@ -22,8 +21,11 @@ public partial class MainWindow
         _messengerNotifications?.Dispose(); _messengerNotifications = null;
         _messengerNoticeDedup.Clear(); RefreshDesktopAccess(); StopNotificationTimerIfUnused();
     }
-    private void OnMessengerOptionsChanged() => _messengerNotifications?.SetEnabled(
-        SettingsRegistry.GetBool(_options, "NotificationQQEnabled", true), SettingsRegistry.GetBool(_options, "NotificationWeChatEnabled", true));
+    private void OnMessengerOptionsChanged()
+    {
+        bool enabled = SettingsRegistry.GetBool(_options, "NotificationMessengerEnabled", true);
+        _messengerNotifications?.SetEnabled(enabled, enabled);
+    }
     private void OnMessengerNotificationsReceived(System.Collections.Generic.IReadOnlyList<DesktopNotification> items, MessengerNoticeSource source) =>
         ReceiveDesktopNotifications(items, false, source);
     private void ReceiveDesktopNotifications(System.Collections.Generic.IReadOnlyList<DesktopNotification> messages, bool initial, MessengerNoticeSource source)
@@ -31,8 +33,6 @@ public partial class MainWindow
         if (_exiting) return;
         foreach (var received in messages)
         {
-            if (MessengerIdentity.FromNotification(received) is { } client
-                && !SettingsRegistry.GetBool(_options, client == MessengerClient.QQ ? "NotificationQQEnabled" : "NotificationWeChatEnabled", true)) continue;
             if (!_desktopPolicy.Accepts(received)) continue;
             var item = initial ? received : _messengerNoticeDedup.Resolve(received, source, DateTimeOffset.UtcNow);
             bool popup = !initial && _desktopPolicy.CanPopup(received, _sessionLocked);

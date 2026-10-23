@@ -273,6 +273,47 @@ namespace alpha_island.Core
         private static List<SettingDescriptor> Build()
         {
             var list = new List<SettingDescriptor>();
+            list.Add(ExtraBool("ReduceEffectsEnabled", "削减动效", "关闭液态玻璃、液态拉伸、3D 封面与逐帧装饰，切换直接到位并降低后台刷新频率", false, SettingsPageIds.Appearance, controlName: "ReduceEffectsToggle"));
+            list.Add(ExtraBool("NotificationMessengerEnabled", "QQ / 微信新消息提醒", "读取已登录应用的新消息、未读数或任务栏提醒；有正文时直接展示", true, SettingsPageIds.Notifications, controlName: "NotificationMessengerToggle"));
+
+            list.Add(ExtraBool("AgentDesktopToolsEnabled", "允许 AI 控制桌面功能", "开放扬声器、媒体、番茄钟与提醒指令；关闭后停止新的工具执行", true, SettingsPageIds.Assistant, controlName: "AgentDesktopToolsEnabledToggle"));
+            list.Add(ExtraText("SpeechProvider", "语音识别引擎", "语音指令和声音字幕共用；云端仅在唤醒或开始字幕后上传音频", "mimo", SettingsPageIds.Assistant, controlName: "SpeechProviderBox"));
+            list.Add(ExtraText("SpeechBaseUrl", "语音识别接口", "可填写基础地址或完整端点；与对话模型配置独立", SpeechSettings.DefaultUrl, SettingsPageIds.Assistant, controlName: "SpeechBaseUrlBox"));
+            list.Add(ExtraText("SpeechModel", "语音识别模型", "从接口获取后选择，或手动输入；请选择支持语音识别的模型", SpeechSettings.DefaultModel, SettingsPageIds.Assistant, controlName: "SpeechModelBox"));
+            list.Add(ExtraText("SpeechLanguage", "识别语种", "已知语种时可指定中文或英文，提高识别准确性", "auto", SettingsPageIds.Assistant, controlName: "SpeechLanguageBox"));
+            list.Add(ExtraText("SubtitleTargetLanguage", "字幕翻译语言", "下方翻译岛只显示译文，原文保留在工具窗口；相同语种保持原文", "zh-CN", SettingsPageIds.Assistant, controlName: "SubtitleTargetLanguageBox"));
+            list.Add(ExtraBool("VoiceWakeEnabled", "API 助手语音唤醒", "唤醒后才使用麦克风，停顿约 1.6 秒自动发送文字；右侧按钮或 Esc 取消，不保存录音", true, SettingsPageIds.Assistant, controlName: "VoiceWakeEnabledToggle"));
+            list.Add(ExtraText("VoiceWakeShortcut", "语音唤醒快捷键", "默认 Ctrl+Alt+V；再次按下取消当前录音或本次指令", "Ctrl+Alt+V", SettingsPageIds.Assistant, controlName: "VoiceWakeShortcutBox"));
+            list.Add(ExtraBool("VoiceWakeHoldEnabled", "长按右 Ctrl 唤醒", "按住右 Ctrl 0.6 秒切换语音；短按及 Ctrl 组合键保持原有用途", false, SettingsPageIds.Assistant, controlName: "VoiceWakeHoldEnabledToggle"));
+            list.Add(ExtraBool("VoiceWakeSoundEnabled", "语音唤醒提示音", "识别器就绪后播放短提示音，听到提示音后即可说话", true, SettingsPageIds.Assistant, controlName: "VoiceWakeSoundEnabledToggle"));
+            list.Add(ExtraBool("NaturalRemindersEnabled", "自然语言提醒", "支持一次性、每天、工作日、每周和间隔提醒；本机保存，程序恢复后补记错过事项", true, SettingsPageIds.Assistant, controlName: "NaturalRemindersEnabledToggle"));
+            list.Add(ExtraBool("HabitLearningEnabled", "本地习惯学习", "仅记录类别时段与有效时长，保留28天；样本足够后提出建议，采纳后才更改设置，不调用 API", true, SettingsPageIds.Assistant, controlName: "HabitLearningEnabledToggle"));
+            list.Add(ExtraBool("SystemHealthEnabled", "系统健康预警", "检测持续高负载、内存压力、进程内存增长与持续高 I/O；趋势不等于故障，不自动结束进程", true, SettingsPageIds.Assistant, controlName: "SystemHealthEnabledToggle"));
+            list.Add(ExtraBool("ScreenToolsHotkeysEnabled", "识字与取色快捷键", "按需框选和截图；仅识字、取色无需 API，快捷键冲突可在下方更改", true, SettingsPageIds.Assistant, controlName: "ScreenToolsHotkeysEnabledToggle"));
+            list.Add(ExtraText("ScreenOcrShortcut", "识字并复制快捷键", "默认 Ctrl+Alt+O；Esc 取消框选", "Ctrl+Alt+O", SettingsPageIds.Assistant, controlName: "ScreenOcrShortcutBox"));
+            list.Add(ExtraText("ScreenColorShortcut", "颜色吸管快捷键", "默认 Ctrl+Alt+C；单击复制 HEX，工具窗口可复制 RGB / HSL", "Ctrl+Alt+C", SettingsPageIds.Assistant, controlName: "ScreenColorShortcutBox"));
+            list.Add(ExtraBool("AgentPluginToolsEnabled", "允许其他插件贡献工具", "仅对你信任的插件开启；插件仍在独立工作进程运行，高风险工具暂不执行", false, SettingsPageIds.Assistant, controlName: "AgentPluginToolsEnabledToggle"));
+            list.Add(ExtraBool("TimelineEnabled", "记录详细活动时间轴", "在本机记录开机、游戏、音乐、麦克风和摄像头占用；可在生产力卡片清空和导出", true, SettingsPageIds.Assistant, controlName: "TimelineEnabledToggle"));
+            list.Add(ExtraInt("TimelineRetentionDays", "时间轴保留天数", "默认 7 天，最多 30 天和 1500 段；与累计时长统计独立", 7, 1, 30, "天", SettingsPageIds.Assistant, controlName: "TimelineRetentionDaysBox"));
+            list.Add(ExtraBool("MeetingGuardEnabled", "会议麦克风静音提醒", "会议应用占用设备且默认通信麦克风在系统中静音时提醒；不录音、不自动开麦", true, SettingsPageIds.Assistant, controlName: "MeetingGuardEnabledToggle"));
+            list.Add(ExtraBool("AgentProactiveEnabled", "本地助手建议", "规则在本机判断，提醒统一进入通知中心；待处理事项自动置顶，不自动调用 API", true, SettingsPageIds.Assistant, controlName: "AgentProactiveEnabledToggle"));
+            foreach (var rule in new[] {
+                ("AssistantGameWrapEnabled", "游戏收尾卡", "游戏退出后汇总本次时长、保留未读和任务结束数"),
+                ("AssistantQuietDigestEnabled", "免打扰与专注结束摘要", "结束后合并未读、助手和下载，不逐条补弹旧消息"),
+                ("AssistantAgentFollowupEnabled", "助手任务跟进", "等待授权过久、报告错误时提醒；明确结束的任务合并汇总"),
+                ("AssistantUsageBreakEnabled", "连续使用休息提醒", "仅观察最后输入时间；闲置五分钟、锁屏或休眠后重新计时"),
+                ("AssistantMeetingWrapEnabled", "会议结束收尾", "设备占用结束后提供笔记整理，以及可用的会前音量和音乐恢复操作"),
+                ("AssistantDownloadStallEnabled", "下载进度停滞提醒", "只检查有可信进度且正在下载的任务；排除暂停、排队和校验"),
+                ("AssistantBatteryContextEnabled", "情境电量提醒", "为现有低电量提示补充游戏或会议场景，待处理记录在通知中心置顶"),
+                ("AssistantDailyReviewEnabled", "每日活动回顾", "在设定时间后且电脑正在使用时汇总本地时长；AI 整理需点击后发送") })
+                list.Add(ExtraBool(rule.Item1, rule.Item2, rule.Item3, true, SettingsPageIds.Assistant, controlName: rule.Item1 + "Toggle"));
+            list.Add(ExtraInt("AssistantReminderCooldownMinutes", "提醒弹窗冷却", "分钟；冷却期间仍写入通知中心，不丢失待处理事项", 3, 1, 60, "分钟", SettingsPageIds.Assistant, controlName: "AssistantReminderCooldownMinutesBox"));
+            list.Add(ExtraInt("AssistantAgentWaitMinutes", "授权等待提醒阈值", "等待超过此时长再提醒，不自动批准", 3, 1, 60, "分钟", SettingsPageIds.Assistant, controlName: "AssistantAgentWaitMinutesBox"));
+            list.Add(ExtraInt("AssistantUsageBreakMinutes", "连续使用提醒阈值", "分钟；长时间无输入不累计为连续操作", 75, 15, 240, "分钟", SettingsPageIds.Assistant, controlName: "AssistantUsageBreakMinutesBox"));
+            list.Add(ExtraInt("AssistantDownloadStallSeconds", "下载停滞提醒阈值", "可信下载进度持续未变化的秒数", 90, 30, 900, "秒", SettingsPageIds.Assistant, controlName: "AssistantDownloadStallSecondsBox"));
+            list.Add(ExtraInt("AssistantDailyReviewHour", "每日回顾时间：时", "本机时间，0～23；锁屏或免打扰期间延后", 21, 0, 23, "时", SettingsPageIds.Assistant, controlName: "AssistantDailyReviewHourBox"));
+            list.Add(ExtraInt("AssistantDailyReviewMinute", "每日回顾时间：分", "本机时间，0～59；每天最多一条", 0, 0, 59, "分", SettingsPageIds.Assistant, controlName: "AssistantDailyReviewMinuteBox"));
+            list.Add(ExtraBool("ClipboardSensitiveGuardEnabled", "剪贴板敏感内容保护", "本地检测身份证、银行卡和常见访问密钥；隐藏预览并跳过历史，保留系统剪贴板原文", true, SettingsPageIds.Behavior, controlName: "ClipboardSensitiveGuardEnabledToggle"));
             list.Add(ExtraBool("LauncherEnabled", "快速启动器快捷键", "全局呼出应用、岛内组件和 Agent 搜索", true,
                 SettingsPageIds.Behavior, controlName: "LauncherEnabledToggle"));
             list.Add(ExtraText("LauncherShortcut", "快速启动组合键", "默认 Ctrl+Alt+Space；与其他程序冲突时显示提示", "Ctrl+Alt+Space",
@@ -325,9 +366,9 @@ namespace alpha_island.Core
             list.Add(ExtraBool("MediaHideWhenPaused", "媒体暂停时隐藏",
                 "暂停提醒结束后自动收起；手动置顶保持显示，可随时打开继续播放", false, SettingsPageIds.Media,
                 controlName: "MediaHideWhenPausedToggle"));
-            list.Add(ExtraBool("MediaWindowHandoffEnabled", "媒体与助手窗口联动（试验）",
-                "音乐软件与 Codex、Antigravity、DSH 在前台时隐藏对应小岛，后台播放或思考时保留小岛，最小化进入岛，点击小岛还原；浏览器随前台切换显隐", true, SettingsPageIds.Media,
-                controlName: "MediaWindowHandoffToggle"));
+            list.Add(ExtraBool("MediaWindowHandoffEnabled", "媒体窗口联动",
+                "支持网易云音乐、QQ 音乐、Spotify、酷狗音乐、酷我音乐和 Apple Music；前台收起，最小化后恢复", true,
+                SettingsPageIds.Media, controlName: "MediaWindowHandoffToggle"));
 
             // ===== 已有强类型属性：原先没有 UI 的三项（3.5 顺手补齐滑杆） =====
             // 三个依赖用的总开关也登记进来，让「置灰级联」由注册表统一处理。
@@ -376,8 +417,12 @@ namespace alpha_island.Core
                 Set = (o, v) => o.BluetoothNotifyEnabled = SettingDescriptor.ToBool(v, true)
             }));
 
-            list.Add(ExtraBool("BluetoothLowBatteryEnabled", "蓝牙设备低电量提醒", "连接设备电量低于 20% / 10% 时提醒；充电后恢复，不重复打扰", true,
+            list.Add(ExtraBool("BluetoothLowBatteryEnabled", "设备低电量提醒", "蓝牙、2.4G 和手柄电量达到 20% / 10% 时提醒；充电时不提醒，恢复后重新计次", true,
                 SettingsPageIds.Notifications, controlName: "BluetoothLowBatteryToggle"));
+            list.Add(ExtraBool("DeviceBatteryFullEnabled", "设备充满提醒", "仅在已观察到充电后达到 100% 时提醒；连接已满电设备不提醒", true,
+                SettingsPageIds.Notifications, controlName: "DeviceBatteryFullToggle"));
+            list.Add(ExtraBool("DeviceBatteryChargingEnabled", "设备充电提醒", "蓝牙和接收器设备开始充电时提醒；持续充电不重复提示", true,
+                SettingsPageIds.Notifications, controlName: "DeviceBatteryChargingToggle"));
 
             list.Add(Typed(new SettingDescriptor
             {
@@ -426,34 +471,30 @@ namespace alpha_island.Core
 
             list.Add(Typed(new SettingDescriptor
             {
-                Key = "ClipboardAutoCollapseSeconds",
-                Kind = SettingKind.Int,
-                Label = "粘贴完成提示时长",
-                Hint = "复制提示持续驻留，粘贴完成提示按指定时长自动收回",
-                PageId = SettingsPageIds.Behavior,
-                ControlName = "ClipboardAutoCollapseSecondsSlider",
-                ValueTextName = "ClipboardAutoCollapseSecondsValue",
-                Min = 1,
-                Max = 5,
-                Unit = "秒",
-                Format = "0",
-                EnabledByKey = "ClipboardNotifyEnabled",
-                DefaultValue = 2,
-                Get = o => o.ClipboardAutoCollapseSeconds,
-                Set = (o, v) => o.ClipboardAutoCollapseSeconds = (int)Math.Round(SettingDescriptor.ToDouble(v, 2))
+                Key = "MediaPlaybackNotifyEnabled", Kind = SettingKind.Bool,
+                Label = "换曲、暂停与继续播放", Hint = "统一控制三种播放状态提示",
+                PageId = SettingsPageIds.Media, ControlName = "MediaPlaybackNotifyToggle", DefaultValue = true,
+                Get = o => o.UpNextEnabled || o.PauseNotifyEnabled || o.PlayNotifyEnabled,
+                Set = (o, v) => o.UpNextEnabled = o.PauseNotifyEnabled = o.PlayNotifyEnabled = SettingDescriptor.ToBool(v, true)
             }));
 
             list.Add(ExtraInt("ClipboardHistoryLimit", "剪切板历史保存条数",
                 "0 表示不保存；超出后移除最旧记录，修改后立即生效", 10, 0, 100, "条", SettingsPageIds.Behavior,
                 controlName: "ClipboardHistoryLimitBox"));
             list.Add(ExtraBool("StartupEnabled", "开机自启动", "登录 Windows 时自动启动 Alpha Island", false,
-                SettingsPageIds.Behavior, controlName: "StartupEnabledToggle"));
-            list.Add(ExtraBool("StartupBootTimeNotify", "开机耗时提醒", "自启动时显示本次进入桌面的精确耗时", true,
-                SettingsPageIds.Behavior, controlName: "StartupBootTimeToggle", enabledBy: "StartupEnabled"));
+                SettingsPageIds.General, controlName: "StartupEnabledToggle"));
+            list.Add(ExtraBool("StartupBootTimeNotify", "开机耗时提醒", "自启动时显示开机耗时；缺少精确记录时提供参考值", true,
+                SettingsPageIds.General, controlName: "StartupBootTimeToggle", enabledBy: "StartupEnabled"));
+            list.Add(ExtraText("GreetingImagePath", "左侧欢迎图片", "在启动问候中导入图片；保留本机副本，清除后恢复默认兔子图标", "", SettingsPageIds.Notifications));
+            list.Add(ExtraBool("GreetingSoundEnabled", "欢迎音效", "欢迎提示出现时播放一次，可自选音效和试听", true,
+                SettingsPageIds.Notifications, controlName: "GreetingSoundToggle"));
+            list.Add(ExtraText("GreetingSoundPath", "启动音效文件", "支持 WAV、MP3 等系统可解码音效；最长 10 秒，留空使用内置轻柔启动音", "", SettingsPageIds.Notifications));
+            list.Add(ExtraInt("GreetingSoundVolume", "音效音量", "只调整欢迎音效，不改变系统音量", 35, 0, 100, "%",
+                SettingsPageIds.Notifications, controlName: "GreetingSoundVolumeBox", enabledBy: "GreetingSoundEnabled"));
             list.Add(ExtraBool("ClipboardLinkDetectionEnabled", "识别剪贴板链接", "复制网页链接后点击岛使用默认浏览器打开", true,
                 SettingsPageIds.Behavior, controlName: "ClipboardLinkToggle", enabledBy: "ClipboardNotifyEnabled"));
 
-            // ===== A 组：系统状态（设置页 system，随各功能落地再补 UI） =====
+            // ===== 系统状态（设置页 system，随各功能落地再补 UI） =====
             list.Add(ExtraBool("CpuMonitorEnabled", "CPU 占用检测", "每秒更新，自动适配当前 Windows 的任务管理器统计方式", true, SettingsPageIds.System, controlName: "CpuMonitorToggle"));
             foreach (string item in StatusDisplayOptions.All)
                 list.Add(ExtraBool(StatusDisplayOptions.SettingKey(item), StatusDisplayOptions.Label(item), "在状态栏中显示", true,
@@ -462,8 +503,6 @@ namespace alpha_island.Core
             list.Add(ExtraBool("NotificationWifiRadio", "Wi-Fi 开关提醒", "开启或关闭 Wi-Fi 时提醒；遵守静默设置", true, SettingsPageIds.Notifications, controlName: "NotificationWifiRadioToggle"));
             list.Add(ExtraBool("NotificationBluetoothRadio", "蓝牙开关提醒", "开启或关闭系统蓝牙时提醒；与设备连接提醒独立", true, SettingsPageIds.Notifications, controlName: "NotificationBluetoothRadioToggle"));
             list.Add(ExtraBool("SystemToastEnabled", "接收 Windows 通知", "使用 Windows 通知读取权限；可在通知中心授权", true, SettingsPageIds.Notifications, controlName: "SystemToastToggle"));
-            list.Add(ExtraBool("NotificationQQEnabled", "QQ 新消息提醒", "需 QQ 已登录；读取新消息弹窗、未读数或任务栏/托盘提醒，无法读取正文时提示有新消息", true, SettingsPageIds.Notifications, controlName: "NotificationQQToggle"));
-            list.Add(ExtraBool("NotificationWeChatEnabled", "微信新消息提醒", "需微信已登录；读取新消息弹窗、未读数或任务栏/托盘提醒，无法读取正文时提示有新消息", true, SettingsPageIds.Notifications, controlName: "NotificationWeChatToggle"));
             list.Add(ExtraBool("NotificationReplaceSystemPopup", "由小岛接管系统通知", "接管 Windows 横幅，由小岛提示；静默与筛选同步生效，关闭后恢复系统弹窗", true, SettingsPageIds.Notifications, controlName: "NotificationReplaceSystemPopupToggle"));
             list.Add(ExtraBool("SessionEventNotifyEnabled", "锁屏与解锁事件", "", true, SettingsPageIds.Notifications, controlName: "SessionEventsToggle"));
             list.Add(ExtraBool("NotificationGameQuietEnabled", "游戏时自动免打扰", "游戏进入前台时提示一次；切到后台仍保持，全部游戏退出后恢复原来的静默设置", true,
@@ -484,10 +523,10 @@ namespace alpha_island.Core
             list.Add(ExtraBool("NetSpeedNotifyEnabled", "网速异常提示",
                 "上传或下载速率持续高于阈值时，仅提示异常方向与速率（60 秒内只提示一次）", true, SettingsPageIds.System, "NetSpeedEnabled",
                 controlName: "NetSpeedNotifyToggle"));
-            list.Add(ExtraDouble("NetSpeedThresholdMbps", "网速提示阈值 (MB/s)",
-                "上传或下载速率高于该值时触发提示", 10.0, 1.0, 200.0, "MB/s", "0", SettingsPageIds.System,
+            list.Add(ExtraDouble("NetSpeedThresholdMbps", "网速提示阈值",
+                "上传或下载速率高于该值时触发提示", 10.0, 0.01, 10000.0, "MB/s", "0.###", SettingsPageIds.System,
                 enabledBy: "NetSpeedEnabled",
-                controlName: "NetSpeedThresholdSlider", valueTextName: "NetSpeedThresholdValue"));
+                controlName: "NetSpeedThresholdBox"));
 
             list.Add(ExtraBool("MemoryMonitorEnabled", "内存占用检测",
                 "在细条上常驻显示物理内存占用百分比", true, SettingsPageIds.System,
@@ -499,22 +538,13 @@ namespace alpha_island.Core
                 "电池供电时，放电功率持续高于阈值就提示一次（10 分钟内只提示一次；插着电源不提示）", false, SettingsPageIds.System,
                 controlName: "PowerNotifyToggle"));
             list.Add(ExtraDouble("PowerNotifyWatts", "功耗提示阈值",
-                "笔记本整机放电功率通常在 8~45 W 之间，按自己的机型调", 25, 1, 200, "W", "0.#", SettingsPageIds.System, "PowerNotifyEnabled",
-                controlName: "PowerNotifySlider", valueTextName: "PowerNotifyValue"));
-            list.Add(ExtraBool("AirplaneBarEnabled", "细条飞行模式图标",
-                "飞行模式开启时，在细条右侧显示一个橙色飞机图标（只读，本程序不会去切换飞行模式）", true, SettingsPageIds.System,
-                controlName: "AirplaneBarToggle"));
-            list.Add(ExtraBool("AirplaneNotifyEnabled", "飞行模式提示",
-                "飞行模式开启或关闭时弹一条提示", false, SettingsPageIds.System,
-                controlName: "AirplaneNotifyToggle"));
+                "笔记本整机放电功率通常在 8~45 W 之间，按自己的机型调", 25, 1, 200, "W", "0.###", SettingsPageIds.System,
+                controlName: "PowerNotifyWattsBox"));
             list.Add(ExtraBool("PrivacyIndicatorEnabled", "麦克风 / 摄像头占用灯",
                 "有应用在用麦克风或摄像头时，细条上亮小圆点并弹一条提示（只读系统记录，免提权免授权）", false, SettingsPageIds.System,
                 controlName: "PrivacyIndicatorToggle"));
 
-            list.Add(ExtraBool("TrafficMonitorLinkEnabled", "每日流量（TrafficMonitor）",
-                "只读 TrafficMonitor 的 history_traffic.dat：在网速卡片上显示它统计的今日 / 累计流量。"
-                + "启用网络数据插件后优先使用桥接的实时速度，未连接时使用系统网卡采样", true, SettingsPageIds.System,
-                controlName: "TrafficMonitorLinkToggle"));
+            list.Add(ExtraBool("DailyTrafficEnabled", "每日流量", "在本机保存每日上传和下载总量，重启后继续统计", true, SettingsPageIds.System, controlName: "DailyTrafficToggle"));
 
             // ===== 下载状态：Steam 客户端日志 + 清单、浏览器下载记录（全部只读） =====
             list.Add(ExtraBool("DownloadMonitorEnabled", "下载状态（浏览器 / Steam）",
@@ -524,7 +554,7 @@ namespace alpha_island.Core
                 + "Firefox 与 Epic / 战网等启动器此来源尚未验证支持", true, SettingsPageIds.System,
                 controlName: "DownloadMonitorToggle"));
 
-            // ===== B 组：AI 接入与 agent（设置页 ai） =====
+            // ===== AI 接入与 agent（设置页 ai） =====
             list.Add(ExtraBool("ExternalTranslationEnabled", "快捷键调用外部翻译软件",
                 "从屏幕翻译工具或岛卡片发送软件的全局快捷键；译文在外部软件中查看", true, SettingsPageIds.Ai,
                 controlName: "ExternalTranslationToggle"));
@@ -544,8 +574,9 @@ namespace alpha_island.Core
                 SettingsPageIds.Ai, secret: true));
             list.Add(ExtraText("AiModel", "模型",
                 "连接接口获取可用模型后，从下拉列表选择", "deepseek-chat", SettingsPageIds.Ai));
-            list.Add(ExtraText("AiSystemPrompt", "系统提示词",
-                "每次对话都会带上的人设/约束", "你是 Alpha Island 的桌面助手，回答尽量简短。", SettingsPageIds.Ai));
+            // Keep the legacy key/default for existing profiles; the API plugin treats it as a personality fallback.
+            list.Add(ExtraText("AiSystemPrompt", "人格提示词",
+                "角色与语气在会话首次发送；支持导入 TXT，修改后新建或清空对话生效；系统规则内置", "你是 Alpha Island 的桌面助手，回答尽量简短。", SettingsPageIds.Ai));
 
             list.Add(ExtraBool("AgentStatusEnabled", "agent 状态",
                 "细条上显示 agent 运行状态色点（思考/输出/等待授权/出错）", true, SettingsPageIds.Ai,
@@ -560,22 +591,13 @@ namespace alpha_island.Core
                 "agent 请求工具权限时弹出审批提示（Y 允许 / N 拒绝）", true, SettingsPageIds.Ai, "AgentBridgeEnabled",
                 controlName: "AgentApprovalToggle"));
 
-            // ===== C 组②：动效与能耗（设置页 appearance） =====
+            // ===== 动效与能耗（设置页 appearance） =====
             // 这两项是「外观」页的第一批注册表项：外观页原来 6 个开关是手写绑定
             // （LoadFrom/ApplyChanges 各一串 if），新项走注册表就不用再往那两处塞分支。
-            list.Add(ExtraBool("ReduceMotionEnabled", "减弱动效",
-                "形变与卡片翻页直接到位，不做弹簧/位移动画（前庭敏感或远程桌面下更舒服）", false, SettingsPageIds.Appearance,
-                controlName: "ReduceMotionToggle"));
-            list.Add(ExtraBool("PowerSaveEnabled", "节能模式",
-                "收起成细条时把媒体轮询从每秒 10 次降到 1 次，并停掉细条态下的逐帧渲染", false, SettingsPageIds.Appearance,
-                controlName: "PowerSaveToggle"));
 
-            // ===== C 组④：3D 封面（设置页 island，和「显示专辑封面」同一张卡） =====
+            // ===== 3D 封面（设置页 island，和「显示专辑封面」同一张卡） =====
             // 默认关闭。开启后还要过渲染层级门槛（Tier ≥ 2）与一次渲染探针，
             // 不满足就只拒本次会话、不改写这个选项 —— 换台机器/插上独显就能直接用。
-            list.Add(ExtraBool("Cover3DEnabled", "3D 封面",
-                "卡片封面用 3D 立体卡片渲染，换曲时翻转入场（需要硬件加速 Tier 2 及以上；分层窗口下可能自动退回 2D）",
-                false, SettingsPageIds.Island, controlName: "Cover3DToggle"));
 
             return list;
         }

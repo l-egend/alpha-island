@@ -64,6 +64,7 @@ public sealed class BatteryChargePill : Grid
 
 internal sealed class ChargingBatteryRing : FrameworkElement
 {
+    internal bool ComputerVisible { get; init; } = true;
     private static readonly DependencyProperty LevelProperty = DependencyProperty.Register("Level", typeof(double), typeof(ChargingBatteryRing),
         new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
     private static readonly Pen Track = FrozenPen(Color.FromArgb(48, 255, 255, 255), 3);
@@ -124,8 +125,11 @@ internal sealed class ChargingBatteryRing : FrameworkElement
             { context.BeginFigure(new Point(16, 3), false, false); context.ArcTo(new Point(16 + 13 * Math.Cos(angle), 16 + 13 * Math.Sin(angle)), new Size(13, 13), 0, level > .5, SweepDirection.Clockwise, true, false); }
             path.Freeze(); dc.DrawGeometry(null, ink, path);
         }
-        dc.DrawRoundedRectangle(null, Computer, new Rect(10, 11, 12, 9), 1.8, 1.8);
-        dc.DrawLine(Computer, new Point(8, 22), new Point(24, 22));
+        if (ComputerVisible)
+        {
+            dc.DrawRoundedRectangle(null, Computer, new Rect(10, 11, 12, 9), 1.8, 1.8);
+            dc.DrawLine(Computer, new Point(8, 22), new Point(24, 22));
+        }
         if (_connected) dc.DrawGeometry(Brushes.White, null, Bolt);
         if (_smartCharging) dc.DrawGeometry(Brushes.White, null, Heart);
         dc.Pop();

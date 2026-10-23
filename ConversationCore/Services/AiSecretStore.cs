@@ -9,7 +9,7 @@ using alpha_island.Conversations;
 namespace alpha_island.Services
 {
     /// <summary>
-    /// AI 密钥的安全存放（B 组①）。
+    /// AI 密钥的安全存放。
     ///
     /// 用 Windows DPAPI（<c>CryptProtectData</c>，当前用户范围）加密后写到
     /// <c>%LOCALAPPDATA%\alpha-island\config\ai\secrets.dat</c>：

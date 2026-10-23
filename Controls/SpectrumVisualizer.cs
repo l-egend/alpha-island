@@ -399,9 +399,10 @@ namespace alpha_island.Controls
 
             if (UniformColor)
             {
-                var solid = new SolidColorBrush(Color.FromArgb(0xEE, ColorLow.R, ColorLow.G, ColorLow.B));
+                var color = ReadableAlbumColor(ColorLow);
+                var solid = new SolidColorBrush(Color.FromArgb(0xEE, color.R, color.G, color.B));
                 solid.Freeze();
-                var glow = new SolidColorBrush(Color.FromArgb(0x35, ColorLow.R, ColorLow.G, ColorLow.B));
+                var glow = new SolidColorBrush(Color.FromArgb(0x35, color.R, color.G, color.B));
                 glow.Freeze();
                 for (int i = 0; i < n; i++)
                 {
@@ -411,7 +412,8 @@ namespace alpha_island.Controls
                 return;
             }
 
-            var ramp = new[] { ColorLow, ColorMid, ColorHigh, ColorExtra };
+            var ramp = new[] { ReadableAlbumColor(ColorLow), ReadableAlbumColor(ColorMid),
+                ReadableAlbumColor(ColorHigh), ReadableAlbumColor(ColorExtra) };
 
             for (int i = 0; i < n; i++)
             {
@@ -422,6 +424,20 @@ namespace alpha_island.Controls
                 _barBrushes[i] = Vertical(top, bottom, 0xE8, 0x99);
                 _glowBrushes[i] = Vertical(top, top, 0x30, 0x30);
             }
+        }
+
+        // Keep ordinary album colours unchanged. Lift only very dark tones and
+        // lower near-white tones into a readable range; a neutral blend preserves
+        // the source hue. This runs when cached brushes change, never per frame.
+        private static Color ReadableAlbumColor(Color color)
+        {
+            double luma = (.2126 * color.R + .7152 * color.G + .0722 * color.B) / 255.0;
+            double target = Math.Clamp(luma, .38, .74);
+            if (target == luma) return color;
+            double blend = target > luma ? (target - luma) / (1 - luma) : (luma - target) / luma;
+            double neutral = target > luma ? 255 : 0;
+            byte Tone(byte value) => (byte)Math.Clamp(Math.Round(value + (neutral - value) * blend), 0, 255);
+            return Color.FromArgb(color.A, Tone(color.R), Tone(color.G), Tone(color.B));
         }
 
         /// <summary>纵向渐变（相对包围盒），k 是叠加到颜色自带 alpha 上的因子。</summary>

@@ -11,11 +11,13 @@ using Color = System.Windows.Media.Color;
 
 internal static partial class Program
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "IsWindowVisible")]
+    private static extern bool IsGlassHostVisible(IntPtr window);
+
     private static void LiquidGlassLiveSceneChecks(alpha_island.MainWindow window)
     {
         var options = AgentField<IslandOptions>(window, "_options");
-        MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
-        options.GelAnimation = true; options.LiquidGlassBackdrop = true; options.GlassOpacity = .22;
+        MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false); options.GlassOpacity = .22;
         var artwork = new DrawingGroup();
         using (var dc = artwork.Open())
         {
@@ -32,7 +34,12 @@ internal static partial class Program
         {
             background.Show();
             window.Left = 0; window.Top = 135; window.Width = 1200; window.Height = 390; window.Show();
-            PrivateCall(window, "EnsureBackdrop"); PrivateCall(window, "ApplyGlassAppearance");
+            SettingsRegistry.SetExtra(options, "ReduceEffectsEnabled", true);
+            PrivateCall(window, "ApplyVisualOptions");
+            Check(AgentField<BackdropWindow?>(window, "_backdrop") == null, "削减动效启动不创建原生玻璃背景");
+            SettingsRegistry.SetExtra(options, "ReduceEffectsEnabled", false);
+            PrivateCall(window, "ApplyVisualOptions");
+            Check(AgentField<BackdropWindow>(window, "_backdrop").IsAvailable, "关闭削减动效时首次修改即创建可用背景");
             PrivateCall(window, "ShowVolumeNotify", 46, false); PumpAnimations(850);
             var backdrop = AgentField<BackdropWindow>(window, "_backdrop");
             Check(backdrop.ContourUpdates > 5, "完整窗口形变实际持续驱动 DWM 矢量裁剪");
@@ -86,6 +93,14 @@ internal static partial class Program
             foreach (var item in chrome.Values) item.SetLight(new GlassLight(new Vector(1, -.3), .8, .8, Colors.White), false);
             PumpAnimations(40); Capture("v103-live-card-right-light");
             Check(!window.LiquidFrameLoopActive, "真实卡片停稳后无常驻玻璃帧循环");
+            SettingsRegistry.SetExtra(options, "ReduceEffectsEnabled", true);
+            PrivateCall(window, "ApplyVisualOptions"); PumpAnimations(30);
+            Check(!IsGlassHostVisible(backdrop.Handle) && MotionPolicy.ReduceMotion && MotionPolicy.PowerSave,
+                "开启削减动效立即隐藏实际背景窗口");
+            SettingsRegistry.SetExtra(options, "ReduceEffectsEnabled", false);
+            PrivateCall(window, "ApplyVisualOptions"); PumpAnimations(30);
+            Check(IsGlassHostVisible(backdrop.Handle) && ReferenceEquals(backdrop, AgentField<BackdropWindow>(window, "_backdrop")),
+                "关闭削减动效立即恢复同一背景窗口，无需重启或再次修改");
         }
         finally { background.Close(); }
     }

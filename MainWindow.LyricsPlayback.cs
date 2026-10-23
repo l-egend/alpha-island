@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Lyric load / karaoke wipe / translation.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow

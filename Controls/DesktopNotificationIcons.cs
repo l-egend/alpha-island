@@ -7,7 +7,7 @@ using alpha_island.Core;
 namespace alpha_island.Controls;
 
 /// <summary>Share validated application logos across every notification presentation.</summary>
-internal static class DesktopNotificationIcons
+internal static partial class DesktopNotificationIcons
 {
     private sealed record DecodedLogo(BitmapSource? Source);
     private static readonly ConditionalWeakTable<byte[], DecodedLogo> Cache = new();
@@ -19,9 +19,12 @@ internal static class DesktopNotificationIcons
     internal static BitmapSource? GetContentImage(DesktopNotification item) =>
         item.ContentImage is { Length: > 0 and <= 1048576 } bytes
             ? ContentCache.GetValue(bytes, b => Decode(b, 160)).Source : null;
-    internal static BitmapSource? GetPresentationIcon(DesktopNotification item) =>
-        MessengerIdentity.FromNotification(item) == MessengerClient.QQ ? GetLogo(item)
+    internal static BitmapSource? GetPresentationIcon(DesktopNotification item)
+    {
+        var source = MessengerIdentity.FromNotification(item) == MessengerClient.QQ ? GetLogo(item)
             : (!item.ContentImageIsHero ? GetContentImage(item) : null) ?? GetLogo(item);
+        return source == null ? null : PresentationCache.GetValue(source, FitVisibleIcon).Source;
+    }
 
     internal static void PrimeLogos(IEnumerable<DesktopNotification> items)
     {

@@ -61,6 +61,7 @@ internal sealed class NotificationsViewModel : ObservableObject
     private IslandTicker.Subscription? _archiveTick;
     public NotificationImportance MinimumImportance { get; set; }
     public string Search { get; set; } = "";
+    internal bool UnreadOnly { get; set; }
     internal void AttachArchive(string path, bool remember, IslandTicker ticker)
     {
         _archive = new(path, maximumBytes: 8 * 1024 * 1024, encrypted: true); _remember = remember;
@@ -73,12 +74,15 @@ internal sealed class NotificationsViewModel : ObservableObject
     internal void SetRemember(bool value)
     { if (_remember == value) return; _remember = value; MarkArchiveDirty(); }
     internal IEnumerable<DesktopNotification> Filter(DesktopNotificationPolicy policy) => Inbox.History
-        .Where(item => (ExpandedKeys == null || ExpandedKeys.Contains(item.Key)) && policy.Accepts(item) && policy.Level(item) >= MinimumImportance
+        .Where(item => (!UnreadOnly || !item.IsRead && item.Kind == DesktopEventKind.Message)
+            && (ExpandedKeys == null || ExpandedKeys.Contains(item.Key)) && policy.Accepts(item) && policy.Level(item) >= MinimumImportance
             && (Search.Length == 0 || (item.AppName + " " + item.Title + " " + item.Body).Contains(Search, StringComparison.OrdinalIgnoreCase)))
-        .OrderByDescending(item => item.Created);
+        .OrderByDescending(item => item.IsPinned).ThenByDescending(item => item.Created);
     private static bool Valid(DesktopNotification? item) => item != null && !string.IsNullOrWhiteSpace(item.Key)
-        && item.Key.Length <= 2048 && item.Title != null && item.Body != null && item.AppId != null && item.AppName != null
-        && Enum.IsDefined(item.Kind) && Enum.IsDefined(item.Importance);
+        && item.Key.Length <= 2048 && item.Title != null && item.Body != null && item.AppId != null && item.AppName != null && item.ActionFeedback is { Length: <= 256 }
+        && Enum.IsDefined(item.Kind) && Enum.IsDefined(item.Importance)
+        && (item.Reminder == null || item.Kind == DesktopEventKind.Assistant || item.IsCritical)
+        && (item.Reminder == null || AssistantReminderRules.Valid(item.Reminder));
     private void MarkArchiveDirty() { _archiveDirty = true; _archiveTick?.SetPaused(false); }
     private void FlushArchive()
     {
@@ -88,7 +92,7 @@ internal sealed class NotificationsViewModel : ObservableObject
     {
         Logo = null, ContentImage = null,
         Title = item.Title[..Math.Min(item.Title.Length, 2048)], Body = item.Body[..Math.Min(item.Body.Length, 4096)],
-        AppId = item.AppId[..Math.Min(item.AppId.Length, 2048)], AppName = item.AppName[..Math.Min(item.AppName.Length, 256)]
+        AppId = item.AppId[..Math.Min(item.AppId.Length, 2048)], AppName = item.AppName[..Math.Min(item.AppName.Length, 256)], ActionFeedback = item.ActionFeedback[..Math.Min(item.ActionFeedback.Length, 256)]
         }).ToArray() : []);
     }
     internal void Dispose() { Inbox.Changed -= MarkArchiveDirty; FlushArchive(); _archiveTick?.Dispose(); _archive?.Dispose(); }

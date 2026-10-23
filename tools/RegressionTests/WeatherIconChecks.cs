@@ -72,6 +72,9 @@ internal static partial class Program
                 Background = new SolidColorBrush(Color.FromRgb(16, 25, 43)), Child = preview };
             probes.Add(previewFrame); root.Children.Add(previewFrame); root.UpdateLayout();
             SaveThemePreview(previewFrame, "bin/icon-previews/weather-notification.png");
+            Check(preview.IconBadge.Visibility == Visibility.Collapsed && preview.ColumnDefinitions[0].ActualWidth == 0
+                && WeatherIcons(preview).Count(icon => icon.IsVisible) == 1 && preview.WeatherArtwork.IsVisible,
+                "天气提示只显示右侧天气图标，左侧图标与占位一起移除");
             Check(preview.WeatherArtwork.Visibility == Visibility.Visible && preview.WeatherArtwork.WeatherCode == 0
                 && preview.WeatherArtwork.TranslatePoint(new System.Windows.Point(), preview).X > preview.Detail.TranslatePoint(new System.Windows.Point(), preview).X,
                 "明日天气小岛右侧显示对应太阳图标，标题与温度仍留在左侧");
@@ -115,6 +118,7 @@ internal static partial class Program
             Check(WeatherIcons(weatherOrb).Single().WeatherCode == 63, "天气卡片卫星使用当前天气码");
             preview.SetNotification(sunny with { Kind = DesktopEventKind.WifiRadio, RadioEnabled = true });
             Check(preview.Icon.Shape == IconShape.Wifi && preview.Icon.WeatherCode == null, "通知槽切换到非天气事件清除残留天气码");
+            Check(preview.IconBadge.Visibility == Visibility.Visible, "切换为普通通知后恢复左侧图标");
             Check(preview.WeatherArtwork.Visibility == Visibility.Collapsed && preview.WeatherArtwork.WeatherCode == null,
                 "切换普通通知后收起右侧天气专用图标，不占用通知文字宽度");
 

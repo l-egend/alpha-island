@@ -25,6 +25,7 @@ internal sealed class PomodoroTimer
 {
     public TimeSpan Remaining { get; private set; } = TimeSpan.FromMinutes(25);
     public bool Running { get; private set; }
+    public bool HasStarted => _phaseStarted;
     public bool IsBreak { get; private set; }
     public bool IsLongBreak { get; private set; }
     public bool CycleFinished { get; private set; }

@@ -37,7 +37,7 @@ namespace alpha_island.Services
         BatteryChargeType ChargeType,
         BatteryPowerEvent EventType,
         int? ChargeRateMilliwatts,
-        int? DischargeRateMilliwatts = null,   // 放电功率（电池供电时，毫瓦；A 组③ 派生）
+        int? DischargeRateMilliwatts = null,   // 放电功率（电池供电时，毫瓦）
         int? RemainingLifeSeconds = null,
         bool HasBattery = true,
         bool? IsOnAcPower = null,

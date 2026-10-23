@@ -22,6 +22,8 @@ internal static partial class Program
             menu.Measure(new System.Windows.Size(menu.Width,menu.Height));
             menu.Arrange(new Rect(0,0,menu.Width,menu.Height)); menu.UpdateLayout();
             var screen = menu.Children.OfType<Border>().Single(b => b.Child is GlyphIcon g && g.Text == GlyphArtwork.ScreenToolsGlyph);
+            Check(screen.ToolTip?.ToString() == "屏幕工具" && GlyphArtwork.Titles[GlyphArtwork.ScreenToolsGlyph] == "屏幕工具",
+                "切换菜单的名称与矢量图标目录统一为屏幕工具");
             var volume = menu.Children.OfType<Border>().Single(b => b.Child is GlyphIcon g && g.Text == "\uE767");
             Check(ReferenceEquals(screen.Background,volume.Background),"翻译按钮与其他按钮共享主题材质，浅色桌面上保留底色");
             var rendered = new List<(double Opacity,BitmapSource Image)>();

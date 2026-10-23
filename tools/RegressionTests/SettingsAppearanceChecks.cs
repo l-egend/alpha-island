@@ -52,29 +52,29 @@ internal static partial class Program
             var nav = (StackPanel)settings.FindName("NavPanel");
             var bar = (Border)settings.FindName("NavSelectionIndicator");
             var marker = (TranslateTransform)bar.RenderTransform;
-            var audio = (FrameworkElement)settings.FindName("Page_Audio");
+            var focus = (FrameworkElement)settings.FindName("Page_Focus");
             var media = (FrameworkElement)settings.FindName("Page_Media");
             double previous = marker.Y;
             var pageElapsed = System.Diagnostics.Stopwatch.StartNew();
-            PrivateCall(settings, "SelectPageByTag", "audio");
-            bool markerStarted = marker.HasAnimatedProperties, pageStarted = audio.HasAnimatedProperties;
+            PrivateCall(settings, "SelectPageByTag", "focus");
+            bool markerStarted = marker.HasAnimatedProperties, pageStarted = focus.HasAnimatedProperties;
             PumpAnimations(40);
-            var selected = nav.Children.OfType<RadioButton>().Single(i => Equals(i.Tag, "audio"));
+            var selected = nav.Children.OfType<RadioButton>().Single(i => Equals(i.Tag, "focus"));
             double target = selected.TranslatePoint(new Point(0, (selected.ActualHeight - bar.Height) / 2), (UIElement)settings.FindName("NavItemsSurface")).Y;
             if (SystemParameters.ClientAreaAnimation)
             {
                 Check(markerStarted && pageStarted && target > previous
                     && marker.Y >= previous && marker.Y <= target
                     && (marker.Y < target || pageElapsed.ElapsedMilliseconds >= 200)
-                    && audio.Opacity >= .2 && audio.Opacity <= 1
-                    && ((TranslateTransform)audio.RenderTransform).Y >= 0
-                    && (audio.Opacity < 1 || audio.HasAnimatedProperties || pageElapsed.ElapsedMilliseconds >= 180),
+                    && focus.Opacity >= .2 && focus.Opacity <= 1
+                    && ((TranslateTransform)focus.RenderTransform).Y >= 0
+                    && (focus.Opacity < 1 || focus.HasAnimatedProperties || pageElapsed.ElapsedMilliseconds >= 180),
                     $"左侧选中标记平滑移动，同时内容页淡入并短距离移入（marker={marker.Y:0.00}/{target:0.00}, started={markerStarted}/{pageStarted}, elapsed={pageElapsed.ElapsedMilliseconds}ms）");
             }
             PrivateCall(settings, "SelectPageByTag", "system"); PumpAnimations(25);
             PrivateCall(settings, "SelectPageByTag", "media"); PumpAnimations(280);
             Check(media.Opacity == 1 && !media.HasAnimatedProperties && ((TranslateTransform)media.RenderTransform).Y == 0
-                && audio.Visibility == Visibility.Collapsed && !marker.HasAnimatedProperties,
+                && focus.Visibility == Visibility.Collapsed && !marker.HasAnimatedProperties,
                 "快速连续切页只保留最新页面，完成后释放动画时钟");
             var search = (TextBox)settings.FindName("SearchBox");
             search.Text = "番茄钟"; PumpAnimations(25);
@@ -83,18 +83,18 @@ internal static partial class Program
             Check(bar.Visibility == Visibility.Visible && marker.Y >= 0 && marker.Y < 36, "过滤后选中标记跟随重新排列的导航项");
             search.Text = ""; PumpAnimations(25);
 
-            PrivateCall(settings, "SelectPageByTag", "audio"); PrivateCall(settings, "ApplyNavExpanded", false, true);
+            PrivateCall(settings, "SelectPageByTag", "focus"); PrivateCall(settings, "ApplyNavExpanded", false, true);
             PumpAnimations(30); MotionPolicy.Apply(true, false);
-            Check(audio.Opacity == 1 && ((TranslateTransform)audio.RenderTransform).Y == 0 && !marker.HasAnimatedProperties
+            Check(focus.Opacity == 1 && ((TranslateTransform)focus.RenderTransform).Y == 0 && !marker.HasAnimatedProperties
                 && ((FrameworkElement)settings.FindName("NavPane")).Width == 48, "途中开启减弱动效立即结束内容、指示条和侧栏动画");
             MotionPolicy.Apply(false, true); PrivateCall(settings, "SelectPageByTag", "media");
             Check(media.Opacity == 1 && !media.HasAnimatedProperties && !marker.HasAnimatedProperties, "节能模式切页直接到位");
-            MotionPolicy.Apply(false, false); PrivateCall(settings, "SelectPageByTag", "audio");
+            MotionPolicy.Apply(false, false); PrivateCall(settings, "SelectPageByTag", "focus");
             PrivateCall(settings, "ApplyNavExpanded", true, true); settings.Hide();
-            Check(!audio.HasAnimatedProperties && !marker.HasAnimatedProperties && ((FrameworkElement)settings.FindName("NavPane")).Width == 244,
+            Check(!focus.HasAnimatedProperties && !marker.HasAnimatedProperties && ((FrameworkElement)settings.FindName("NavPane")).Width == 244,
                 "设置隐藏时停止切页和侧栏动画");
             settings.ShowInForeground(requestFocus: false); PumpAnimations(30);
-            Check(bar.Visibility == Visibility.Visible && audio.Opacity == 1 && !settings.Topmost, "再次打开恢复完整页面和选中标记，保持普通层级");
+            Check(bar.Visibility == Visibility.Visible && focus.Opacity == 1 && !settings.Topmost, "再次打开恢复完整页面和选中标记，保持普通层级");
             PrivateCall(settings, "SelectPageByTag", "media"); settings.WindowState = WindowState.Minimized;
             Check(!media.HasAnimatedProperties && !marker.HasAnimatedProperties && !settings.Topmost, "最小化停止设置动画且不提升窗口层级");
             settings.ShowInForeground(requestFocus: false);

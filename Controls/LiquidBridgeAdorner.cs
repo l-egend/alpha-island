@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
+using alpha_island.Animation;
 using Color = System.Windows.Media.Color;
 using Brush = System.Windows.Media.Brush;
 using Pen = System.Windows.Media.Pen;
@@ -15,12 +16,18 @@ internal sealed class LiquidBridgeAdorner(UIElement scene) : Adorner(scene)
     public Geometry? Surface { get; set; }
     public Geometry? Bodies { get; set; }
     public Brush? Fill { get; set; }
+    private Geometry? _lastBridges, _lastBodies, _rimClip;
     protected override void OnRender(DrawingContext context)
     {
         if (Fill == null) return;
         if (Surface != null) context.DrawGeometry(Fill, null, Surface);
-        if (Bridges == null || Bodies == null) return;
-        context.PushClip(new CombinedGeometry(GeometryCombineMode.Exclude, Bridges, Bodies));
+        if (Bridges == null || Bodies == null) { _lastBridges = null; _lastBodies = null; _rimClip = null; return; }
+        if (!ReferenceEquals(_lastBridges, Bridges) || !ReferenceEquals(_lastBodies, Bodies))
+        {
+            _rimClip = LiquidGeometrySnapshot.Combine(Bridges, Bodies, GeometryCombineMode.Exclude);
+            _lastBridges = Bridges; _lastBodies = Bodies;
+        }
+        context.PushClip(_rimClip!);
         context.DrawGeometry(null, _rim, Bridges);
         context.Pop();
     }

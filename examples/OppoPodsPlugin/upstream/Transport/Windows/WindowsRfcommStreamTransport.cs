@@ -117,7 +117,10 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         }
         catch (Exception e)
         {
-            LastError = Log.DescribeException(e);
+            var cause=e.GetBaseException();
+            LastError = (cause.HResult & 0xFFFF)==10048
+                ? "耳机控制通道被占用（RFCOMM 10048）"
+                : Log.DescribeException(e);
             Log.Ex("RFSOCK", $"Connect (耗时{sw.ElapsedMilliseconds}ms)", e);
             Cleanup();
             return false;
@@ -182,8 +185,8 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
         }
         finally
         {
-            try { if (writer != null) { writer.DetachStream(); writer.Dispose(); } } catch { }
-            try { if (reader != null) { reader.DetachStream(); reader.Dispose(); } } catch { }
+            try { writer?.Dispose(); } catch { }
+            try { reader?.Dispose(); } catch { }
             try { socket?.Dispose(); } catch { }
             lock (_lifecycleLock)
             {
@@ -325,11 +328,14 @@ public sealed class WindowsRfcommStreamTransport : IPodTransport
     {
         try { _connectCts?.Cancel(); } catch { }
         try { _readCts?.Cancel(); } catch { }
-        try { if (_writer != null) { _writer.DetachStream(); _writer.Dispose(); } } catch { }
-        try { if (_reader != null) { _reader.DetachStream(); _reader.Dispose(); } } catch { }
+        // Reader/writer ownership closes their streams too; detaching here leaves
+        // live stream references and may keep the old RFCOMM channel reserved.
+        try { _writer?.Dispose(); } catch { }
+        try { _reader?.Dispose(); } catch { }
         try { _socket?.Dispose(); } catch { }
         try { _service?.Dispose(); } catch { }
         try { _connectCts?.Dispose(); } catch { }
+        try { _readCts?.Dispose(); } catch { }
         _writer = null;
         _connectingSocket = null;
         _reader = null;

@@ -27,6 +27,7 @@ namespace alpha_island.Services
         /// <summary>任意按键按下时触发（已封送至 UI Dispatcher）。</summary>
         internal event EventHandler<KeyboardHookEventArgs>? PreviewKeyPressed;
         public event EventHandler<KeyboardHookEventArgs>? KeyPressed;
+        internal event EventHandler<KeyboardHookEventArgs>? KeyChanged;
 
         public HotkeyService(Dispatcher dispatcher)
         {
@@ -63,7 +64,12 @@ namespace alpha_island.Services
 
         private void OnHookKeyAction(object? sender, KeyboardHookEventArgs e)
         {
-            if (_disposed || !e.IsKeyDown) return;
+            if (_disposed) return;
+            if (!e.IsKeyDown)
+            {
+                _dispatcher.BeginInvoke(DispatcherPriority.Normal, () => { if (!_disposed) KeyChanged?.Invoke(this, e); });
+                return;
+            }
             PreviewKeyPressed?.Invoke(this, e); // Hook-thread observers must never perform COM/UI work.
 
             // 检查是否有精确匹配的热键
@@ -76,7 +82,7 @@ namespace alpha_island.Services
             // 派发通用按键通知
             _dispatcher.BeginInvoke(DispatcherPriority.Normal, () =>
             {
-                if (!_disposed) KeyPressed?.Invoke(this, e);
+                if (!_disposed) { KeyChanged?.Invoke(this, e); KeyPressed?.Invoke(this, e); }
             });
         }
 
@@ -163,7 +169,7 @@ namespace alpha_island.Services
             _hook.KeyAction -= OnHookKeyAction;
             _hook.Dispose();
             _hotkeys.Clear();
-            PreviewKeyPressed = null; KeyPressed = null;
+            PreviewKeyPressed = null; KeyPressed = null; KeyChanged = null;
         }
     }
 }

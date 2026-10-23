@@ -145,9 +145,11 @@ internal static partial class Program
             Check(AgentField<IslandState>(window, "_state") == IslandState.Pill, "其中一个会话新一轮任务正常重新提醒");
             foreach (int index in Enumerable.Range(0, 3)) Report(index, "idle");
             PrivateCall(window, "HandleOutsideIslandClick"); PumpAnimations(100);
+            var completionNotice = AgentField<DesktopNotification?>(window, "_desktopCurrent");
+            var finalShape = AgentField<IslandState>(window, "_state");
             Check(!AgentStatus.IsBusy && !layers.ActiveKeys.Any(k => k.StartsWith("agentstatus", StringComparison.Ordinal))
-                && AgentField<IslandState>(window, "_state") == IslandState.Bar,
-                "全部会话结束后统一收起，不残留旧会话或截图追踪");
+                && (finalShape == IslandState.Bar || finalShape == IslandState.Pill && completionNotice?.Reminder?.Rule == "agent-ended"),
+                "全部旧会话结束后收起，仅允许新的任务结束摘要继续显示");
         }
         finally
         {

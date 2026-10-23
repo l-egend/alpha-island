@@ -41,22 +41,20 @@ public partial class SettingsWindow
         _startupToggle = new CheckBox { Name = "StartupEnabledToggle", IsEnabled = _startupRegistration != null };
         var row = LaunchSettingRow("\uE7E8", "开机自启动", StartupHint, _startupToggle, out _startupHint);
         _startupToggle.Checked += Startup_Changed; _startupToggle.Unchecked += Startup_Changed;
-        var startupRows = new StackPanel(); startupRows.Children.Add(row);
-        startupRows.Children.Add(new Border { Style = (Style)FindResource("W11RowDivider") });
+        var startupRows = new StackPanel(); startupRows.Children.Add(SettingCard(row));
         var bootToggle = new CheckBox { Name = "StartupBootTimeToggle" };
-        startupRows.Children.Add(LaunchSettingRow("\uE916", "开机耗时提醒", "显示本次进入桌面的精确耗时", bootToggle, out _));
+        startupRows.Children.Add(SettingCard(LaunchSettingRow("\uE916", "开机耗时提醒", "显示开机耗时；缺少精确记录时提供参考值", bootToggle, out _)));
         bootToggle.Checked += Setting_Changed; bootToggle.Unchecked += Setting_Changed;
-        startup.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = startupRows });
-        Page_Behavior.Children.Insert(1, startup);
+        startup.Children.Add(startupRows);
+        Page_General.Children.Insert(1, startup);
 
         var clipboardRow = (Grid)ClipboardNotifyToggle.Parent;
-        var clipboardRows = (StackPanel)clipboardRow.Parent;
-        int index = clipboardRows.Children.IndexOf(clipboardRow) + 1;
-        clipboardRows.Children.Insert(index++, new Border { Style = (Style)FindResource("W11RowDivider") });
+        var clipboardRows = ClipboardSettingsRows;
+        int index = clipboardRows.Children.IndexOf((UIElement)clipboardRow.Parent) + 1;
         var linkToggle = new CheckBox { Name = "ClipboardLinkToggle" };
         var linkRow = LaunchSettingRow("\uE71B", "识别剪贴板链接", "复制单个网页链接后，点击岛用默认浏览器打开", linkToggle, out _);
         linkToggle.Checked += Setting_Changed; linkToggle.Unchecked += Setting_Changed;
-        clipboardRows.Children.Insert(index, linkRow);
+        clipboardRows.Children.Insert(index, SettingCard(linkRow));
     }
 
     private void LoadStartupRegistrationState()

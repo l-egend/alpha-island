@@ -28,18 +28,20 @@ namespace alpha_island
         private void BuildServiceHost()
         {
             _services.Register(new DelegateIslandService(IslandServiceIds.GameActivity, IslandServiceIds.DisplayName(IslandServiceIds.GameActivity),
-                options => SettingsRegistry.GetBool(options, "NotificationGameQuietEnabled", true) || SettingsRegistry.GetBool(options, "ProductivityEnabled", true),
+                options => SettingsRegistry.GetBool(options, "NotificationGameQuietEnabled", true) || SettingsRegistry.GetBool(options, "ProductivityEnabled", true)
+                    || SettingsRegistry.GetBool(options, "TimelineEnabled", true) || SettingsRegistry.GetBool(options, "AgentProactiveEnabled", true)
+                    || SettingsRegistry.GetBool(options, "SystemHealthEnabled", true) || SettingsRegistry.GetBool(options, "HabitLearningEnabled", true),
                 StartGameActivity, StopGameActivity, _ => OnGameActivityOptionsChanged(), autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.Cpu, IslandServiceIds.DisplayName(IslandServiceIds.Cpu),
-                options => SettingsRegistry.GetBool(options, "CpuMonitorEnabled", true), StartCpuService, StopCpuService, autoStart: true));
+                options => SettingsRegistry.GetBool(options, "CpuMonitorEnabled", true) || SettingsRegistry.GetBool(options, "SystemHealthEnabled", true), StartCpuService, StopCpuService, autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.DesktopNotifications, IslandServiceIds.DisplayName(IslandServiceIds.DesktopNotifications),
                 options => SettingsRegistry.GetBool(options, "SystemToastEnabled", true), StartSystemToastService, StopSystemToastService, autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.MessengerNotifications, IslandServiceIds.DisplayName(IslandServiceIds.MessengerNotifications),
-                options => SettingsRegistry.GetBool(options, "NotificationQQEnabled", true) || SettingsRegistry.GetBool(options, "NotificationWeChatEnabled", true),
+                options => SettingsRegistry.GetBool(options, "NotificationMessengerEnabled", true),
                 StartMessengerNotifications, StopMessengerNotifications, _ => OnMessengerOptionsChanged(), autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.SessionEvents, IslandServiceIds.DisplayName(IslandServiceIds.SessionEvents),
                 options => SettingsRegistry.GetBool(options, "SessionEventNotifyEnabled", true), StartSessionEvents, StopSessionEvents, autoStart: true));
-            // 低频采样的统一节拍（阶段 3.6）。网速/内存/功率/飞行模式/隐私灯都往这里挂订阅，
+            // 低频采样的统一节拍（阶段 3.6）。网速/内存/功率/无线开关/隐私灯都往这里挂订阅，
             // 不再各写一个 DispatcherTimer；没有活跃订阅时它自己会把定时器停掉。
             _resourceMonitor.Changed += () =>
             {
@@ -106,14 +108,14 @@ namespace alpha_island
 
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.Bluetooth, IslandServiceIds.DisplayName(IslandServiceIds.Bluetooth),
-                options => options.BluetoothNotifyEnabled || SettingsRegistry.GetBool(options, "BluetoothLowBatteryEnabled", true),
+                options => true, // The battery card also needs connected-device inventory, independently of reminders.
                 StartBluetoothService, StopBluetoothService,
                 autoStart: true));
 
-            // ── A 组①：网速（纯用户开关控制，默认关闭，不需要提权）──
+            // ── 网速（纯用户开关控制，默认关闭，不需要提权）──
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.NetworkSpeed, IslandServiceIds.DisplayName(IslandServiceIds.NetworkSpeed),
-                options => SettingsRegistry.GetBool(options, "NetSpeedEnabled", false),
+                options => SettingsRegistry.GetBool(options, "NetSpeedEnabled", true) || SettingsRegistry.GetBool(options, "DailyTrafficEnabled", true),
                 StartNetworkSpeedService, StopNetworkSpeedService,
                 _ => OnNetSpeedOptionsChanged(),
                 autoStart: true));
@@ -121,23 +123,21 @@ namespace alpha_island
             // ── 物理内存占用采样 ──
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.MemoryMonitor, IslandServiceIds.DisplayName(IslandServiceIds.MemoryMonitor),
-                options => SettingsRegistry.GetBool(options, "MemoryMonitorEnabled", false),
+                options => SettingsRegistry.GetBool(options, "MemoryMonitorEnabled", false) || SettingsRegistry.GetBool(options, "SystemHealthEnabled", true),
                 StartMemoryService, StopMemoryService,
                 _ => OnMemoryOptionsChanged(),
                 autoStart: true));
 
-            // ── A 组④：飞行模式（只读，免提权；细条指示 + 变化时提示）──
+            // ── Wi-Fi / 蓝牙独立开关监听（只读）──
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.Telemetry, IslandServiceIds.DisplayName(IslandServiceIds.Telemetry),
-                options => SettingsRegistry.GetBool(options, "AirplaneBarEnabled", true)
-                           || SettingsRegistry.GetBool(options, "AirplaneNotifyEnabled", false)
-                           || SettingsRegistry.GetBool(options, "NotificationWifiRadio", true)
+                options => SettingsRegistry.GetBool(options, "NotificationWifiRadio", true)
                            || SettingsRegistry.GetBool(options, "NotificationBluetoothRadio", true),
                 StartTelemetryService, StopTelemetryService,
                 _ => OnTelemetryOptionsChanged(),
                 autoStart: true));
 
-            // ── A 组⑤：麦克风 / 摄像头占用灯（只读 ConsentStore 注册表，免提权免授权）──
+            // ── 麦克风 / 摄像头占用灯（只读 ConsentStore 注册表，免提权免授权）──
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.PrivacyIndicator, IslandServiceIds.DisplayName(IslandServiceIds.PrivacyIndicator),
                 options => SettingsRegistry.GetBool(options, "PrivacyIndicatorEnabled", false),
@@ -145,7 +145,7 @@ namespace alpha_island
                 _ => OnPrivacyOptionsChanged(),
                 autoStart: true));
 
-            // ── B 组④：agent 工具权限审批桥接（自己绑 127.0.0.1，免提权；默认关闭）──
+            // ── agent 工具权限审批桥接（自己绑 127.0.0.1，免提权；默认关闭）──
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.AgentBridge, IslandServiceIds.DisplayName(IslandServiceIds.AgentBridge),
                 options => SettingsRegistry.GetBool(options, "AgentBridgeEnabled", false),
@@ -155,7 +155,7 @@ namespace alpha_island
 
             _services.Register(new DelegateIslandService(
                 IslandServiceIds.TrafficMonitorLink, IslandServiceIds.DisplayName(IslandServiceIds.TrafficMonitorLink),
-                options => SettingsRegistry.GetBool(options, "TrafficMonitorLinkEnabled", true),
+                options => SettingsRegistry.GetBool(options, "DailyTrafficEnabled", true),
                 StartTrafficLinkService, StopTrafficLinkService,
                 _ => OnTrafficOptionsChanged(),
                 autoStart: true));
@@ -344,7 +344,7 @@ namespace alpha_island
             _battery = battery;
             StartInBackground(battery.Start, "Battery");
 
-            // A 组③：功率采样跟着电池服务一起活（ticker 5s 一拍）
+            // 功率采样跟着电池服务一起活（ticker 5s 一拍）
             StartPowerSampler();
         }
 

@@ -54,14 +54,19 @@ namespace alpha_island.Settings
         private readonly bool _persistSettings;
 
         public SettingsWindow() : this(true) { }
-        internal SettingsWindow(bool persistSettings, string? aiSecretsFile = null, ChatService? connectionService = null, StartupRegistrationService? startupRegistration = null, Func<Task>? authorizeBootLog = null)
+        internal SettingsWindow(bool persistSettings, string? aiSecretsFile = null, ChatService? connectionService = null, StartupRegistrationService? startupRegistration = null, Func<Task>? authorizeBootLog = null, string? greetingAssetsDirectory = null)
         {
             _persistSettings = persistSettings;
+            _greetingAssets = new GreetingMediaStore(greetingAssetsDirectory ?? Path.Combine(AppPaths.ConfigDir, "greeting"));
             _startupRegistration = startupRegistration ?? (persistSettings ? new StartupRegistrationService() : null);
             _authorizeBootLog = authorizeBootLog ?? (persistSettings ? BootLogAccess.EnsureReadAccessAsync : () => Task.CompletedTask);
             InitializeComponent();
             PreviewKeyDown += (_, e) =>
             {
+                if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && !_recordingShortcut)
+                {
+                    SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; return;
+                }
                 if (e.Key != Key.Escape || e.Handled || _recordingShortcut) return;
                 Close(); e.Handled = true;
             };
@@ -72,7 +77,10 @@ namespace alpha_island.Settings
             AddPomodoroSettings();
             AddWeatherSettings();
             AddLaunchSettings();
+            AddGreetingMediaSettings();
             AddWorkspaceSettings();
+            AddAssistantSettings();
+            AddConsolidatedEditors();
             AddExternalTranslationSettings();
             AddAgentIntegrationSettings();
             AddFirstUseSettings();
@@ -88,6 +96,7 @@ namespace alpha_island.Settings
             };
 
             var workArea = SystemParameters.WorkArea;
+            alpha_island.Interop.WindowWorkArea.Fit(this, workArea, 780, 540);
             Left = workArea.Left + (workArea.Width - Width) / 2.0;
             Top = workArea.Top + (workArea.Height - Height) / 2.0;
 
@@ -116,10 +125,7 @@ namespace alpha_island.Settings
                 GreetingSecondsValue.Text = $"{GreetingSecondsSlider.Value:0.#}s";
             }
 
-            if (NetSpeedThresholdSlider != null && NetSpeedThresholdValue != null)
-            {
-                NetSpeedThresholdValue.Text = $"{(int)Math.Round(NetSpeedThresholdSlider.Value)} MB/s";
-            }
+
 
             _suppress = false;
 
@@ -150,7 +156,7 @@ namespace alpha_island.Settings
                 resetTimer.Start();
             }
 
-            // C 组①⑤：如果用户放了自定义图标（%LOCALAPPDATA%\alpha-island\config\icons\*.png 或 exe 旁 Assets\icons\*.png），
+            // 如果用户放了自定义图标（%LOCALAPPDATA%\alpha-island\config\icons\*.png 或 exe 旁 Assets\icons\*.png），
             // 就把对应图标槽里的默认 Segoe 字形换成图片；没有自定义文件时什么都不做（内置字形照旧）。
             ApplyCustomSettingIcons();
         }
@@ -231,12 +237,19 @@ namespace alpha_island.Settings
         private void SelectPageByTag(string tag)
         {
             if (NavPanel == null) return;
+            string requested = tag;
+            if (tag is "island" or "audio" or "lyrics") tag = SettingsPageIds.Appearance;
 
             foreach (object child in NavPanel.Children)
             {
                 if (child is RadioButton item && string.Equals(item.Tag as string, tag, StringComparison.OrdinalIgnoreCase))
                 {
                     item.IsChecked = true;
+                    if (requested is "lyrics" or "audio")
+                    {
+                        var section = requested == "lyrics" ? AppearanceLyricsBranch : AppearanceAudioBranch;
+                        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(section.BringIntoView));
+                    }
                     return;
                 }
             }
@@ -245,6 +258,8 @@ namespace alpha_island.Settings
         public void LoadFrom(IslandOptions options)
         {
             _suppress = true;
+            _clipboardHistoryEditTimer?.Stop();
+            _clipboardHistoryLimitEditing = false;
             _options.CopyFrom(options);
 
             if (GlassOpacitySlider != null)
@@ -255,22 +270,8 @@ namespace alpha_island.Settings
             {
                 GlassOpacityValue.Text = $"{_options.GlassOpacity:P0}";
             }
-            if (LiquidGlassToggle != null)
-            {
-                LiquidGlassToggle.IsChecked = _options.LiquidGlassBackdrop;
-            }
-            if (GelAnimationToggle != null)
-            {
-                GelAnimationToggle.IsChecked = _options.GelAnimation;
-            }
-            if (TwoStepExpandToggle != null)
-            {
-                TwoStepExpandToggle.IsChecked = _options.TwoStepExpand;
-            }
-            if (ShowCoverToggle != null)
-            {
-                ShowCoverToggle.IsChecked = _options.ShowCover;
-            }
+
+
             if (VisualizerToggle != null)
             {
                 VisualizerToggle.IsChecked = _options.VisualizerEnabled;
@@ -304,25 +305,11 @@ namespace alpha_island.Settings
                 int ms = _options.LyricsOffsetMs;
                 LyricsOffsetValue.Text = ms > 0 ? $"+{ms}ms" : $"{ms}ms";
             }
-            if (KeepCompactToggle != null)
-            {
-                KeepCompactToggle.IsChecked = _options.KeepCompactWhilePlaying;
-            }
-            if (UpNextToggle != null)
-            {
-                UpNextToggle.IsChecked = _options.UpNextEnabled;
-            }
+
+
             if (UpNextSlider != null)
             {
                 UpNextSlider.Value = _options.UpNextSeconds;
-            }
-            if (PauseNotifyToggle != null)
-            {
-                PauseNotifyToggle.IsChecked = _options.PauseNotifyEnabled;
-            }
-            if (PlayNotifyToggle != null)
-            {
-                PlayNotifyToggle.IsChecked = _options.PlayNotifyEnabled;
             }
             if (VolumeNotifyToggle != null)
             {
@@ -368,15 +355,8 @@ namespace alpha_island.Settings
             {
                 FileTransferToggle.IsChecked = _options.FileTransferEnabled;
             }
-            if (NetSpeedThresholdSlider != null)
-            {
-                double mbps = SettingsRegistry.GetDouble(_options, "NetSpeedThresholdMbps", 10.0);
-                NetSpeedThresholdSlider.Value = mbps;
-                if (NetSpeedThresholdValue != null)
-                {
-                    NetSpeedThresholdValue.Text = $"{(int)Math.Round(mbps)} MB/s";
-                }
-            }
+
+
             if (NetSpeedEnabledToggle != null)
             {
                 NetSpeedEnabledToggle.IsChecked = SettingsRegistry.GetBool(_options, "NetSpeedEnabled", true);
@@ -389,6 +369,7 @@ namespace alpha_island.Settings
             // 注册表驱动的项（含新功能的 Extras）统一回填；必须在 _suppress 复位之前，
             // 否则回填过程会触发 Setting_Changed/Slider_Changed 把值又写回去。
             LoadRegistryControls();
+            RefreshGreetingMediaSettings();
             LoadStartupRegistrationState();
             LoadStatusDisplayRows();
 
@@ -473,13 +454,8 @@ namespace alpha_island.Settings
                     GreetingSecondsValue.Text = $"{e.NewValue:0.#}s";
                 }
             }
-            else if (ReferenceEquals(sender, NetSpeedThresholdSlider))
-            {
-                if (NetSpeedThresholdValue != null)
-                {
-                    NetSpeedThresholdValue.Text = $"{(int)Math.Round(e.NewValue)} MB/s";
-                }
-            }
+
+
 
             if (_suppress) return;
             ApplyChanges();
@@ -494,26 +470,13 @@ namespace alpha_island.Settings
         private void ApplyChanges()
         {
             _settingsEdited = true;
+            MarkSettingsPendingSave();
             if (GlassOpacitySlider != null)
             {
                 _options.GlassOpacity = GlassOpacitySlider.Value;
             }
-            if (LiquidGlassToggle != null)
-            {
-                _options.LiquidGlassBackdrop = LiquidGlassToggle.IsChecked == true;
-            }
-            if (GelAnimationToggle != null)
-            {
-                _options.GelAnimation = GelAnimationToggle.IsChecked == true;
-            }
-            if (TwoStepExpandToggle != null)
-            {
-                _options.TwoStepExpand = TwoStepExpandToggle.IsChecked == true;
-            }
-            if (ShowCoverToggle != null)
-            {
-                _options.ShowCover = ShowCoverToggle.IsChecked == true;
-            }
+
+
             if (VisualizerToggle != null)
             {
                 _options.VisualizerEnabled = VisualizerToggle.IsChecked == true;
@@ -538,25 +501,11 @@ namespace alpha_island.Settings
             {
                 _options.LyricsOffsetMs = (int)Math.Round(LyricsOffsetSlider.Value);
             }
-            if (KeepCompactToggle != null)
-            {
-                _options.KeepCompactWhilePlaying = KeepCompactToggle.IsChecked == true;
-            }
-            if (UpNextToggle != null)
-            {
-                _options.UpNextEnabled = UpNextToggle.IsChecked == true;
-            }
+
+
             if (UpNextSlider != null)
             {
                 _options.UpNextSeconds = (int)Math.Round(UpNextSlider.Value);
-            }
-            if (PauseNotifyToggle != null)
-            {
-                _options.PauseNotifyEnabled = PauseNotifyToggle.IsChecked == true;
-            }
-            if (PlayNotifyToggle != null)
-            {
-                _options.PlayNotifyEnabled = PlayNotifyToggle.IsChecked == true;
             }
             if (VolumeNotifyToggle != null)
             {
@@ -598,10 +547,8 @@ namespace alpha_island.Settings
             {
                 _options.FileTransferEnabled = FileTransferToggle.IsChecked == true;
             }
-            if (NetSpeedThresholdSlider != null)
-            {
-                SettingsRegistry.SetExtra(_options, "NetSpeedThresholdMbps", NetSpeedThresholdSlider.Value);
-            }
+
+
             if (NetSpeedEnabledToggle != null)
             {
                 SettingsRegistry.SetExtra(_options, "NetSpeedEnabled", NetSpeedEnabledToggle.IsChecked == true);
@@ -656,14 +603,8 @@ namespace alpha_island.Settings
             {
                 NetSpeedNotifyToggle.IsEnabled = NetSpeedEnabledToggle?.IsChecked == true;
             }
-            if (NetSpeedThresholdSlider != null)
-            {
-                NetSpeedThresholdSlider.IsEnabled = NetSpeedEnabledToggle?.IsChecked == true;
-            }
-            if (NetSpeedThresholdValue != null)
-            {
-                NetSpeedThresholdValue.IsEnabled = NetSpeedEnabledToggle?.IsChecked == true;
-            }
+
+
 
             // 注册表声明的依赖级联：EnabledByKey 指向的开关关掉时，本项控件与数值文本一起置灰。
             // 加带依赖的新设置项不用再回来改这里。
@@ -694,6 +635,7 @@ namespace alpha_island.Settings
                     valueText.IsEnabled = enabled;
                 }
             }
+            UpdateGreetingMediaEnabledStates();
         }
 
         private void Nav_Checked(object sender, RoutedEventArgs e)
@@ -707,11 +649,10 @@ namespace alpha_island.Settings
             // 现在只维护这张表：新增页在这里加一行就够了，护栏不可能再漏。
             var pages = new (string Tag, FrameworkElement? Page)[]
             {
+                (SettingsPageIds.General, Page_General),
+                (SettingsPageIds.Assistant, Page_Assistant),
                 (SettingsPageIds.Appearance, Page_Appearance),
-                (SettingsPageIds.Island, Page_Island),
                 (SettingsPageIds.Media, Page_Media),
-                (SettingsPageIds.Audio, Page_Audio),
-                (SettingsPageIds.Lyrics, Page_Lyrics),
                 (SettingsPageIds.Focus, Page_Focus),
                 (SettingsPageIds.Behavior, Page_Behavior),
                 (SettingsPageIds.Notifications, Page_Notifications),
@@ -882,6 +823,7 @@ namespace alpha_island.Settings
             Topmost = false;
             Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            alpha_island.Interop.WindowWorkArea.Fit(this, minimumWidth: 780, minimumHeight: 540);
             alpha_island.Interop.NativeMethods.SetWindowPos(new System.Windows.Interop.WindowInteropHelper(this).Handle,
                 IntPtr.Zero, 0, 0, 0, 0, 0x0013); // HWND_TOP, NOMOVE | NOSIZE | NOACTIVATE
             if (requestFocus) FocusWindow();
@@ -929,7 +871,11 @@ namespace alpha_island.Settings
                     {
                         for (int i = 1; i < content.Children.Count; i++)
                         {
-                            if (content.Children[i] is TextBlock label) label.Visibility = textVis;
+                            if (content.Children[i] is TextBlock label)
+                            {
+                                label.Visibility = textVis;
+                                item.ToolTip = expanded ? null : label.Text;
+                            }
                         }
                     }
 
@@ -944,8 +890,6 @@ namespace alpha_island.Settings
                 }
             }
 
-            if (SearchBorder != null) SearchBorder.Visibility = textVis;
-            if (NavFooter != null) NavFooter.Visibility = textVis;
 
             if (NavScroll != null)
             {
@@ -1042,19 +986,15 @@ namespace alpha_island.Settings
         /// </summary>
         private void SaveOptions()
         {
-            if (!_persistSettings) return;
-            try
-            {
-                _options.Normalized().Save(allowRecovery: _settingsEdited);
-            }
-            catch (Exception ex)
-            {
-                IslandLog.Warn("Settings", "设置保存失败: " + ex.Message);
-            }
+            if (!_savePending && !_settingsEdited) return;
+            bool saved = !_persistSettings || _options.Normalized().TrySave(allowRecovery: _settingsEdited);
+            if (saved) _savePending = false;
+            ReportSettingsSaved(saved);
         }
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
+            CommitClipboardHistoryLimit();
             _saveDebounceTimer.Stop();
             SaveOptions();
             if (ForceClose) return;
@@ -1097,7 +1037,9 @@ namespace alpha_island.Settings
         {
             foreach (var descriptor in SettingsRegistry.All)
             {
-                if (descriptor.IsSecret || descriptor.Key == "StartupEnabled" || string.IsNullOrEmpty(descriptor.ControlName))
+                if (descriptor.IsSecret || descriptor.Key == "StartupEnabled"
+                    || (descriptor.Key == "ClipboardHistoryLimit" && _clipboardHistoryLimitEditing)
+                    || string.IsNullOrEmpty(descriptor.ControlName))
                 {
                     continue;
                 }
@@ -1107,6 +1049,11 @@ namespace alpha_island.Settings
                     continue;
                 }
 
+                if (control is System.Windows.Controls.TextBox numeric && descriptor.Kind is SettingKind.Int or SettingKind.Double)
+                {
+                    if (TryReadSettingNumber(descriptor, numeric.Text, out double value)) SettingsRegistry.Write(_options, descriptor.Key, value);
+                    continue;
+                }
                 SettingsRegistry.Write(_options, descriptor.Key, ReadControlValue(control));
             }
         }
@@ -1149,7 +1096,9 @@ namespace alpha_island.Settings
                     box.Text = SettingDescriptor.ToText(value) ?? string.Empty;
                     break;
                 case System.Windows.Controls.ComboBox choice:
-                    choice.SelectedItem = SettingDescriptor.ToText(value);
+                    if (choice.IsEditable) { choice.Text = SettingDescriptor.ToText(value) ?? string.Empty; break; }
+                    if (choice.SelectedValuePath.Length > 0) choice.SelectedValue = SettingDescriptor.ToText(value);
+                    else choice.SelectedItem = SettingDescriptor.ToText(value);
                     if (choice.SelectedIndex < 0 && choice.Items.Count > 0) choice.SelectedIndex = 0;
                     break;
             }
@@ -1161,12 +1110,12 @@ namespace alpha_island.Settings
             ToggleButton toggle => toggle.IsChecked == true,
             PasswordBox password => password.Password,
             System.Windows.Controls.TextBox box => box.Text,
-            System.Windows.Controls.ComboBox choice => choice.SelectedItem as string,
+            System.Windows.Controls.ComboBox choice => choice.IsEditable ? choice.Text : (choice.SelectedValuePath.Length > 0 ? choice.SelectedValue : choice.SelectedItem) as string,
             _ => null
         };
 
         /// <summary>
-        /// API Key 的专用收尾（B 组①）：密码框里的明文只走 DPAPI 加密文件，
+        /// API Key 的专用收尾：密码框里的明文只走 DPAPI 加密文件，
         /// 顺手把 Extras 里的 <c>AiApiKey</c> 清空 —— 密钥永远不进 options.json。
         /// </summary>
         private void OpenConfigFolderButton_Click(object sender, RoutedEventArgs e)

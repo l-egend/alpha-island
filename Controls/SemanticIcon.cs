@@ -19,7 +19,8 @@ public enum IconShape { Auto, Bluetooth, Wifi, PlayPause, Volume, Battery, Agent
 
 /// <summary>
 /// Draws state changes inside a stable 32-unit icon. A single finite WPF clock drives all strokes;
-/// the owner, its text and its original logo never rotate or scale. Idle icons have no clock.
+/// the owner's layout and original transforms stay intact. Generic glyphs pop within their slot;
+/// semantic states keep their internal stroke transitions. Idle icons have no clock.
 /// </summary>
 public sealed partial class SemanticIcon : Control
 {
@@ -64,6 +65,8 @@ public sealed partial class SemanticIcon : Control
     private Pen? _pen;
     internal bool VolumeStateChanging => ResolvedShape == IconShape.Volume &&
         (_transitioning ? _toActive != (TargetActive ? 1 : 0) : _hasSettled && _settledActive != TargetActive);
+    internal bool UsesPopEntrance => Source == null && ResolvedShape == IconShape.Generic
+        && Text is not ("\uE72E" or "\uE785");
 
     public SemanticIcon()
     {
@@ -186,7 +189,8 @@ public sealed partial class SemanticIcon : Control
             bool roundMedia = ResolvedShape == IconShape.PlayPause;
             if (roundMedia) dc.PushClip(new RectangleGeometry(new Rect(3, 3, 26, 26), 6.5, 6.5));
             if (ResolvedShape != IconShape.Agent || !AgentAvatarMotion.HasOverflowVisual(this))
-                dc.DrawImage(Source, ResolvedShape == IconShape.Agent ? new Rect(0, 0, 32, 32) : new Rect(3, 3, 26, 26));
+                dc.DrawImage(Source, ResolvedShape == IconShape.Agent ? new Rect(0, 0, 32, 32)
+                    : ResolvedShape is IconShape.Notification or IconShape.Generic ? new Rect(1, 1, 30, 30) : new Rect(3, 3, 26, 26));
             if (roundMedia) dc.Pop();
             if (ResolvedShape == IconShape.PlayPause)
             {
@@ -306,18 +310,7 @@ public sealed partial class SemanticIcon : Control
 
     private void DrawNotification(DrawingContext dc, double p)
     {
-        dc.DrawRoundedRectangle(null, _pen, new Rect(3, 7, 26, 19), 3, 3);
-        // An envelope opens its own flap, reveals the letter, then closes into the resting icon.
-        double open = _transitioning ? Math.Sin(Math.PI * p) : 0;
-        double apex = Lerp(18, 1, open);
-        Stroke(dc, [new(4, 8), new(16, apex), new(28, 8)], 1);
-        if (open > .05)
-        {
-            dc.PushOpacity(open);
-            dc.DrawRoundedRectangle(Foreground, null, new Rect(9, 8 - open * 5, 14, 12), 1, 1);
-            dc.Pop();
-        }
-        Stroke(dc, [new(4, 25), new(12, 18)], 1); Stroke(dc, [new(28, 25), new(20, 18)], 1);
+        GlyphArtwork.DrawMessage(dc, _pen!, p);
     }
 
     private void DrawMessageFold(DrawingContext dc, double p)
@@ -374,18 +367,26 @@ public sealed partial class SemanticIcon : Control
     private void DrawGeneric(DrawingContext dc, double p)
     {
         if (Text is "\uE72E" or "\uE785") { DrawLock(dc, p); return; }
-        // Host and plugin pages share the same rounded paths. Only unknown third-party glyphs
-        // need the installed Windows font; semantic identity stays unchanged.
-        if (_transitioning) dc.PushClip(new RectangleGeometry(new Rect(0, 0, 32 * Segment(p, 0, .85), 32)));
-        bool drawn = GlyphArtwork.TryDraw(dc, Text, Foreground, _pen!);
-        if (_transitioning) dc.Pop();
-        if (drawn) return;
-        if (Text.Length == 0) return;
-        var text = new FormattedText(Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface(FontFamily, FontStyle, FontWeight, FontStretch), 27, Foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-        if (_transitioning) dc.PushClip(new RectangleGeometry(new Rect(0, 0, 32 * Segment(p, 0, .85), 32)));
-        dc.DrawText(text, new Point((32 - text.Width) / 2, (32 - text.Height) / 2));
-        if (_transitioning) dc.Pop();
+        if (_transitioning)
+        {
+            // Draw a complete glyph rising from the bottom at 45% size. A small overshoot
+            // settles at the original centre/scale without replacing caller transforms.
+            double t = p - 1;
+            double arrival = 1 + 2.2 * t * t * t + 1.2 * t * t;
+            double scale = .45 + .55 * arrival;
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, 32, 32)));
+            dc.PushOpacity(Math.Clamp(p * 5, 0, 1));
+            dc.PushTransform(new MatrixTransform(scale, 0, 0, scale,
+                16 * (1 - scale), 16 * (1 - scale) + 14 * (1 - arrival)));
+        }
+        // The shared vector and unknown third-party font glyph use the same entrance.
+        if (!GlyphArtwork.TryDraw(dc, Text, Foreground, _pen!) && Text.Length > 0)
+        {
+            var text = new FormattedText(Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                new Typeface(FontFamily, FontStyle, FontWeight, FontStretch), 27, Foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(text, new Point((32 - text.Width) / 2, (32 - text.Height) / 2));
+        }
+        if (_transitioning) { dc.Pop(); dc.Pop(); dc.Pop(); }
     }
 
     private void Stroke(DrawingContext dc, Point[] points, double portion)

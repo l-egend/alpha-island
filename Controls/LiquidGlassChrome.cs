@@ -26,6 +26,10 @@ internal sealed class LiquidGlassChrome : Adorner
     private bool _enabled = true;
     private double _materialOpacity = .08;
     internal Geometry? JoinMask { get; set; }
+    private Geometry? _cachedMask, _joinClip;
+    private long _cachedRevision;
+    private Rect _cachedRect;
+    private double _cachedRadius;
 
     public LiquidGlassChrome(Border body, LiquidIslandShape? shape = null) : base(body)
     {
@@ -87,7 +91,19 @@ internal sealed class LiquidGlassChrome : Adorner
         _rounded.Rect = new Rect(RenderSize);
         _rounded.RadiusX = _rounded.RadiusY = Math.Min(_body.CornerRadius.TopLeft, Math.Min(RenderSize.Width, RenderSize.Height) / 2);
         Geometry outline = _shape != null ? _shape.Geometry : _rounded;
-        Geometry clip = JoinMask == null ? outline : new CombinedGeometry(GeometryCombineMode.Exclude, outline, JoinMask);
+        Geometry clip = outline;
+        if (JoinMask != null)
+        {
+            if (_joinClip == null || !ReferenceEquals(_cachedMask, JoinMask) || _cachedRevision != (_shape?.Revision ?? 0)
+                || _cachedRect != _rounded.Rect || _cachedRadius != _rounded.RadiusX)
+            {
+                _joinClip = LiquidGeometrySnapshot.Combine(outline, JoinMask, GeometryCombineMode.Exclude);
+                _cachedMask = JoinMask; _cachedRevision = _shape?.Revision ?? 0;
+                _cachedRect = _rounded.Rect; _cachedRadius = _rounded.RadiusX;
+            }
+            clip = _joinClip;
+        }
+        else { _cachedMask = null; _joinClip = null; }
         context.PushClip(clip);
         context.DrawGeometry(null, _edgePen, outline);
         context.DrawGeometry(null, _keyPen, outline);

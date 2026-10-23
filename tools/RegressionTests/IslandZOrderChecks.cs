@@ -52,7 +52,8 @@ internal static partial class Program
                 ZOrderSetWindowPos(foreign,new IntPtr(-1),-30000+(++shift),0,1200,640,0x10);
                 var foreground=NativeMethods.GetForegroundWindow(); PumpAnimations(200);
                 Check(Above(hwnd,foreign) && NativeMethods.IsWindowVisible(hwnd), "窗口尺寸或层级改变时保持可见："+state);
-                Check(NativeMethods.GetForegroundWindow()==foreground, "重排期间保留原前台窗口："+state);
+                var after=NativeMethods.GetForegroundWindow();
+                Check(after==foreground, "重排期间保留原前台窗口："+state);
             }
             window.Hide(); ZOrderSetWindowPos(foreign,new IntPtr(-1),-30000+(++shift),0,1200,640,0x10); PumpAnimations(200);
             Check(!NativeMethods.IsWindowVisible(hwnd), "主动隐藏的岛不会被层级守护重新弹出");

@@ -12,7 +12,7 @@ internal static partial class Program
     {
         var definitions = new[] { ("ApiChatPlugin", "net8.0-windows"), ("LocalAgentsPlugin", "net8.0-windows"),
             ("ClockPlugin", "net8.0-windows"), ("VivoOfficePlugin", "net8.0-windows"),
-            ("TrafficMonitorPlugin", "net8.0-windows"), ("OppoPodsPlugin", "net8.0-windows10.0.19041.0") };
+            ("DeviceBatteryPlugin", "net8.0-windows10.0.19041.0"), ("TrafficMonitorPlugin", "net8.0-windows"), ("OppoPodsPlugin", "net8.0-windows10.0.19041.0") };
         foreach (var (folder, framework) in definitions)
         {
             string target = Path.Combine(root, "bundled", folder); Directory.CreateDirectory(target);
@@ -26,7 +26,7 @@ internal static partial class Program
             {
             var registry = AwaitPlugin(session.StartAsync(new(target, manifest.Assembly, manifest.EntryType, manifest.Id,
                 Path.Combine(root, "bundled-data", folder), new Dictionary<string, JsonElement>()), CancellationToken.None));
-            Check((registry.Pages.Length > 0 || registry.Networks.Length > 0) && session.IsAlive, manifest.Id + " 的真实插件可在独立进程初始化");
+            Check((registry.Pages.Length > 0 || registry.Networks.Length > 0 || registry.Actions.Length > 0) && session.IsAlive, manifest.Id + " 的真实插件可在独立进程初始化");
             foreach (var page in registry.Pages)
             {
                 var frame = AwaitPlugin(session.Request<RemoteFrame>("frame", new RemoteViewRequest(page.Key, 414, page.Height - 20)));

@@ -35,8 +35,8 @@ public partial class MainWindow
     private Rect _liquidHostBounds = Rect.Empty;
     internal int GlassLightSamples { get; private set; }
     internal bool LiquidFrameLoopActive => _liquidFrameSubscribed;
-    private bool LiquidMotionAllowed => _options.GelAnimation && !MotionPolicy.InstantMorph && !MotionPolicy.PowerSave;
-    private bool NativeGlassAllowed => _options.LiquidGlassBackdrop && !MotionPolicy.SoftwareRendering && !MotionPolicy.PowerSave && !SystemParameters.HighContrast;
+    private bool LiquidMotionAllowed => !MotionPolicy.InstantMorph && !MotionPolicy.PowerSave;
+    private bool NativeGlassAllowed => LiquidMotionAllowed && !MotionPolicy.SoftwareRendering && !SystemParameters.HighContrast;
 
     private void InitializeLiquidGlass()
     {
@@ -52,6 +52,7 @@ public partial class MainWindow
         LocationChanged += (_, _) => { _liquidHostBounds = Rect.Empty; QueueLiquidRefresh(); };
         MotionPolicy.Changed += OnLiquidMotionPolicyChanged;
         SatelliteOrbAnimator.MotionStarted += BeginLiquidOrbMotion;
+        SatelliteOrbAnimator.MotionFinished += EndLiquidOrbMotion;
     }
 
     private void RegisterLiquidChrome(Border? border)
@@ -90,7 +91,7 @@ public partial class MainWindow
     private void ApplyLiquidGlassAppearance()
     {
         if (_glassDisposed || _options == null) return;
-        bool enabled = _options.LiquidGlassBackdrop && !SystemParameters.HighContrast;
+        bool enabled = LiquidMotionAllowed && !SystemParameters.HighContrast;
         IslandBody.BorderBrush = enabled ? Brushes.Transparent : _originalGlassEdge;
         Color accent = (TryFindResource("AccentCyan") as SolidColorBrush)?.Color ?? Colors.Cyan;
         foreach (var chrome in _glassChrome.Values)
@@ -129,6 +130,18 @@ public partial class MainWindow
         _liquidOrbMotions[border] = (Environment.TickCount64, duration.TotalMilliseconds, SatelliteOrbAnimator.Kind(border));
         _liquidHostBounds = Rect.Empty;
         UpdateLiquidFrameSubscription();
+    }
+
+    private void EndLiquidOrbMotion(Border border)
+    {
+        if (_glassDisposed || !_glassBorders.Contains(border)) return;
+        // A cancelled or reused animation may not receive another composition
+        // frame. Restore its material synchronously before it appears separately.
+        _liquidOrbMotions.Remove(border);
+        RestoreLiquidEdge(border); LiquidMaterialOverlap.Apply(border, null);
+        if (_liquidContours.TryGetValue(border, out var contour)) contour.SetContact();
+        if (_glassChrome.TryGetValue(border, out var chrome)) { chrome.JoinMask = null; chrome.InvalidateVisual(); }
+        UpdateLiquidFrameSubscription(); QueueLiquidRefresh();
     }
 
     private bool HasLiquidMotion => _animator?.IsRunning == true || _liquidOrbMotions.Count > 0;
@@ -174,6 +187,7 @@ public partial class MainWindow
         Geometry shape = _liquidContours[border].Geometry.Clone();
         shape.Transform = new MatrixTransform(rect.Width / Math.Max(1, border.ActualWidth), 0, 0,
             rect.Height / Math.Max(1, border.ActualHeight), rect.X, rect.Y);
+        shape.Freeze();
         return shape;
     }
 
@@ -261,7 +275,7 @@ public partial class MainWindow
             var surface = SceneSurface(pair.Key, pair.Value); surfaces.Children.Add(surface);
             var round = new RectangleGeometry(new Rect(0, 0, pair.Key.ActualWidth, pair.Key.ActualHeight), pair.Key.CornerRadius.TopLeft, pair.Key.CornerRadius.TopLeft);
             round.Transform = surface.Transform;
-            painted.Children.Add(new CombinedGeometry(GeometryCombineMode.Intersect, surface, round));
+            painted.Children.Add(LiquidGeometrySnapshot.Combine(surface, round, GeometryCombineMode.Intersect));
         }
         if (_liquidBridgeLayer != null)
         {
@@ -270,7 +284,7 @@ public partial class MainWindow
             // Fill the bulging membrane beyond the old Border, without painting its translucent material twice.
             foreach (var pair in rects.Where(p => _liquidContours[p.Key].HasContact)) all.Children.Add(SceneSurface(pair.Key, pair.Value));
             _liquidBridgeLayer.Bridges = result;
-            _liquidBridgeLayer.Surface = all.Children.Count == 0 ? null : new CombinedGeometry(GeometryCombineMode.Exclude, all, painted);
+            _liquidBridgeLayer.Surface = all.Children.Count == 0 ? null : LiquidGeometrySnapshot.Combine(all, painted, GeometryCombineMode.Exclude);
             _liquidBridgeLayer.Bodies = surfaces;
             _liquidBridgeLayer.Fill = IslandBody.Background;
             _liquidBridgeLayer.InvalidateVisual();
@@ -353,7 +367,8 @@ public partial class MainWindow
     private void SyncGlassLightPacing()
     {
         if (_glassLightTimer == null) return;
-        bool active = !_glassDisposed && _runtimeEnabled && IsVisible && _backdrop is { IsAvailable: true } && NativeGlassAllowed && !MotionPolicy.InstantMorph
+        bool active = !_glassDisposed && _runtimeEnabled && IsVisible && !_sessionLocked
+            && (SpectrumBackdropNeeded || _backdrop is { IsAvailable: true } && NativeGlassAllowed && !MotionPolicy.InstantMorph)
             && WindowState != System.Windows.WindowState.Minimized
             && _state != IslandState.Bar && !GameDoNotDisturbActive && !System.Windows.Forms.SystemInformation.TerminalServerSession;
         if (active) _glassLightTimer.Start(); else { _glassLightTimer.Stop(); _glassGeneration++; }
@@ -372,6 +387,7 @@ public partial class MainWindow
             var result = await Task.Run(() => DesktopLightSampler.Capture(island, area, exclusions));
             if (_glassDisposed || generation != _glassGeneration || result == null) return;
             GlassLightSamples++; _glassLight = GlassLight.Blend(_glassLight, result.Value.Light, .68);
+            if (SpectrumBackdropNeeded) ApplySpectrumBackdrop(result.Value.Light.Brightness);
             foreach (var chrome in _glassChrome.Values) chrome.SetLight(_glassLight, true);
             _glassLightTimer!.Interval = TimeSpan.FromMilliseconds(result.Value.Milliseconds > 25 ? 3000 : result.Value.Milliseconds > 10 ? 1500 : 700);
         }
@@ -384,6 +400,7 @@ public partial class MainWindow
         _glassDisposed = true; _glassGeneration++; _glassLightTimer?.Dispose();
         MotionPolicy.Changed -= OnLiquidMotionPolicyChanged;
         SatelliteOrbAnimator.MotionStarted -= BeginLiquidOrbMotion;
+        SatelliteOrbAnimator.MotionFinished -= EndLiquidOrbMotion;
         CompositionTarget.Rendering -= OnBackdropTick; _liquidFrameSubscribed = false;
         foreach (var pair in _glassChrome) AdornerLayer.GetAdornerLayer(pair.Key)?.Remove(pair.Value);
         foreach (var border in _liquidJoinEdges.Keys.ToArray()) RestoreLiquidEdge(border);

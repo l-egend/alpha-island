@@ -66,7 +66,7 @@ namespace alpha_island
             BeginPowerIslandTransition(info, preview);
             if (_greetingShowing || GreetingActive)
             {
-                _greetingTimer?.Stop();
+                CompleteGreetingLifetime();
                 _layers.Hide(IslandLayerHost.GreetingKey);
                 GreetingLayer.Opacity = 0;
                 GreetingLayer.Visibility = Visibility.Collapsed;
@@ -136,6 +136,8 @@ namespace alpha_island
                 }
             }
 
+            if (!preview && (info.EventType is BatteryPowerEvent.LowBattery or BatteryPowerEvent.CriticalBattery) && BatteryContextDescription() is { Length: > 0 } context)
+                statusDesc += " · " + context;
             BatteryStatusText.Text = preview ? statusDesc + " · 测试" : statusDesc;
             BatteryPercentText.Text = info.Percent >= 0 ? $"{info.Percent}%" : "未知";
             ActionIconMotion.Stop(BatteryIcon);

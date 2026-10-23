@@ -6,7 +6,7 @@ using alpha_island.Services;
 namespace alpha_island
 {
     /// <summary>
-    /// 「减弱动效」「节能模式」两个开关在窗口里的落地。
+    /// 「削减动效」同时应用简化动画与后台节能策略。
     ///
     /// 策略本身（开关状态、渲染层级、判定函数）在 <see cref="MotionPolicy"/> 里，
     /// 这里只负责三件事：把设置灌进去、按当前形态重算节能节奏、给逐帧循环一个显式守卫。
@@ -20,16 +20,25 @@ namespace alpha_island
         private const string MediaEvidenceTickerKey = "media-evidence";
         private const string IdleHoverTickerKey = "idle-hover";
 
+        private void ApplyVisualOptions()
+        {
+            // Set the new policy before touching native glass; otherwise disabling reduction
+            // could leave a previously uncreated backdrop unavailable until the next edit.
+            ApplyMotionPolicy();
+            EnsureBackdrop();
+            SyncBackdrop();
+            ApplyGlassAppearance();
+        }
+
         /// <summary>
-        /// 把设置里的两个开关灌进 <see cref="MotionPolicy"/>，并按当前形态重算节能节奏。
+        /// 把统一动效设置灌进 <see cref="MotionPolicy"/>，并按当前形态重算节能节奏。
         /// 由 <c>ApplyOptions()</c> 调用：启动一次，之后每次设置变更一次。
         /// </summary>
         private void ApplyMotionPolicy()
         {
             MotionPolicy.ProbeRenderTier();
-            MotionPolicy.Apply(
-                SettingsRegistry.GetBool(_options, "ReduceMotionEnabled", false),
-                SettingsRegistry.GetBool(_options, "PowerSaveEnabled", false));
+            bool reduced = SettingsRegistry.GetBool(_options, "ReduceEffectsEnabled", false);
+            MotionPolicy.Apply(reduced, reduced);
             if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave)
             {
                 ResetLyricPresentation();

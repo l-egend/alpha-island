@@ -13,7 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using alpha_island.Core;
 
-// B 组④：agent 工具权限审批的本地桥接。
+// agent 工具权限审批的本地桥接。
 //
 // 为什么不用 HttpListener：前缀 `http://127.0.0.1:port/` 需要 URL ACL 保留（普通用户跑要 netsh 或提权），
 // 而本项目"除全系统内存整理外全部免提权"。所以这里自己用 TcpListener 绑回环 + 手写最小 HTTP/1.1 服务端：
@@ -497,11 +497,20 @@ namespace alpha_island.Services
                     if (connectOnly && state != "idle") return (400, Json(new { error = "连接登记不能同时修改任务状态" }));
                     string? family = ReadString(root, "artworkFamily"), parent = ReadString(root, "parentSession"), alias = ReadString(root, "sessionAlias");
                     string error = "";
-                    bool ApplyStatus() => connectOnly
-                        ? _externalAgents.Connect(source, session, ttl, DateTime.UtcNow, out error, processId, family, parent, alias)
-                        : _externalAgents.Update(source, session, state, ReadString(root, "detail"), ttl, DateTime.UtcNow,
+                    bool ApplyStatus()
+                    {
+                        DateTime received = DateTime.UtcNow, reported = received;
+                        if (source == "codex" && root.TryGetProperty("reportedAtUnixMs", out var sent) && sent.TryGetInt64(out long ms))
+                            try { reported = DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime; } catch (ArgumentOutOfRangeException) { }
+                        string thread = ReadString(root, "nativeThreadId"), turn = ReadString(root, "nativeTurnId");
+                        if (source == "codex" && !connectOnly && state != "idle"
+                            && _codexTurns.IgnoreCompletedReport(_externalAgents, thread, turn, reported, received)) return true;
+                        return connectOnly
+                        ? _externalAgents.Connect(source, session, ttl, received, out error, processId, family, parent, alias)
+                        : _externalAgents.Update(source, session, state, ReadString(root, "detail"), ttl, received,
                             out error, processId, family, parent, alias, root.TryGetProperty("beginsActivity", out var begins) && begins.ValueKind == JsonValueKind.True,
-                            ReadString(root, "nativeThreadId"), ReadString(root, "nativeTurnId"));
+                            thread, turn, activityStartedUtc: reported);
+                    }
                     // Recover an earlier missed start before accepting this turn's tool update.
                     if (source == "codex" && !connectOnly) _codexStatusJournal.Drain(_externalAgents, DateTime.UtcNow);
                     bool accepted = _codexStatusJournal.Deliver(root, DateTime.UtcNow, ApplyStatus);

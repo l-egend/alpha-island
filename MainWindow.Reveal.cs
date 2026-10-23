@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Content layer reveal driven by the main spring progress.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -74,7 +73,7 @@ namespace alpha_island
             ReserveIslandHost(to);
             if (via is { } waypoint) ReserveIslandHost(waypoint);
             _widthOnlyMorph = false;
-            _animator.MorphTo(to, _options.GelAnimation, duration, ease, () =>
+            _animator.MorphTo(to, true, duration, ease, () =>
             {
                 // 形变结束：通知图层的淡化窗口关闭，透明度归一化回 1（S3）。
                 // 放在这里是因为所有形变都走这个出口 —— 包括蓝牙塌回收细条（见 CollapseToBar）。
@@ -170,7 +169,7 @@ namespace alpha_island
 
                 // 交接那一帧卡片就是满不透明（半透明会把底下的胶囊白字压成灰），
                 // 但只带 ~2px 模糊、再用 ~80ms 化到锐利：模糊再大一点、再久一点，卡片的小字就会被
-                // 糊成灰雾，整帧平均亮度掉 13%（实测 = 用户说的"闪一下"）。按时间收敛，不跟几何走。
+                // 模糊过强会降低文字亮度；按时间收敛，避免换态闪烁。
                 cardSharp = _cardHandoff
                     ? Math.Clamp(0.85 + (Environment.TickCount64 - _cardHandoffMs) / 80.0 * 0.15, 0.85, 1.0)
                     : 0.0;
@@ -198,7 +197,7 @@ namespace alpha_island
             }
             // 卡片子树常驻 Visible（XAML 里就不再是 Collapsed），显露完全交给 Opacity：
             // 一旦用 Collapsed 隐藏，WPF 会丢弃整棵子树的测量缓存，下次展开又要重新冷排版一次
-            // （实测 15~25ms，压在换态第一帧上就是用户说的"顿一下"）。点击穿透由岛体裁切 +
+            // （约 15~25ms 的冷排版会拖慢换态首帧）。点击穿透由岛体裁切 +
             // CardCarouselHost 自身的 IsHitTestVisible 兜住（见 SetState / CollapseToBar）。
 
             // 换态期间给卡片子树盖一层动态模糊（半径随进度收敛到 0），把内容重排 / 首帧藏在模糊里。
@@ -238,10 +237,10 @@ namespace alpha_island
                 SiriOrbTranslate.X = 0;
             }
 
-            // 细条上的常驻指示（A 组①网速）也要跟着形变进度走，否则收回途中会提前亮在卡片中间
+            // 细条上的常驻指示（网速）也要跟着形变进度走，否则收回途中会提前亮在卡片中间
             SyncBarIndicators();
 
-            // C 组⑤ ①：形变途中的叠层不变量（ApplyReveal 每帧都跑，这里是"零帧"级的取证点）。
+            // 形变途中的叠层不变量（ApplyReveal 每帧都跑，这里是"零帧"级的取证点）。
             CheckPillLayerOverlapInvariant("ApplyReveal");
         }
 

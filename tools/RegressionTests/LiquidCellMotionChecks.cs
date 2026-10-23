@@ -16,11 +16,11 @@ internal static partial class Program
     private static void LiquidCellMotionChecks(alpha_island.MainWindow window, Grid root)
     {
         bool reduce = MotionPolicy.ReduceMotion, power = MotionPolicy.PowerSave; int tier = MotionPolicy.RenderTier;
-        var options = AgentField<IslandOptions>(window, "_options"); bool gel = options.GelAnimation;
+        var options = AgentField<IslandOptions>(window, "_options");
         var motions = AgentField<Dictionary<Border, (long Start, double Duration, LiquidMotionKind Kind)>>(window, "_liquidOrbMotions");
         try
         {
-            MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false); options.GelAnimation = true;
+            MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
             LiquidCellContourChecks();
             PrivateCall(window, "SetState", IslandState.Pill, false);
             AgentField<IslandAnimator>(window, "_animator").SetImmediate(new(344, 48, 12, new CornerRadius(24)));
@@ -111,7 +111,7 @@ internal static partial class Program
             Check(!translate.HasAnimatedProperties && !main.HasContact && motions.Count == 0, "省电模式同样跳过薄膜与逐帧形变");
             SatelliteOrbAnimator.Hide(orb, true);
         }
-        finally { options.GelAnimation = gel; MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduce, power); }
+        finally { MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduce, power); }
     }
 
     private static void LiquidCellContourChecks()

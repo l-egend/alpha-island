@@ -153,6 +153,9 @@ internal static partial class Program
             Check(!controller.Snapshot.Connected, "刷新只枚举，默认不擅自连接");
             controller.Connect(device); await EarbudUntil(() => controller.Snapshot.Connected);
             var first = sessions[0];
+            controller.Connect(device); controller.Connect(device); controller.Refresh();
+            await EarbudUntil(() => { lock (sessions) return sessions.Any(session => session.Refreshes > 0); });
+            Check(sessions.Count == 1 && !first.Disposed, "重复点击同一已连接耳机只刷新，不销毁并重建控制通道");
             controller.Execute(new(EarbudCommandKind.Anc, "Deep")); await EarbudUntil(() => first.Commands.Count == 1);
             Check(controller.Snapshot.Anc == "Deep", "控制器串行执行命令并发布回读状态");
             controller.Connect(new(2, "另一副耳机", true)); await EarbudUntil(() => sessions.Count == 2 && controller.Snapshot.Connected);
@@ -239,41 +242,45 @@ internal static partial class Program
         var options = new IslandOptions(); var viewport = new Grid();
         using var host = new PluginHost(Dispatcher.CurrentDispatcher, options, new[] { pluginRoot },
             p => viewport.Children.Add(p.View), p => viewport.Children.Remove(p.View), _ => { });
+        try
+        {
         host.Discover();
         Check(host.Entries.Single().Instance == null && viewport.Children.Count == 0, "真实插件清单默认禁用，无后台服务");
         options.Extras[PluginHost.EnabledKey("oppo.pods")] = JsonSerializer.SerializeToElement(true); host.Sync(options);
         var entry = host.Entries.Single();
-        Check(entry.Running && entry.Pages.Count == 1 && entry.Context!.Settings.Count == 4 && entry.Started.Count == 1,
-            "真实独立 DLL 由插件宿主加载，注册卡片、设置及服务");
+        var startup=System.Diagnostics.Stopwatch.StartNew();
+        while(!entry.Running && entry.Error.Length==0 && startup.ElapsedMilliseconds<8000)PumpAnimations(20);
+        Check(entry.Running && entry.Pages.Count == 1 && entry.Context!.Settings.Count == 4
+            && entry.Instance is alpha_island.Plugins.Isolation.IsolatedPlugin { IsAlive: true } && entry.Started.Count == 0,
+            "耳机插件在独立进程初始化，向宿主注册卡片与四项设置，后台服务留在插件进程");
         var pluginView = (FrameworkElement)entry.Pages[0].View; pluginView.Visibility = Visibility.Visible;
         viewport.Measure(new Size(402, 300)); viewport.Arrange(new Rect(0, 0, 402, 300)); viewport.UpdateLayout();
-        var selector = Descendants<ComboBox>(pluginView).First();
-        Check(entry.Pages[0].KeepsWheel(selector, 120), "插件下拉框保留滚轮，不触发宿主翻页");
-        var scroll = Descendants<ScrollViewer>(pluginView).First();
-        // The loaded empty card may fit; use a long synthetic plugin page for the actual scroll boundary contract.
-        var scrollPage = new PluginIslandPage("probe", new("scroll", "scroll", () => new ScrollViewer { Content = new Border { Height = 900 }, Height = 200 }), _ => { });
-        scrollPage.View.Visibility = Visibility.Visible;
-        scrollPage.View.Measure(new Size(402, 300)); scrollPage.View.Arrange(new Rect(0, 0, 402, 300)); scrollPage.View.UpdateLayout();
-        var pageScroll = Descendants<ScrollViewer>(scrollPage.View).First();
-        Check(scrollPage.KeepsWheel(pageScroll, -120) && !scrollPage.KeepsWheel(pageScroll, 120), "插件长内容先滚动，顶部边界才允许向上翻页");
         options.Extras[PluginHost.EnabledKey("oppo.pods")] = JsonSerializer.SerializeToElement(false); host.Sync(options);
         Check(!entry.Running && entry.Instance == null && viewport.Children.Count == 0 && entry.Started.Count == 0,
             "插件开关撤下卡片，释放实例和后台服务");
+        AwaitPlugin(entry.Teardown.ContinueWith(_=>true));
         host.Sync(options); File.Delete(Path.Combine(folder, "plugin.json")); host.Discover();
         Check(host.Entries.Count == 0, "移除插件清单并刷新即可移除插件入口");
+        }
+        finally
+        {
+            var entries=host.Entries.ToArray();host.Dispose();
+            foreach(var entry in entries)AwaitPlugin(entry.Teardown.ContinueWith(_=>true));
+        }
     }
     private sealed class EarbudFakeSession : IEarbudSession
     {
         internal static EarbudSnapshot Sample => new() { Connected = true, CanAnc = true, Anc = "Off", AncChoices = [new("Off", "关闭"), new("Deep", "深度")] };
         internal readonly ConcurrentQueue<EarbudCommand> Commands = new();
         internal int ConnectCount;
+        internal int Refreshes;
         internal volatile bool Disposed;
         internal bool StallConnect;
         private EarbudSnapshot _state = Sample;
         public async Task ConnectAsync(CancellationToken token)
         { Interlocked.Increment(ref ConnectCount); if (StallConnect) await Task.Delay(Timeout.Infinite, token); }
         public EarbudSnapshot ReadSnapshot() => Disposed ? EarbudSnapshot.Offline("已断开") : Volatile.Read(ref _state);
-        public void Pump(bool refresh) { }
+        public void Pump(bool refresh) { if (refresh) Interlocked.Increment(ref Refreshes); }
         public void Execute(EarbudCommand command) { Commands.Enqueue(command); Volatile.Write(ref _state, _state with { Anc = command.Value }); }
         public void Dispose() => Disposed = true;
     }

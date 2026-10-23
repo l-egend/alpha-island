@@ -1,4 +1,5 @@
 using System.IO;
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -19,6 +20,7 @@ internal sealed class PluginWorkerServer : IDisposable
     private readonly SemaphoreSlim _write = new(1, 1);
     private readonly Dictionary<string, PluginWorkerSurface> _surfaces = new(StringComparer.Ordinal);
     private readonly List<PluginService> _started = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _toolCalls = new();
     private readonly Window _owner;
     private IIslandPlugin? _plugin;
     private PluginWorkerContext? _context;
@@ -27,6 +29,7 @@ internal sealed class PluginWorkerServer : IDisposable
     private int _disposed;
     private int _eventWrites;
     private string? _active;
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _textCalls = new();
     [DllImport("kernel32.dll")] private static extern uint SetErrorMode(uint mode);
     internal PluginWorkerServer(System.Windows.Application application, string pipe, string nonce)
     {
@@ -75,7 +78,12 @@ internal sealed class PluginWorkerServer : IDisposable
     {
         try
         {
-            object result = packet.Kind == "heartbeat" ? Interlocked.Read(ref _lastPulse)
+            object result;
+            if (packet.Kind == "tool-run")
+                result = await (await _application.Dispatcher.InvokeAsync(() => RunToolAsync(PluginWire.Read<ToolRequest>(packet.Data))));
+            else if (packet.Kind == "text-submit")
+                result = await (await _application.Dispatcher.InvokeAsync(() => SubmitTextAsync(PluginWire.Read<RemoteTextInput>(packet.Data))));
+            else result = packet.Kind == "heartbeat" ? Interlocked.Read(ref _lastPulse)
                 : await _application.Dispatcher.InvokeAsync(() => Dispatch(packet));
             await PluginWire.Write(_pipe, new(packet.Id, "result", PluginWire.Element(result)), _write, _lifetime.Token).ConfigureAwait(false);
         }
@@ -96,8 +104,11 @@ internal sealed class PluginWorkerServer : IDisposable
         "frame" => Frame(PluginWire.Read<RemoteViewRequest>(packet.Data)),
         "input" => Input(PluginWire.Read<RemoteCommand>(packet.Data)),
         "prefill" => Prefill(PluginWire.Read<RemoteCommand>(packet.Data)),
+        "text-cancel" => CancelText(PluginWire.Read<RemoteTextInput>(packet.Data)),
         "action" => Action(PluginWire.Read<string>(packet.Data)),
         "configuration" => Configure(PluginWire.Read<Dictionary<string, JsonElement>>(packet.Data)),
+        "host-result" => Context.CompleteHostCall(PluginWire.Read<RemoteHostReply>(packet.Data)),
+        "tool-cancel" => CancelTool(PluginWire.Read<string>(packet.Data)),
         _ => throw new InvalidDataException("未知插件操作")
     };
     private RemoteRegistry Initialize(PluginStart start)
@@ -113,16 +124,24 @@ internal sealed class PluginWorkerServer : IDisposable
             ?? throw new InvalidDataException("找不到插件入口");
         _plugin = Activator.CreateInstance(type) as IIslandPlugin ?? throw new InvalidDataException("插件未实现 IIslandPlugin");
         _plugin.Initialize(_context); _context.Sealed = true;
-        foreach (var page in _context.Pages)
-        {
-            var view = page.CreateView() ?? throw new InvalidDataException("插件页面为空");
-            if (view.Parent != null) throw new InvalidDataException("插件页面已经属于另一个容器");
-            _surfaces.Add(page.Key, new(view));
-        }
         foreach (var service in _context.Services) { _started.Add(service); service.Start(_lifetime.Token); }
         return new(_context.Pages.Select(page => new RemotePage(page.Key, page.Title, page.Glyph, page.Height, page.Order)).ToArray(),
             _context.Settings.ToArray(), Actions(), _context.SettingsView != null,
-            _context.Networks.Select(source => new RemoteNetwork(source.Key, source.Title, source.Priority)).ToArray());
+            _context.Networks.Select(source => new RemoteNetwork(source.Key, source.Title, source.Priority)).ToArray(),
+            _context.ToolHandlers.Select(t => t.Definition).ToArray());
+    }
+    private bool CancelTool(string id) { if (_toolCalls.TryGetValue(id, out var cancel)) cancel.Cancel(); return true; }
+    private async Task<ToolResult> RunToolAsync(ToolRequest request)
+    {
+        var tool = Context.ToolHandlers.FirstOrDefault(t => t.Definition.Name == request.Name);
+        if (tool == null) return ToolResult.Fail("插件工具不存在");
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        cancel.CancelAfter(TimeSpan.FromSeconds(12));
+        if (!_toolCalls.TryAdd(request.CallId, cancel)) return ToolResult.Fail("调用标识正在使用");
+        try { return await tool.ExecuteAsync(request, cancel.Token); }
+        catch (OperationCanceledException) { return ToolResult.Fail("插件工具已取消"); }
+        catch (Exception) { return ToolResult.Fail("插件工具执行失败"); }
+        finally { _toolCalls.TryRemove(request.CallId, out _); }
     }
     private RemoteAction[] Actions() => Context.Actions.Select(action => new RemoteAction(action.Key, action.Title, action.Available?.Invoke() ?? true)).ToArray();
     private PluginWorkerContext Context => _context ?? throw new InvalidOperationException("插件尚未初始化");
@@ -136,14 +155,12 @@ internal sealed class PluginWorkerServer : IDisposable
     }
     private RemoteFrame Frame(RemoteViewRequest request)
     {
-        if (request.Key == "$settings" && !_surfaces.ContainsKey(request.Key))
-            _surfaces.Add(request.Key, new(new C.ScrollViewer { Content = Context.SettingsView?.Invoke() ?? throw new InvalidOperationException("插件没有设置界面"), VerticalScrollBarVisibility = C.ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = C.ScrollBarVisibility.Disabled }));
-        if (!_surfaces.TryGetValue(request.Key, out var surface)) throw new InvalidDataException("插件页面不存在");
         if (!request.Active)
         {
             if (_active == request.Key) { Deactivate(); _owner.Content = null; }
             return new(request.Width, request.Height, "", [], 0);
         }
+        var surface = Surface(request.Key);
         if (_active != request.Key)
         {
             Deactivate(); _owner.Content = null; _owner.Content = surface.View; _active = request.Key;
@@ -173,11 +190,47 @@ internal sealed class PluginWorkerServer : IDisposable
         { _owner.Left = command.X; _owner.Top = command.Y; return true; }
         return surface.Input(command);
     }
-    private bool Prefill(RemoteCommand command) => _surfaces.TryGetValue(command.View, out var surface) && surface.Prefill(command.Text ?? "");
+    private PluginWorkerSurface Surface(string key)
+    {
+        if (_surfaces.TryGetValue(key, out var existing)) return existing;
+        FrameworkElement view = key == "$settings"
+            ? new C.ScrollViewer { Content = Context.SettingsView?.Invoke() ?? throw new InvalidOperationException("插件没有设置界面"), VerticalScrollBarVisibility = C.ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = C.ScrollBarVisibility.Disabled }
+            : Context.Pages.FirstOrDefault(page => page.Key == key)?.CreateView() ?? throw new InvalidDataException("插件页面不存在");
+        if (view.Parent != null) throw new InvalidDataException("插件页面已经属于另一个容器");
+        var surface = new PluginWorkerSurface(view);
+        _surfaces.Add(key, surface);
+        return surface;
+    }
+    private bool Prefill(RemoteCommand command) => Surface(command.View).Prefill(command.Text ?? "");
+    private async Task<PluginTextInputResult> SubmitTextAsync(RemoteTextInput request)
+    {
+        if (!Guid.TryParseExact(request.RequestId, "N", out _) || request.Text.Length is 0 or > 12000
+            || Context.Pages.FirstOrDefault(page => page.Key == request.View)?.Available?.Invoke() == false)
+            return new(false, "输入不可用。");
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        if (!_textCalls.TryAdd(request.RequestId, cancellation)) return new(false, "重复请求已忽略。");
+        try
+        {
+            return Surface(request.View).View is IPluginTextInput input
+                ? await input.SubmitTextAsync(request.RequestId, request.Text, cancellation.Token)
+                : new(false, "此插件不支持直接接收语音指令。");
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        { return new(true, "已停止本次指令。"); }
+        finally { _textCalls.TryRemove(request.RequestId, out _); }
+    }
+    private bool CancelText(RemoteTextInput request)
+    {
+        if (!_textCalls.TryGetValue(request.RequestId, out var cancellation)) return false;
+        cancellation.Cancel(); return true;
+    }
     private bool Action(string key)
     {
         var action = Context.Actions.FirstOrDefault(action => action.Key == key);
         if (action == null || action.Available?.Invoke() == false) return false;
+        // Existing plugins may implement actions against fields populated by
+        // CreateView. Preserve that contract, but allocate only after user input.
+        foreach (var page in Context.Pages) Surface(page.Key);
         action.Invoke(); return true;
     }
     private bool Configure(Dictionary<string, JsonElement> configuration)

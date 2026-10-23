@@ -53,9 +53,9 @@ public partial class SettingsWindow
             if (SettingsRegistry.Find(descriptor.EnabledByKey) is { } source)
                 row.SetBinding(IsEnabledProperty, new Binding("IsChecked") { Source = FindName(source.ControlName), TargetNullValue = false });
             Grid.SetColumn(controls, 1); row.Children.Add(controls);
-            group.Children.Add(row); group.Children.Add(new Border { Style = (Style)FindResource("W11RowDivider") });
+            group.Children.Add(SettingCard(row));
         }
-        panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = group });
+        panel.Children.Add(group);
         _weatherSettingsPanel = panel; Page_Behavior.Children.Add(panel);
     }
     internal void OpenWeatherSettings()

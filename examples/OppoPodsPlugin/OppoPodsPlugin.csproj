@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <AssemblyName>AlphaIsland.Plugins.OppoPods</AssemblyName>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>

@@ -11,6 +11,13 @@
   <ItemGroup>
     <!-- .cs.txt keeps the application's default recursive Compile glob untouched. -->
     <Compile Include="Program.cs.txt" />
-    <ProjectReference Include="..\..\alpha-island.csproj" />
+    <Compile Include="RemainingIcons.cs.txt" />
+    <ProjectReference Include="..\..\alpha-island.csproj" Condition="'$(IconSourceDirectory)' == ''" />
+    <Reference Include="alpha-island" Condition="'$(IconSourceDirectory)' != ''">
+      <HintPath>$(IconSourceDirectory)\alpha-island.dll</HintPath>
+    </Reference>
+    <Reference Include="AlphaIsland.PluginSdk" Condition="'$(IconSourceDirectory)' != ''">
+      <HintPath>$(IconSourceDirectory)\AlphaIsland.PluginSdk.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>

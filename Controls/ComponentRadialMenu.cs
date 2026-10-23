@@ -40,7 +40,7 @@ internal sealed class ComponentRadialMenu : Canvas
         Children.Clear(); _items.Clear(); _activeId = activeId; _layoutInitialized = false;
         foreach (var page in pages)
         {
-            var icon = new AlphaIsland.PluginSdk.GlyphIcon { Text = page is Plugins.PluginIslandPage plugin ? plugin.Glyph : Glyph(page.Id), FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = page.Id == "screen-tools" ? 32 : page.Id == IslandPageIds.NetSpeed ? 20 : 17,
+            var icon = new AlphaIsland.PluginSdk.GlyphIcon { Text = page is Plugins.PluginIslandPage plugin ? plugin.Glyph : Glyph(page.Id), FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = page.Id == "screen-tools" ? 20 : page.Id == IslandPageIds.NetSpeed ? 20 : 17,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
             var circle = new Border { Width = ComponentMenuLayout.Diameter, Height = ComponentMenuLayout.Diameter,
                 CornerRadius = new CornerRadius(ComponentMenuLayout.Diameter / 2), Background = background,
@@ -140,7 +140,8 @@ internal sealed class ComponentRadialMenu : Canvas
         IslandPageIds.Music => "\uE8D6", IslandPageIds.Clipboard => "\uE8C8", IslandPageIds.Volume => "\uE767",
         IslandPageIds.NetSpeed => AlphaIsland.PluginSdk.GlyphArtwork.NetworkTransferGlyph,
         IslandPageIds.Ai => "\uE99A", IslandPageIds.System => "\uE9D9", IslandPageIds.Download => "\uE896",
-        IslandPageIds.Notifications => "\uE7E7", "weather" => "\uE706",
-        "focus" => "\uE916", "screen-tools" => AlphaIsland.PluginSdk.GlyphArtwork.ScreenToolsGlyph, _ => "\uE80F"
+        IslandPageIds.DeviceBatteries => "\uE83F", IslandPageIds.Notifications => "\uE7E7", "weather" => "\uE706",
+        "focus" => "\uE916", "screen-tools" => AlphaIsland.PluginSdk.GlyphArtwork.ScreenToolsGlyph,
+        "productivity" => AlphaIsland.PluginSdk.GlyphArtwork.ProductivityGlyph, _ => "\uE80F"
     };
 }

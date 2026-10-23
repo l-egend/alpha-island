@@ -14,7 +14,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="15"
+                                <Border x:Name="AiAvatarHost" Grid.Column="0" Width="44" Height="44" CornerRadius="22"
                                         Background="#2200E5FF" BorderBrush="#3300E5FF" BorderThickness="1">
                                     <icons:GlyphIcon x:Name="AiStatusGlyph" Text="&#xE99A;" FontFamily="Segoe MDL2 Assets"
                                                FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -34,7 +34,7 @@
                                             Width="26" Height="26" FontSize="11" Content="&#xE8C8;"
                                             ToolTip="复制最后一条回复" Click="AiCopyButton_Click"/>
                                     <Button x:Name="AiRetryButton" Style="{StaticResource TransportButton}"
-                                            Width="26" Height="26" FontSize="11" Margin="4,0,0,0" Content="&#xE72C;"
+                                            Width="26" Height="26" FontSize="14" Margin="4,0,0,0" Content="&#xE777;"
                                             ToolTip="重试上一条提问" Click="AiRetryButton_Click"/>
                                     <Button x:Name="AiStopButton" Style="{StaticResource TransportButton}"
                                             Width="26" Height="26" FontSize="11" Margin="4,0,0,0" Content="&#xE71A;"
@@ -46,6 +46,7 @@
                                 <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,6,0,0">
                                     <Button x:Name="AiHistoryButton" Content="对话历史" Width="74" Height="26" Click="AiHistoryButton_Click"/>
                                     <Button x:Name="AiNewButton" Content="新建对话" Width="74" Height="26" Margin="6,0,0,0" Click="AiNewButton_Click"/>
+                                    <Button Content="状态/用量" Width="74" Height="26" Margin="6,0,0,0" Click="AiContextButton_Click"/>
                                     <Button x:Name="AiEnableButton" Content="连接设置" Width="68" Height="26" Margin="6,0,0,0" Click="AiEnableButton_Click" Visibility="Collapsed"/>
                                 </StackPanel>
                             </Grid>

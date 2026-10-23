@@ -66,7 +66,7 @@ public partial class SettingsWindow
             }
             control.Name = descriptor.ControlName; RegisterName(control.Name, control);
             Grid.SetColumn(control, 1); row.Children.Add(control);
-            group.Children.Add(row); group.Children.Add(new Border { Style = (Style)FindResource("W11RowDivider") });
+            group.Children.Add(SettingCard(row));
         }
         var actions = new StackPanel { Margin = new Thickness(16, 10, 16, 14) };
         actions.SetBinding(IsEnabledProperty, new Binding("IsChecked") { Source = enabled, TargetNullValue = false });
@@ -91,8 +91,8 @@ public partial class SettingsWindow
         buttons.Children.Add(_recordShortcutButton); buttons.Children.Add(_testShortcutButton); actions.Children.Add(buttons);
         _externalShortcutStatus = new TextBlock { Text = "调用时设置窗口会隐藏。此功能只唤起外部软件，不自动取回译文，也不调用岛内 AI。",
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-        actions.Children.Add(_externalShortcutStatus); group.Children.Add(actions);
-        panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = group });
+        actions.Children.Add(_externalShortcutStatus); group.Children.Add(SettingCard(actions));
+        panel.Children.Add(group);
         _externalTranslationPanel = panel; Page_Ai.Children.Insert(1, panel);
         Closed += (_, _) => { StopRecordingExternalShortcut(); _translationShortcutLifetime.Cancel(); };
         IsVisibleChanged += (_, e) => { if (e.NewValue is false) StopRecordingExternalShortcut(); };

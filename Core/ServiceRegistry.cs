@@ -20,7 +20,7 @@ namespace alpha_island.Core
         public const string Battery = "battery";
         public const string Bluetooth = "bluetooth";
 
-        // ── 第一批新增（A/B 组，随功能落地逐个注册）──
+        // ── 系统状态与助手服务──
         public const string Telemetry = "telemetry";
         public const string NetworkSpeed = "networkspeed";
         public const string MemoryMonitor = "memory";
@@ -59,13 +59,13 @@ namespace alpha_island.Core
             Volume => "系统音量监听",
             Battery => "电池状态监听",
             Bluetooth => "蓝牙设备监听",
-            Telemetry => "系统状态采样（飞行模式）",
+            Telemetry => "无线开关监听（Wi-Fi / 蓝牙）",
             NetworkSpeed => "网速与下载进度",
             MemoryMonitor => "内存占用采样",
             PrivacyIndicator => "麦克风摄像头指示灯",
             AiChat => "AI 对话",
             AgentBridge => "Agent 状态与审批",
-            TrafficMonitorLink => "每日流量（TrafficMonitor）",
+            TrafficMonitorLink => "每日流量",
             DownloadMonitor => "下载进度（浏览器 / Steam）",
             Cpu => "CPU 占用采样",
             HardwarePower => "CPU＋GPU 硬件功耗",

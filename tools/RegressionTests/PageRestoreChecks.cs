@@ -14,7 +14,6 @@ internal static partial class Program
         var savedExtras = new Dictionary<string, JsonElement>(options.Extras);
         var pages = AgentField<IslandPageHost>(window, "_pages");
         string oldPage = pages.ActiveId;
-        bool oldTwoStep = options.TwoStepExpand;
         bool oldForeground = AgentField<bool>(window, "_mediaSourceForeground");
         var oldSmtc = AgentField<SmtcService?>(window, "_smtc");
         var layers = AgentField<IslandLayerHost>(window, "_layers");
@@ -55,7 +54,6 @@ internal static partial class Program
                 "卡片自动降为胶囊也会记录页面");
             Click(); Check(At("focus"), "从普通媒体胶囊点击展开恢复上次页面");
             Close();
-            options.TwoStepExpand = true;
             SettingsRegistry.SetExtra(options, "LastOpenedCardPage", IslandPageIds.Music);
             Open(); Check(AgentField<IslandState>(window, "_state") == IslandState.Pill,
                 "上次是播放器且仍有媒体时保留两级展开");
@@ -98,8 +96,7 @@ internal static partial class Program
         finally
         {
             PrivateCall(window, "CollapseToBar", true);
-            options.Extras = savedExtras; SetAgentField(window, "_smtc", oldSmtc);
-            options.TwoStepExpand = oldTwoStep; SetAgentField(window, "_mediaSourceForeground", oldForeground);
+            options.Extras = savedExtras; SetAgentField(window, "_smtc", oldSmtc); SetAgentField(window, "_mediaSourceForeground", oldForeground);
             PrivateCall(window, "SwitchCardPage", pages.IndexOfOrDefault(oldPage), false);
         }
     }

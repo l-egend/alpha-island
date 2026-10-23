@@ -74,12 +74,12 @@ internal static partial class Program
         Check(snapshot == null || GameIdentityPolicy.IsAbsoluteExe(snapshot.Path), "正式前台读取路径使用受限只读句柄");
         string[] catalog = GameActivityProbe.ReadWindowsGames();
         Check(catalog.All(GameIdentityPolicy.IsAbsoluteExe), "本机 Windows 游戏目录只返回完整 exe 路径");
-        using var child = Process.Start(new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 30\"")
+        string childPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
+        using var child = Process.Start(new ProcessStartInfo(childPath, "-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 30\"")
             { UseShellExecute = false, CreateNoWindow = true })!;
         try
         {
-            string path = child.MainModule!.FileName;
-            using var lease = native.Track(new((uint)child.Id, path, "生命周期测试", "用户指定"));
+            using var lease = native.Track(new((uint)child.Id, childPath, "生命周期测试", "用户指定"));
             Check(lease?.IsAlive == true, "正式进程句柄能够确认后台进程仍在运行");
             Check(native.Track(new((uint)child.Id, @"C:\wrong\wrong.exe", "错误身份", "用户指定")) == null, "取得句柄时再次核验程序路径");
             child.Kill(); await child.WaitForExitAsync();
@@ -101,7 +101,11 @@ internal static partial class Program
         SettingsRegistry.Write(options, "NotificationQuietMode", false);
         SettingsRegistry.Write(options, "MediaWindowHandoffEnabled", false);
         options.ClipboardNotifyEnabled = options.VolumeNotifyEnabled = options.BatteryNotifyEnabled = options.BluetoothNotifyEnabled = true;
-        void State(bool active, long revision = 1) => PrivateCall(window, "ApplyGameActivity", new GameActivityState(revision, active, active ? "隔离测试游戏" : "", "用户指定", active ? 1 : 0));
+        void State(bool active, long revision = 1, bool finishIntro = true)
+        {
+            PrivateCall(window, "ApplyGameActivity", new GameActivityState(revision, active, active ? "隔离测试游戏" : "", "用户指定", active ? 1 : 0));
+            if (active && finishIntro) PrivateCall(window, "FinishGameQuietIntro");
+        }
         void Reset()
         {
             SetAgentField(window, "_approvalCurrent", null); AgentStatus.Reset(owner: "approval"); AgentStatus.Reset(owner: owner);
@@ -110,18 +114,20 @@ internal static partial class Program
         }
         try
         {
-            Reset(); State(true); PumpAnimations(120); root.UpdateLayout();
+            Reset(); State(true, finishIntro: false); PumpAnimations(120); root.UpdateLayout();
             SaveThemePreview(window.IslandBody, "bin/game-quiet-preview.png");
             Check(AgentField<bool>(window, "_gameQuietActive") && notice.Title.Text == "检测到游戏开启" && notice.Detail.Text.Contains("免打扰模式已开启"), "游戏进入时显示一次清晰的免打扰提示");
-            Check(layers.IsActive("gamequiet") && AgentField<IslandState>(window, "_state") == IslandState.Pill, "开启提示可突破自动静默并展示胶囊");
+            Check(layers.IsActive("gamequiet") && AgentField<IslandState>(window, "_state") == IslandState.Pill, "进入游戏先显示一次提示，期间不会展开其他内容");
             Check(!SettingsRegistry.GetBool(options, "NotificationQuietMode", false), "自动免打扰不会写入手动静默设置");
             var quiet = AgentField<CheckBox>(window, "_notificationQuiet");
             Check(quiet.IsChecked == true && !quiet.IsEnabled, "通知中心显示自动静默并解释退出后恢复");
             Check(PrivateCall(window, "SetLayerPinned", "gamequiet", true) is false && !layers.IsPinned("gamequiet"),
                 "游戏开启提示不会被误置顶成永久弹窗");
-            DateTime deadline = layers.Peek("gamequiet")!.Value.UntilUtc;
-            State(true, 2);
-            Check(layers.Peek("gamequiet")!.Value.UntilUtc == deadline && inbox.History.Count(x => x.Title == "检测到游戏开启") == 1, "同一游戏后台续期不会重复弹窗或延长提示");
+            long introUntil = AgentField<long>(window, "_gameQuietIntroUntil");
+            State(true, 2, finishIntro: false);
+            Check(layers.IsShowing("gamequiet") && AgentField<long>(window, "_gameQuietIntroUntil") == introUntil
+                && inbox.History.Count(x => x.Title == "检测到游戏开启") == 1, "同一游戏后台续期不重复弹出或延长进入提示");
+            PrivateCall(window, "FinishGameQuietIntro");
             PrivateCall(window, "OnVolumeChanged", null, new VolumeInfo(48, false));
             Check(!layers.IsActive("volume") && inbox.History.Any(x => x.Kind == DesktopEventKind.Volume), "游戏中后台音量变化只记录事件而不弹岛");
             PrivateCall(window, "OnBatteryStatusChanged", null, new BatteryStatusInfo(48, true, BatteryChargeType.StandardAC, BatteryPowerEvent.PluggedIn, null, IsOnAcPower: true));
@@ -142,32 +148,41 @@ internal static partial class Program
             var approval = new ApprovalRequest("game-approval", "read", "{}", "隔离请求", 60, DateTime.UtcNow);
             SetAgentField(window, "_approvalCurrent", approval); PrivateCall(window, "PresentCurrentApproval");
             Check(AgentField<ApprovalRequest>(window, "_approvalCurrent").Id == approval.Id && !layers.IsActive("approval"), "审批仍等待原有裁决且不自动弹出，不代替用户授权");
-            Check(AgentField<string>(window, "_activeMainIslandKey") == "gamequiet", "审批不会抢走游戏开启提示");
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar, "审批不会突破游戏最小态锁定");
             SetAgentField(window, "_approvalCurrent", null); AgentStatus.Reset(owner: "approval"); AgentStatus.Reset(owner: owner); layers.Hide("approval"); layers.Hide("agentstatus");
-            PrivateCall(window, "OnGameQuietNoticeExpired", null, EventArgs.Empty);
-            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar && !layers.IsActive("gamequiet"), "三秒开启提示到期收回，不常驻游戏通知");
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar && !layers.IsActive("gamequiet"), "游戏持续运行时保持最小态，不常驻游戏通知");
             PrivateCall(window, "SetState", IslandState.Pill, true);
             Check(AgentField<IslandState>(window, "_state") == IslandState.Bar, "游戏期间助手或媒体不能从其他入口重新展开空胶囊");
             State(false, 3);
             Check(!AgentField<bool>(window, "_gameQuietActive") && !SettingsRegistry.GetBool(options, "NotificationQuietMode", false) && quiet.IsEnabled && quiet.IsChecked == false, "游戏退出恢复原来的非静默状态");
-            Check(inbox.PendingCount == 0 && AgentField<DesktopNotification?>(window, "_desktopCurrent") == null, "退出后不补弹游戏期间的消息");
+            Check(inbox.PendingCount == 0 && AgentField<DesktopNotification?>(window, "_desktopCurrent")?.Kind != DesktopEventKind.Message
+                && !AgentField<alpha_island.ViewModels.IslandWorkspaceViewModel>(window, "_workspace").Notifications.Burst.Items.Any(n => n.Key == message.Key), "退出后不补弹旧消息，允许新的合并摘要");
             PrivateCall(window, "OnVolumeChanged", null, new VolumeInfo(49, false));
             Check(layers.IsActive("volume"), "游戏退出后新音量事件正常弹出");
-            Reset(); State(true); PrivateCall(window, "OnGameQuietNoticeExpired", null, EventArgs.Empty);
+            Reset(); State(true);
             using (var playing = new SmtcService(window.Dispatcher))
             {
-                SetAgentField(window, "_smtc", playing); options.KeepCompactWhilePlaying = true;
+                SetAgentField(window, "_smtc", playing);
                 var track = new NowPlayingInfo { Title = "游戏中播放", SourceApp = "cloudmusic.exe", State = PlaybackState.Playing };
                 playing.SetDebugNowPlaying(track); PrivateCall(window, "ApplyMedia", track);
                 Check(AgentField<IslandState>(window, "_state") == IslandState.Bar && !AgentField<bool>(window, "_upNextShowing"),
                     "游戏中媒体播放和换曲不会重新弹出音乐岛");
                 State(false, 4);
-                Check(AgentField<IslandState>(window, "_state") == IslandState.Pill && AgentField<string>(window, "_activeMainIslandKey") == "music",
-                    "退出游戏后按原播放常驻设置恢复音乐岛");
+                Check(AgentField<IslandState>(window, "_state") == IslandState.Bar,
+                    "退出游戏后，未置顶播放不会恢复为永久音乐岛");
+                PrivateCall(window, "SetMusicPinned", true, true);
+                Check(AgentField<bool>(window, "_isPinned"), "进入游戏前的音乐手动置顶已生效");
+                State(true, 5);
+                Check(AgentField<bool>(window, "_isPinned"), "游戏收起只隐藏音乐，不取消手动置顶");
+                State(false, 6);
+                Check(AgentField<IslandState>(window, "_state") == IslandState.Pill
+                    && AgentField<string>(window, "_activeMainIslandKey") == "music" && AgentField<bool>(window, "_isPinned"),
+                    "退出游戏后仍恢复手动置顶的音乐岛");
+                PrivateCall(window, "SetMusicPinned", false, true);
                 SetAgentField(window, "_smtc", null);
             }
             Reset(); State(true); SetAgentField(window, "_approvalCurrent", approval); PrivateCall(window, "PresentCurrentApproval");
-            PrivateCall(window, "OnGameQuietNoticeExpired", null, EventArgs.Empty); State(false, 4);
+            State(false, 4);
             Check(layers.IsActive("approval") && AgentField<IslandState>(window, "_state") == IslandState.Pill
                 && AgentField<ApprovalRequest>(window, "_approvalCurrent").Id == approval.Id,
                 "退出游戏恢复仍未过期的审批提示，并保留原审批请求");
@@ -178,9 +193,8 @@ internal static partial class Program
             Check(SettingsRegistry.GetBool(options, "NotificationQuietMode", false), "游戏期间手动设置变化按最新值恢复，不被旧快照覆盖");
             Reset(); SettingsRegistry.Write(options, "NotificationQuietMode", false);
             PrivateCall(window, "SetLayerPinned", "status", true, false); State(true);
-            PrivateCall(window, "OnGameQuietNoticeExpired", null, EventArgs.Empty);
-            Check(layers.IsPinned("status") && layers.IsActive("status"), "自动静默保留用户手动置顶的状态视图");
-            State(false, 6); Check(layers.IsPinned("status"), "游戏退出不删除或重复创建手动置顶");
+            Check(layers.IsPinned("status") && !layers.IsActive("status") && AgentField<IslandState>(window, "_state") == IslandState.Bar, "游戏期间保留置顶偏好但隐藏其展示，不能撑开最小态");
+            State(false, 6); Check(layers.IsPinned("status") && layers.IsActive("status"), "游戏退出恢复手动置顶，不删除或重复创建");
             Reset(); State(true); SettingsRegistry.Write(options, "NotificationGameQuietEnabled", false); PrivateCall(window, "StopGameActivity");
             Check(!AgentField<bool>(window, "_gameQuietActive") && !SettingsRegistry.GetBool(options, "NotificationQuietMode", false), "关闭游戏免打扰选项立即恢复原手动设置");
             SettingsRegistry.Write(options, "NotificationGameQuietEnabled", true); Reset();

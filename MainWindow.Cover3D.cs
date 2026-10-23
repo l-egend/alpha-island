@@ -22,7 +22,7 @@ using Visibility = System.Windows.Visibility;
 namespace alpha_island
 {
     /// <summary>
-    /// 卡片封面槽的「3D 封面」模式（C 组④ ②）。
+    /// 卡片封面槽的「3D 封面」模式。
     ///
     /// 默认关闭；开启后卡片封面位置换成一块 <see cref="Viewport3D"/> 里的立体卡片，
     /// 换曲时从 -90°（侧对镜头、看不见）转到 0°，即"封面翻转入场"。
@@ -73,7 +73,7 @@ namespace alpha_island
                 MotionPolicy.Changed += ApplyCover3DMode;
             }
 
-            if (!SettingsRegistry.GetBool(_options, "Cover3DEnabled", false))
+            if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave)
             {
                 SetCover3DActive(false, "关闭（使用 2D 封面）");
                 return;

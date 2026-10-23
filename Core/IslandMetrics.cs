@@ -25,7 +25,7 @@ namespace alpha_island.Core
         /// <summary>
         /// 歌词比胶囊宽时，胶囊可以"呼吸"到的最大宽度。
         /// 上限来自窗口宽度（MainWindow.xaml 里 Width=640）——再宽就会被窗口裁掉。
-        /// 到这个上限还装不下的超长句不再滚动（跑马灯已按用户要求移除），
+        /// 到这个上限还装不下的超长句不再滚动，
         /// 而是把字号压到 MainWindow.PillLyricMinFontSize（8px）后静止显示。
         /// </summary>
         public const double MaxPillWidth = 560;

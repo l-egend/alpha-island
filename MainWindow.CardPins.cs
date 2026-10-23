@@ -62,6 +62,7 @@ public partial class MainWindow
     private string CardPinGlyph(string pageId) => pageId switch
     {
         "focus" => "\uE916", "weather" => "\uE9BD", "screen-tools" => AlphaIsland.PluginSdk.GlyphArtwork.ScreenToolsGlyph,
+        "productivity" => AlphaIsland.PluginSdk.GlyphArtwork.ProductivityGlyph,
         _ => (_pages.Pages.FirstOrDefault(p => p.Id == pageId) as PluginIslandPage)?.Glyph ?? "\uE700"
     };
     private string? CardPinDisplayName(string key) => _cardPinViews.TryGetValue(key, out var view) ? view.Title.Text : null;
@@ -92,7 +93,7 @@ public partial class MainWindow
             "focus" => (_pomodoro.CycleFinished ? "循环完成" : _pomodoro.IsLongBreak ? "长休息" : _pomodoro.IsBreak ? "短休息" : "专注")
                 + (_pomodoro.Running ? "" : " · 已暂停"),
             "weather" => _weatherValue?.Text ?? "点击查看天气",
-            "screen-tools" => "翻译 · 字幕 · 扫码",
+            "screen-tools" => "识字 · 取色 · 翻译 · 字幕 · 扫码",
             _ => (_pages.Pages.FirstOrDefault(p => p.Id == pageId) as PluginIslandPage)?.ReadSummary() ?? "点击打开卡片"
         };
         if (view.MotionDetail != detail && pageId == "focus")

@@ -13,11 +13,13 @@ public sealed class ExternalAgentRegistry
         int? ProcessId = null, long? ProcessStartStamp = null, string ArtworkFamily = "", bool NativeClaudeSession = false,
         string ParentSession = "", DateTime UpdatedUtc = default, bool NativeHostSession = false,
         [property: System.Text.Json.Serialization.JsonIgnore] string NativeThreadId = "",
-        [property: System.Text.Json.Serialization.JsonIgnore] string NativeTurnId = "");
+        [property: System.Text.Json.Serialization.JsonIgnore] string NativeTurnId = "",
+        [property: System.Text.Json.Serialization.JsonIgnore] DateTime ActivityStartedUtc = default);
     private readonly object _gate = new();
     private readonly Dictionary<string, Connection> _connections = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _parents = new(StringComparer.Ordinal), _aliases = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTime> _ended = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _explicitStarts = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Thread, string Turn), DateTime> _finishedTurns = new();
     private readonly HashSet<string> _published = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string State, DateTime Received, long Count)> _observations = new(StringComparer.Ordinal);
@@ -32,15 +34,15 @@ public sealed class ExternalAgentRegistry
                 $"{p.Key}：最近状态={p.Value.State}；收到时间={p.Value.Received.ToLocalTime():yyyy-MM-dd HH:mm:ss}；累计事件={p.Value.Count}")));
     }
     public bool Update(string source, string session, string state, string detail, int ttlSec, DateTime now, out string error,
-        int? processId = null, string? artworkFamily = null, string? parentSession = null, string? sessionAlias = null, bool beginsActivity = false, string? nativeThreadId = null, string? nativeTurnId = null)
-        => UpdateCore(source, session, state, detail, ttlSec, now, out error, processId, artworkFamily, parentSession, sessionAlias, beginsActivity, false, nativeThreadId, nativeTurnId);
+        int? processId = null, string? artworkFamily = null, string? parentSession = null, string? sessionAlias = null, bool beginsActivity = false, string? nativeThreadId = null, string? nativeTurnId = null, DateTime? activityStartedUtc = null)
+        => UpdateCore(source, session, state, detail, ttlSec, now, out error, processId, artworkFamily, parentSession, sessionAlias, beginsActivity, false, nativeThreadId, nativeTurnId, activityStartedUtc);
 
     internal bool Connect(string source, string session, int ttlSec, DateTime now, out string error,
         int? processId = null, string? artworkFamily = null, string? parentSession = null, string? sessionAlias = null)
         => UpdateCore(source, session, "idle", "", ttlSec, now, out error, processId, artworkFamily, parentSession, sessionAlias, false, true, null, null);
 
     private bool UpdateCore(string source, string session, string state, string detail, int ttlSec, DateTime now, out string error,
-        int? processId, string? artworkFamily, string? parentSession, string? sessionAlias, bool beginsActivity, bool connectOnly, string? nativeThreadId, string? nativeTurnId)
+        int? processId, string? artworkFamily, string? parentSession, string? sessionAlias, bool beginsActivity, bool connectOnly, string? nativeThreadId, string? nativeTurnId, DateTime? activityStartedUtc = null)
     {
         error = "";
         if (!Identifier.IsMatch(source) || !Identifier.IsMatch(session)
@@ -74,7 +76,21 @@ public sealed class ExternalAgentRegistry
                 if (ResolveAlias(owner) == alias) { error = "会话别名循环"; return false; }
                 _connections.Remove(alias); _aliases[alias] = owner;
             }
+            // Some integrations report an execution and its transport independently.
+            // Only exact native task identity is evidence that they are the same work.
+            if (source == "codex" && !string.IsNullOrEmpty(nativeThreadId) && !string.IsNullOrEmpty(nativeTurnId)
+                && string.IsNullOrEmpty(parentSession))
+            {
+                var duplicate = _connections.FirstOrDefault(pair => pair.Key != owner && pair.Value.ParentSession.Length == 0
+                    && pair.Value.NativeThreadId == nativeThreadId && pair.Value.NativeTurnId == nativeTurnId);
+                if (duplicate.Key != null)
+                {
+                    _connections.Remove(owner); _aliases[owner] = duplicate.Key; owner = duplicate.Key;
+                }
+            }
             _connections.TryGetValue(owner, out var previous);
+            if (beginsActivity && previous is { State: not "idle", NativeTurnId.Length: > 0 }
+                && previous.NativeThreadId == nativeThreadId && previous.NativeTurnId == nativeTurnId) beginsActivity = false;
             string nativeThread = string.IsNullOrEmpty(nativeThreadId) ? previous?.NativeThreadId ?? "" : nativeThreadId;
             string nativeTurn = string.IsNullOrEmpty(nativeTurnId) ? beginsActivity ? "" : previous?.NativeTurnId ?? "" : nativeTurnId;
             if (source == "codex" && nativeTurn.Length > 0)
@@ -93,13 +109,18 @@ public sealed class ExternalAgentRegistry
                 _parents[owner] = parent;
             }
             string root = Root(owner);
-            if (beginsActivity && state != "idle") { _ended.Remove(root); _ended.Remove(owner); }
+            if (!beginsActivity && state != "idle" && parent.Length == 0 && _ended.ContainsKey(root)
+                && nativeTurn.Length == 0 && (_explicitStarts.Contains(root)
+                    || nativeThread.Length > 0 && previous?.NativeThreadId == nativeThread))
+            { Publish(); return true; }
+            if (beginsActivity && state != "idle") { _explicitStarts.Add(root); _ended.Remove(root); _ended.Remove(owner); }
             // Keep an ended conversation tombstone so late child stop/tool events cannot resurrect it.
             if (parent.Length == 0 && state == "idle")
             {
                 // Initial SessionStart/idle is not evidence that a conversation ended.
                 if (_connections.Any(pair => Root(pair.Key) == root && pair.Value.State != "idle"))
                 {
+                    if (!connectOnly) AgentStatus.Finish(root, now);
                     _ended[root] = now.AddHours(24);
                     foreach (string child in _connections.Keys.Where(key => key != owner && Root(key) == root).ToArray())
                     { _ended[child] = now.AddHours(24); _connections.Remove(child); }
@@ -115,7 +136,10 @@ public sealed class ExternalAgentRegistry
             bool native = processId is int pid && stamp != null && AgentHostProcessMonitor.IsNativeHost(source, pid);
             _connections[owner] = new(source, owner[(owner.IndexOf('/') + 1)..], state, detail,
                 now.AddSeconds(Math.Clamp(ttlSec, 5, 300)), processId, stamp, family, native && source == "claude-code",
-                parent.Length == 0 ? "" : parent[(parent.IndexOf('/') + 1)..], now, native, source == "codex" ? nativeThread : "", source == "codex" ? nativeTurn : "");
+                parent.Length == 0 ? "" : parent[(parent.IndexOf('/') + 1)..], now, native, source == "codex" ? nativeThread : "", source == "codex" ? nativeTurn : "",
+                state != "idle" && (beginsActivity || previous == null || previous.State == "idle")
+                    ? activityStartedUtc is { } started && started <= now && started >= now.AddHours(-24) ? started : now
+                    : previous?.ActivityStartedUtc ?? now);
             if (!_observations.ContainsKey(source) && _observations.Count >= 64) _observations.Remove(_observations.OrderBy(p => p.Value.Received).First().Key);
             _observations.TryGetValue(source, out var observation); _observations[source] = (state, now, observation.Count + 1);
             TrimMetadata(); Publish(beginsActivity && state != "idle" ? root : null); return true;
@@ -127,8 +151,9 @@ public sealed class ExternalAgentRegistry
         {
             string owner = Owner(expected.Source, expected.Session);
             if (!_accepting || !_connections.TryGetValue(owner, out var current) || current.State == "idle"
-                || current.NativeThreadId != expected.NativeThreadId || current.NativeTurnId != expected.NativeTurnId) return false;
-            _finishedTurns[(expected.NativeThreadId, expected.NativeTurnId)] = now.AddHours(24);
+                || current.NativeThreadId != expected.NativeThreadId || current.NativeTurnId != expected.NativeTurnId
+                || current.ActivityStartedUtc != expected.ActivityStartedUtc) return false;
+            if (expected.NativeTurnId.Length > 0) _finishedTurns[(expected.NativeThreadId, expected.NativeTurnId)] = now.AddHours(24);
             return UpdateCore(current.Source, current.Session, "idle", "", 5, now, out _, null, null, null, null,
                 false, false, current.NativeThreadId, current.NativeTurnId);
         }
@@ -169,6 +194,7 @@ public sealed class ExternalAgentRegistry
     {
         while (_finishedTurns.Count > 256) _finishedTurns.Remove(_finishedTurns.OrderBy(pair => pair.Value).First().Key);
         while (_ended.Count > 256) _ended.Remove(_ended.OrderBy(pair => pair.Value).First().Key);
+        _explicitStarts.RemoveWhere(key => !_connections.ContainsKey(key) && !_ended.ContainsKey(key));
         // Active connections and their ancestors stay in the bounded metadata cache.
         var retained = new HashSet<string>(_connections.Keys, StringComparer.Ordinal);
         foreach (string key in _connections.Keys)
@@ -191,7 +217,7 @@ public sealed class ExternalAgentRegistry
     public void Sweep(DateTime now) { lock (_gate) { SweepLocked(now); Publish(); } }
     public void Clear()
     {
-        lock (_gate) { foreach (string owner in _published) AgentStatus.Reset(owner: owner); _published.Clear(); _connections.Clear(); _parents.Clear(); _aliases.Clear(); _ended.Clear(); _finishedTurns.Clear(); }
+        lock (_gate) { foreach (string owner in _published) AgentStatus.Reset(owner: owner); _published.Clear(); _connections.Clear(); _parents.Clear(); _aliases.Clear(); _ended.Clear(); _explicitStarts.Clear(); _finishedTurns.Clear(); }
     }
     public void Open() { lock (_gate) _accepting = true; }
     public void Close() { lock (_gate) { _accepting = false; Clear(); } }

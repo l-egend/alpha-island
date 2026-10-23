@@ -3,5 +3,12 @@
     <Nullable>enable</Nullable>
     <WindowsSdkPackageVersion>10.0.19041.56</WindowsSdkPackageVersion>
     <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
+    <!-- Desktop hosts and isolated workers use the same bounded-growth GC policy. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
   </PropertyGroup>
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
 </Project>

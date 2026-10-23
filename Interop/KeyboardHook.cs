@@ -10,6 +10,7 @@ namespace alpha_island.Interop
         public int VirtualKey { get; }
         public ModifierKeys Modifiers { get; }
         public bool IsKeyDown { get; }
+        public bool IsInjected { get; init; }
         /// <summary>Only synchronous hook subscribers can suppress an event (used during shortcut recording).</summary>
         public bool Handled { get; set; }
 
@@ -100,7 +101,7 @@ namespace alpha_island.Interop
                         (NativeMethods.GetKeyState(NativeMethods.VK_RWIN) & 0x8000) != 0)
                         modifiers |= ModifierKeys.Windows;
 
-                    var args = new KeyboardHookEventArgs(key, vk, modifiers, isKeyDown);
+                    var args = new KeyboardHookEventArgs(key, vk, modifiers, isKeyDown) { IsInjected = (info.flags & 0x10) != 0 };
                     KeyAction?.Invoke(this, args);
                     if (args.Handled) return new IntPtr(1);
                 }

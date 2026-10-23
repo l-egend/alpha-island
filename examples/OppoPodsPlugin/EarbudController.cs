@@ -135,7 +135,7 @@ internal sealed class EarbudController : IDisposable
                 if (CurrentSession() is { } existing) { existing.Pump(true); Publish(existing.ReadSnapshot()); }
                 else await RefreshDevices(token, autoConnect: _options.AutoConnect && !_manualDisconnect).ConfigureAwait(false);
                 break;
-            case "connect": _manualDisconnect = false; _target = request.Device; await Open(request.Device!, token).ConfigureAwait(false); break;
+            case "connect": _manualDisconnect = false; await Open(request.Device!, token).ConfigureAwait(false); break;
             case "disconnect":
                 _manualDisconnect = true; _nextRetry = DateTime.MaxValue; Release(); Publish(EarbudSnapshot.Offline("已断开控制连接", "耳机音频连接仍由 Windows 管理")); break;
             case "command":
@@ -146,7 +146,7 @@ internal sealed class EarbudController : IDisposable
                 var old = _options; _options = request.Options!;
                 if (old == _options) break;
                 if (old.ModelOverride != _options.ModelOverride && _target != null && CurrentSession() != null)
-                    await Open(_target, token).ConfigureAwait(false);
+                    await Open(_target, token, force: true).ConfigureAwait(false);
                 else if (!old.AutoConnect && _options.AutoConnect && CurrentSession() == null)
                 { _manualDisconnect = false; await RefreshDevices(token, autoConnect: true).ConfigureAwait(false); }
                 break;
@@ -169,8 +169,11 @@ internal sealed class EarbudController : IDisposable
         if (chosen != null) { _target = chosen; await Open(chosen, token).ConfigureAwait(false); }
         else _nextRetry = DateTime.UtcNow.AddSeconds(15);
     }
-    private async Task Open(EarbudDevice device, CancellationToken token)
+    private async Task Open(EarbudDevice device, CancellationToken token, bool force = false)
     {
+        if(!force && _target?.Address==device.Address && CurrentSession() is { } connected && Snapshot.Connected)
+        {connected.Pump(true);Publish(connected.ReadSnapshot());return;}
+        _target=device;
         Release();
         Publish(EarbudSnapshot.Offline("正在连接耳机…", device.Name) with { Busy = true, DeviceName = device.Name });
         IEarbudSession session = _factory(device, _options);

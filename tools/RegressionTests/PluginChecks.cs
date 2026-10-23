@@ -226,13 +226,13 @@ internal static partial class Program
             Check(transform.X == 0, "快速反向切换开关回到关闭位置");
             first.IsChecked = true; PrivateCall(settings, "SelectPageByTag", "audio"); PrivateCall(settings, "ApplyNavExpanded", false, true); PumpAnimations(30);
             MotionPolicy.Apply(true, false);
-            var audio = (FrameworkElement)settings.FindName("Page_Audio");
-            Check(transform.X == 20 && audio.Opacity == 1 && nav.Width == 48, "途中开启减弱动效立即完成页面、导航栏与开关动画");
+            var appearance = (FrameworkElement)settings.FindName("Page_Appearance");
+            Check(transform.X == 20 && appearance.Opacity == 1 && nav.Width == 48, "途中开启减弱动效立即完成页面、导航栏与开关动画");
             MotionPolicy.Apply(false, true); first.IsChecked = false; PrivateCall(settings, "SelectPageByTag", "plugins");
             Check(transform.X == 0 && pluginPage.Opacity == 1, "节能模式下设置切换直接到位");
             MotionPolicy.Apply(false, false); MotionPolicy.OverrideRenderTierForDebug(0); first.IsChecked = true;
             PrivateCall(settings, "SelectPageByTag", "audio");
-            Check(transform.X == 20 && audio.Opacity == 1, "软件渲染下自动跳过设置动画");
+            Check(transform.X == 20 && appearance.Opacity == 1, "软件渲染下自动跳过设置动画");
             root.Children.Remove(switches); source.RootVisual = null;
         }
         finally { settings.Close(); MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduce, save); }

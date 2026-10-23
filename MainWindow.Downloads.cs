@@ -165,6 +165,7 @@ namespace alpha_island
         private void ApplyDownloadSample(List<DownloadTask> tasks, DateTime now)
         {
             var presentation = _workspace.Downloads.Update(tasks, now);
+            _assistantReminders?.TickNow();
             foreach (var task in tasks.Take(DownloadCardRows)) IslandLog.Debug("Download", DescribeTask(task));
             if (presentation.Task is { } item) ShowDownloadNotify(item, presentation.Speed, presentation.Refreshing);
             else if (presentation.Finished is { } finished) ShowDownloadFinished(finished);

@@ -24,7 +24,7 @@ internal sealed class VolumeFlyoutGuard : IDisposable
     private readonly bool _fixture;
     private readonly object _gate = new();
     private readonly Timer _retry;
-    private readonly Dictionary<IntPtr, (uint Process, long HiddenAt)> _hiddenWindows = new();
+    private readonly Dictionary<IntPtr, (uint Process, long HiddenAt, bool OwnsCloak)> _hiddenWindows = new();
     private IntPtr _hook;
     private volatile bool _enabled;
     private bool _disposed;
@@ -78,7 +78,11 @@ internal sealed class VolumeFlyoutGuard : IDisposable
         lock (_gate)
         {
             if (!Running || Environment.TickCount64 > _feedbackUntil)
-            { if (!_disposed) _retry.Change(Timeout.Infinite, Timeout.Infinite); return; }
+            {
+                ReleaseCloaks();
+                if (!_disposed) _retry.Change(Timeout.Infinite, Timeout.Infinite);
+                return;
+            }
             foreach (var cls in _fixture ? new[] { "STATIC" } : new[] { "XamlExplorerHostIslandWindow", "NativeHWNDHost" })
             {
                 IntPtr window = IntPtr.Zero;
@@ -103,9 +107,17 @@ internal sealed class VolumeFlyoutGuard : IDisposable
         try
         {
             if (!_matches(window) || !_enabled) return;
-            if (!NativeMethods.ShowWindowAsync(window, 0)) return;
             NativeMethods.GetWindowThreadProcessId(window, out uint process);
-            _hiddenWindows[window] = (process, Environment.TickCount64);
+            bool ours = _hiddenWindows.TryGetValue(window, out var previous) && previous.Process == process && previous.OwnsCloak;
+            // Keep the compositor from presenting a frame if the shell calls ShowWindow
+            // again before its queued hide is processed. Never clear a pre-existing cloak.
+            if (!ours && DwmGetWindowAttribute(window, 14, out int cloak, 4) == 0 && (cloak & 1) == 0)
+            {
+                int value = 1;
+                ours = NativeMethods.DwmSetWindowAttribute(window, 13, ref value, 4) == 0;
+            }
+            _hiddenWindows[window] = (process, Environment.TickCount64, ours);
+            NativeMethods.ShowWindowAsync(window, 0);
             if (Interlocked.Increment(ref _hidden) == 1) IslandLog.Info("Volume", "已接管 Windows 原生音量浮层");
             FlyoutHidden?.Invoke();
         }
@@ -114,6 +126,7 @@ internal sealed class VolumeFlyoutGuard : IDisposable
 
     private void RestoreRecentWindows()
     {
+        ReleaseCloaks();
         foreach (var (window, previous) in _hiddenWindows)
         {
             try
@@ -121,15 +134,41 @@ internal sealed class VolumeFlyoutGuard : IDisposable
                 NativeMethods.GetWindowThreadProcessId(window, out uint process);
                 // Do not resurrect an expired OSD or touch a reused HWND. Subsequent
                 // keys show the shell window normally because the hook is now gone.
-                if (process == previous.Process && Environment.TickCount64 - previous.HiddenAt <= NativeFlyoutLifetimeMs
-                    && _matches(window)) NativeMethods.ShowWindowAsync(window, 4);
+                if (process == previous.Process && Environment.TickCount64 - previous.HiddenAt <= NativeFlyoutLifetimeMs)
+                    NativeMethods.ShowWindowAsync(window, 4);
             }
             catch { }
         }
         _hiddenWindows.Clear();
     }
 
+    private void ReleaseCloaks()
+    {
+        foreach (var (window, previous) in _hiddenWindows.ToArray())
+        {
+            if (!previous.OwnsCloak) continue;
+            NativeMethods.GetWindowThreadProcessId(window, out uint process);
+            // Undo only our recorded change. Classification can become unavailable
+            // during shell restart or shutdown and must not prevent restoration.
+            if (process == previous.Process)
+            {
+                int value = 0;
+                NativeMethods.DwmSetWindowAttribute(window, 13, ref value, 4);
+            }
+            _hiddenWindows[window] = (previous.Process, previous.HiddenAt, false);
+        }
+    }
+
     internal static bool IsShellFlyout(IntPtr window)
+    {
+        try { return IsShellFlyoutCore(window); }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsShellFlyoutCore(IntPtr window)
     {
         var cls = new StringBuilder(256); GetClassName(window, cls, cls.Capacity);
         var title = new StringBuilder(256); GetWindowText(window, title, title.Capacity);
@@ -167,6 +206,7 @@ internal sealed class VolumeFlyoutGuard : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder text, int size);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int size);
     [DllImport("user32.dll")] private static extern bool GetWindowBand(IntPtr window, out uint band);
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
     [DllImport("kernel32.dll")] private static extern IntPtr OpenProcess(uint access, bool inherit, uint process);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool QueryFullProcessImageName(Microsoft.Win32.SafeHandles.SafeProcessHandle handle, uint flags, StringBuilder name, ref int length);
 }

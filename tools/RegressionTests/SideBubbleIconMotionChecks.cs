@@ -22,15 +22,23 @@ internal static partial class Program
             MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
             layers.HideAll(); PrivateCall(window, "ClearDesktopInbox");
             PrivateCall(window, "HideSideBubbleHint", true);
-            PrivateCall(window, "SetState", IslandState.Card, true, IslandPageIds.System);
+            // Use a different page from the volume card to exercise the side hint.
+            PrivateCall(window, "SetState", IslandState.Card, true, IslandPageIds.Clipboard);
             window.CardVolumePercentText.Text = "42%";
             var volume = IslandNotification.Seconds("volume", 15) with { Title = "音量提示", Detail = "42%" };
-            PrivateCall(window, "ShowPillNotification", volume);
-            PumpAnimations(140); root.UpdateLayout();
             var iconSlot = (FrameworkElement)VisualTreeHelper.GetParent(window.SideBubbleIcon);
-            Check(window.SideBubble.IsVisible && window.SideBubbleIcon.IsVisible
-                && ActionIconMotion.GetIsAnimating(iconSlot),
-                "真实卡片态旁侧音量提示在入场时即可见快速声波过渡");
+            bool observedMotion = false;
+            System.Windows.Threading.DispatcherHookEventHandler observe = (_, _) => observedMotion |= window.SideBubbleIcon.IsVisible
+                && ActionIconMotion.GetIsAnimating(iconSlot) && window.SideBubbleIcon.TransitionProgress < 1;
+            window.Dispatcher.Hooks.OperationCompleted += observe;
+            try
+            {
+                PrivateCall(window, "ShowPillNotification", volume);
+                PumpAnimations(140); root.UpdateLayout();
+            }
+            finally { window.Dispatcher.Hooks.OperationCompleted -= observe; }
+            Check(window.SideBubble.IsVisible && window.SideBubbleIcon.IsVisible && observedMotion,
+                "真实卡片态旁侧音量提示在入场期间出现快速声波过渡");
             Check(iconSlot is Grid && ReferenceEquals(VisualTreeHelper.GetParent(window.SideBubbleArtwork), iconSlot),
                 "旁侧提示的应用图片与备用字形共用独立图标槽，不缩放提示文字");
 

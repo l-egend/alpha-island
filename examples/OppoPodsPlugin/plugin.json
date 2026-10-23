@@ -1,7 +1,7 @@
 {
   "id": "oppo.pods",
   "name": "耳机控制 · 多品牌",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "apiVersion": 2,
   "assembly": "AlphaIsland.Plugins.OppoPods.dll",
   "entryType": "AlphaIsland.Plugins.OppoPods.OppoPodsPlugin",

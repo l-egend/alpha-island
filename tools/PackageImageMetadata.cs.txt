@@ -1,0 +1,118 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+
+// Read PE headers without loading or executing the packaged native library.
+public sealed class PackageImageMetadata
+{
+    public ushort Machine { get; private set; }
+    public bool Managed { get; private set; }
+    public bool Requires32Bit { get; private set; }
+    public string[] Imports { get; private set; }
+
+    public static PackageImageMetadata Read(string path)
+    {
+        using (var stream = File.OpenRead(path))
+        using (var reader = new BinaryReader(stream))
+        {
+            if (reader.ReadUInt16() != 0x5a4d) throw new InvalidDataException("Missing DOS header: " + path);
+            stream.Position = 0x3c;
+            uint pe = reader.ReadUInt32();
+            stream.Position = pe;
+            if (reader.ReadUInt32() != 0x4550) throw new InvalidDataException("Missing PE header: " + path);
+            var result = new PackageImageMetadata();
+            result.Machine = reader.ReadUInt16();
+            ushort count = reader.ReadUInt16();
+            stream.Position = pe + 20;
+            ushort size = reader.ReadUInt16();
+            long optional = pe + 24;
+            stream.Position = optional;
+            ushort magic = reader.ReadUInt16();
+            if (magic != 0x10b && magic != 0x20b) throw new InvalidDataException("Unknown PE format: " + path);
+            long directories = optional + (magic == 0x20b ? 112 : 96);
+            stream.Position = directories - 4;
+            uint directoryCount = reader.ReadUInt32();
+            var sections = new List<uint[]>();
+            stream.Position = optional + size;
+            for (int i = 0; i < count; i++)
+            {
+                reader.ReadBytes(8);
+                uint virtualSize = reader.ReadUInt32(), address = reader.ReadUInt32();
+                uint rawSize = reader.ReadUInt32(), raw = reader.ReadUInt32();
+                sections.Add(new[] { address, Math.Max(virtualSize, rawSize), raw, rawSize });
+                stream.Position += 16;
+            }
+            Func<uint, long> offset = rva =>
+            {
+                foreach (var section in sections)
+                    if (rva >= section[0] && (ulong)rva < (ulong)section[0] + section[1])
+                    {
+                        uint delta = rva - section[0];
+                        if (delta >= section[3] || (ulong)section[2] + delta >= (ulong)stream.Length)
+                            throw new InvalidDataException("PE RVA outside file: " + path);
+                        return (long)section[2] + delta;
+                    }
+                throw new InvalidDataException("PE RVA has no section: " + path);
+            };
+            Func<uint, string> name = rva =>
+            {
+                stream.Position = offset(rva);
+                var bytes = new List<byte>();
+                for (int i = 0; i < 260; i++)
+                {
+                    byte b = reader.ReadByte();
+                    if (b == 0) return Encoding.ASCII.GetString(bytes.ToArray());
+                    bytes.Add(b);
+                }
+                throw new InvalidDataException("Invalid import name: " + path);
+            };
+            Func<int, uint> directory = index =>
+            {
+                if (index >= directoryCount) return 0;
+                stream.Position = directories + index * 8;
+                return reader.ReadUInt32();
+            };
+            uint clr = directory(14);
+            result.Managed = clr != 0;
+            if (result.Managed)
+            {
+                stream.Position = offset(clr) + 16;
+                result.Requires32Bit = (reader.ReadUInt32() & 2) != 0;
+            }
+            var imports = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            uint import = directory(1);
+            if (import != 0)
+            {
+                long table = offset(import);
+                bool terminated = false;
+                for (int i = 0; i < 4096; i++)
+                {
+                    stream.Position = table + i * 20;
+                    uint first = reader.ReadUInt32(), stamp = reader.ReadUInt32(), forward = reader.ReadUInt32();
+                    uint dll = reader.ReadUInt32(), thunk = reader.ReadUInt32();
+                    if ((first | stamp | forward | dll | thunk) == 0) { terminated = true; break; }
+                    imports.Add(name(dll));
+                }
+                if (!terminated) throw new InvalidDataException("Unterminated import table: " + path);
+            }
+            uint delay = directory(13);
+            if (delay != 0)
+            {
+                long table = offset(delay);
+                bool terminated = false;
+                for (int i = 0; i < 4096; i++)
+                {
+                    stream.Position = table + i * 32;
+                    uint attributes = reader.ReadUInt32(), dll = reader.ReadUInt32();
+                    if (attributes == 0 && dll == 0) { terminated = true; break; }
+                    if ((attributes & 1) == 0) throw new InvalidDataException("Unsupported delay import address: " + path);
+                    imports.Add(name(dll));
+                }
+                if (!terminated) throw new InvalidDataException("Unterminated delay import table: " + path);
+            }
+            result.Imports = new List<string>(imports).ToArray();
+            return result;
+        }
+    }
+}

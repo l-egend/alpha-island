@@ -59,7 +59,7 @@ internal sealed class LocalStateFile<T>(string path, int maximumBytes = 2 * 1024
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
             { IslandLog.Warn("LocalState", "本机记录无法保存：" + ex.GetType().Name); }
-            finally { try { if (File.Exists(temporary)) File.Delete(temporary); } catch (IOException) { } }
+            finally { AtomicJsonFile.TryDeleteTemporary(temporary); }
         }
     }
     internal bool Flush(TimeSpan timeout) { Task writer; lock (_gate) writer = _writer; return writer.Wait(timeout); }

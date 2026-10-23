@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Startup pipeline, service wiring, Win32 message filter.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -124,6 +123,7 @@ namespace alpha_island
                 || IsPointInsideInteractiveZone(screenX, screenY) && !IsPointInsideIsland(screenX, screenY);
         private bool IsPointInsideInteractiveZone(int screenX, int screenY)
         {
+            if (IsPointOnVoiceStop(screenX, screenY)) return true;
             if (IsPointOnMediaSourcesMenu(screenX, screenY)) return true;
             if (IsPointOnCompactIsland(screenX, screenY)) return true;
             if (IsPointOnFileDropZone(screenX, screenY)) return true;
@@ -219,11 +219,13 @@ namespace alpha_island
             // 交互服务等问候结束再加载；能力探测在后台并发预热。
             if (_forcedState == null && _options.GreetingEnabled)
             {
-                _greetingFinishedTcs = new TaskCompletionSource<bool>();
+                _greetingFinishedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
                 {
-                    if (_state == IslandState.Bar && _forcedState == null)
+                    if (_state == IslandState.Bar && _forcedState == null && _options.GreetingEnabled)
                         ShowStartupGreeting();
+                    else
+                        CompleteGreetingLifetime();
                 }));
             }
 
@@ -491,34 +493,6 @@ namespace alpha_island
                 _ticker?.TriggerNow("power");
             }
 
-            // 调试：ALPHA_ISLAND_AIRPLANE_FAKE=on|off —— 伪造飞行模式状态（不动真实无线电）；
-            // 再加 ALPHA_ISLAND_AIRPLANE_FLIP=<秒> 则在 N 秒后翻转一次，用来验证「状态变化 → 弹提示」。
-            string? fakeAirplane = Environment.GetEnvironmentVariable("ALPHA_ISLAND_AIRPLANE_FAKE");
-            bool? airplaneValue = null;
-            if (string.Equals(fakeAirplane, "on", StringComparison.OrdinalIgnoreCase) || fakeAirplane == "1") airplaneValue = true;
-            else if (string.Equals(fakeAirplane, "off", StringComparison.OrdinalIgnoreCase) || fakeAirplane == "0") airplaneValue = false;
-
-            if (airplaneValue.HasValue)
-            {
-                _airplaneFake = airplaneValue;
-                IslandLog.Debug("Radio", $"调试注入：飞行模式 = {(airplaneValue.Value ? "开" : "关")}");
-                _ticker?.TriggerNow("radio");
-
-                string? flipAfter = Environment.GetEnvironmentVariable("ALPHA_ISLAND_AIRPLANE_FLIP");
-                if (int.TryParse(flipAfter, out int flipSeconds) && flipSeconds > 0)
-                {
-                    var flipTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(flipSeconds) };
-                    flipTimer.Tick += (_, __) =>
-                    {
-                        flipTimer!.Stop();
-                        _airplaneFake = !airplaneValue.Value;
-                        IslandLog.Debug("Radio", $"调试注入：飞行模式翻转为 {(_airplaneFake.Value ? "开" : "关")}");
-                        _ticker?.TriggerNow("radio");
-                    };
-                    flipTimer.Start();
-                }
-            }
-
             // 调试：ALPHA_ISLAND_AI_SELFTEST=1 —— 开机 3 秒后向配置里的接口发一次真实请求，
             // 用来验证 SSE 流式解析 / HTTP 错误翻译 / 超时链路（没填 Key 时应看到中文的 401 提示）。
             // =2 则改为做一次 DPAPI 密钥往返（加密→回读→还原，不动用户已存的密钥）。
@@ -689,7 +663,7 @@ namespace alpha_island
             }
         }
 
-        /// <summary>B 组①自检（=2）：DPAPI 密钥加密/回读往返，跑完把现场还原。</summary>
+        /// <summary>对话服务自检（=2）：DPAPI 密钥加密/回读往返，跑完把现场还原。</summary>
         private static void RunAiSecretSelfTest()
         {
             string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "alpha-island-secret-test-" + Guid.NewGuid().ToString("N") + ".dat");
@@ -705,7 +679,7 @@ namespace alpha_island
             finally { AiSecretStore.Clear(path); }
         }
 
-        /// <summary>B 组①自检：跑一次真实的流式对话，把首片段延迟与错误如实记进日志。</summary>
+        /// <summary>对话服务自检：跑一次真实的流式对话，把首片段延迟与错误如实记进日志。</summary>
         private async Task RunAiSelfTestAsync()
         {
             ChatConfig config = ChatConfig.From(_options);

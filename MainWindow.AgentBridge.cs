@@ -11,7 +11,7 @@ using alpha_island.Services;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using TextBox = System.Windows.Controls.TextBox;
 
-// B 组④：agent 工具权限审批（界面侧）。
+// agent 工具权限审批（界面侧）。
 //
 // 分工：
 //   · Services\AgentBridgeService.cs —— 回环 HTTP 服务端，收请求、等裁决、回传结果（不碰 WPF）；

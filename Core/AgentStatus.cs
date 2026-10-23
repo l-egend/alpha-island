@@ -3,9 +3,9 @@ using System;
 namespace alpha_island.Core
 {
     /// <summary>
-    /// agent 的运行状态（B 组③）。
-    /// 这一层刻意做成"谁都能写、谁都能读"的静态量表：AI 对话卡片（B 组①/②）驱动它，
-    /// 以后外部 agent 通过桥接（B 组④）或命令行也能写，岛体只负责显示。
+    /// agent 的运行状态。
+    /// 这一层刻意做成"谁都能写、谁都能读"的静态量表：AI 对话卡片驱动它，
+    /// 外部 agent 通过桥接或命令行也能写，岛体只负责显示。
     /// 状态迁移全部由 UI 线程调用（卡片页与桥接回调都先 Dispatcher 回 UI 线程）。
     /// </summary>
     public enum AgentRunState
@@ -19,7 +19,7 @@ namespace alpha_island.Core
         /// <summary>正在流式输出。</summary>
         Streaming = 2,
 
-        /// <summary>等待工具权限审批（B 组④ 用）。</summary>
+        /// <summary>等待工具权限审批。</summary>
         ToolWait = 3,
 
         /// <summary>出错（网络/鉴权/被中断）。</summary>
@@ -33,6 +33,7 @@ namespace alpha_island.Core
     /// 全局 agent 状态。细条上的状态色点、胶囊上的"动作 + 已用时长"都读这里。
     /// </summary>
     public sealed record AgentActivity(string Owner, AgentRunState State, string Detail, DateTime SinceUtc, long ActivityId, string ArtworkFamily = "");
+    internal sealed record AgentActivityEnded(string Owner, long ActivityId, DateTimeOffset When, bool Failed);
 
     public static class AgentStatus
     {
@@ -48,6 +49,18 @@ namespace alpha_island.Core
 
         /// <summary>状态或说明变化时触发（UI 线程）。</summary>
         public static event EventHandler? Changed;
+        internal static event Action<AgentActivityEnded>? ActivityEnded;
+        /// <summary>Explicit terminal events only; lost heartbeats, unload and expiry must use Reset.</summary>
+        internal static void Finish(string owner, DateTime? when = null)
+        {
+            AgentActivityEnded? ended = null;
+            lock (Gate)
+                if (Claims.TryGetValue(owner, out var claim)) ended = new(owner, claim.ActivityId,
+                    new DateTimeOffset(DateTime.SpecifyKind(when ?? DateTime.UtcNow, DateTimeKind.Utc)), claim.State == AgentRunState.Error);
+            if (ended != null)
+                try { ActivityEnded?.Invoke(ended); } catch (Exception ex) { IslandLog.Error("AgentCompletion", ex); }
+            Reset(owner: owner);
+        }
 
         public static AgentRunState State
         {
@@ -153,7 +166,7 @@ namespace alpha_island.Core
             _ => 0
         };
 
-        /// <summary>细条状态色：空闲不显示，其它状态各有颜色（B 组③ 的 UI 直接用）。</summary>
+        /// <summary>细条状态色：空闲不显示，其它状态各有颜色。</summary>
         public static string ColorHex => ColorHexFor(State);
         public static string ColorHexFor(AgentRunState state) => state switch
         {

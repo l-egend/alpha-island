@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Unified notification layer manager and music orb.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -37,7 +36,7 @@ namespace alpha_island
 
         private bool HasActiveNotification => _layers.AnyActive;
 
-        // ================= 叠层取证（C 组⑤ ①） =================
+        // ================= 叠层取证 =================
         //
         // S3 之前，一级胶囊内容层 PillLayer 不属于任何注册图层，历史上至少有六处代码各自写它的
         // Opacity/Visibility（形变完成回调、ApplyReveal 的手写互斥、这里的通知同步、音乐球的收缩/绽放、
@@ -144,7 +143,7 @@ namespace alpha_island
         /// 提交一条「占胶囊格」的通知请求，并**在这一处**决定岛体形态（S2：模块不再自己写 SetState）。
         ///
         /// 为什么必须收口：PillOnly 的图层在细条态 Show 会被 <see cref="IslandLayerHost"/> 的 ScopeAllows
-        /// 静默挡掉 —— Show 成功、时间窗照走、屏幕上什么都没有（B 组那批"丢提示"）。规则：
+        /// 静默挡掉 —— Show 成功、时间窗照走、屏幕上什么都没有（通知遗漏）。规则：
         ///   * <c>OpensIsland = false</c>（后台续期）→ 不改形态，保留用户当前选择；
         ///   * 细条态（Bar）→ 展开成胶囊；
         ///   * 卡片态 / 中转站态（Card / Tray）→ **默认不动**（卡片态 deferred：回到胶囊后补显未过期的；
@@ -228,7 +227,7 @@ namespace alpha_island
             var layers = _layers.Sync(_state, _pages.ActiveId == IslandPageIds.Clipboard);
             SyncResourceSampling();
 
-            // 细条上的常驻指示（A 组①网速）：跟通知图层一起结算，只有 Bar 态才画。
+            // 细条上的常驻指示（网速）：跟通知图层一起结算，只有 Bar 态才画。
             SyncBarIndicators();
 
             bool showGreeting = layers.GreetingVisible;
@@ -253,10 +252,10 @@ namespace alpha_island
 
             SyncVisualizers();
 
-            // C 组④ ①：把「收回球与音乐球不会同时带封面」这条不变量变成可观测的日志断言。
+            // 把「收回球与音乐球不会同时带封面」这条不变量变成可观测的日志断言。
             CheckDoubleCoverInvariant();
 
-            // C 组⑤ ①：PillLayer 与通知层的叠层不变量（谁点亮的会一起写进日志）。
+            // PillLayer 与通知层的叠层不变量（谁点亮的会一起写进日志）。
             CheckPillLayerOverlapInvariant("SyncNotificationLayers");
         }
 
@@ -270,6 +269,7 @@ namespace alpha_island
         /// <summary>正在播收起动画：这期间不要改它的 X，否则会把动画掐掉、气泡卡在屏幕上（与 <c>_pinBubbleHiding</c> 同理）。</summary>
         private bool _sideBubbleHiding;
         private string? _sideBubbleComponentKey;
+        private int _sideBubbleVisibilityVersion;
         private string? _sideBubbleMotionEventId;
         private string? _sideBubbleMotionPhase;
         private ImageSource? _sideBubbleMotionArtwork;
@@ -441,6 +441,7 @@ namespace alpha_island
                 _ => 1
             };
             SideBubbleText.Text = title;
+            UpdateCompactIslandPinState();
             ActionIconMotion.SetKind(SideBubbleIconSlot, key switch
             {
                 "bluetooth" => ActionIconMotion.GetKind(BtIconContainer),
@@ -461,6 +462,7 @@ namespace alpha_island
 
             IslandLog.Debug("SideBubble", $"旁路提示：{key} → 「{title}」（卡片态不夺形态，X={SideBubbleTargetX():0.0}；车道 {_satellites.Dump()}）");
 
+            _sideBubbleVisibilityVersion++;
             _sideBubbleShowing = true;
             _sideBubbleHiding = false;
 
@@ -492,6 +494,8 @@ namespace alpha_island
             if (SideBubble == null) return;
             ActionIconMotion.Stop(SideBubbleIconSlot);
             if (!_sideBubbleShowing && SideBubble.Visibility != Visibility.Visible) return;
+            if (_sideBubbleHiding && !immediate) return;
+            int version = ++_sideBubbleVisibilityVersion;
 
             _sideBubbleShowing = false;
             _sideBubbleComponentKey = null;
@@ -525,6 +529,7 @@ namespace alpha_island
 
             fade.Completed += (_, _) =>
             {
+                if (version != _sideBubbleVisibilityVersion || !_sideBubbleHiding || _sideBubbleShowing) return;
                 SideBubble.Visibility = Visibility.Collapsed;
                 SideBubble.Opacity = 0;
                 _sideBubbleHiding = false;
@@ -562,7 +567,7 @@ namespace alpha_island
         }
 
         /// <summary>
-        /// 「双封面」回归哨兵（C 组④ ①）。
+        /// 「双封面」回归哨兵。
         /// 带封面的圆形有三处：收回球 <c>SiriOrb</c>、左侧音乐球 <c>MusicOrbBubble</c>、
         /// 以及胶囊左封面 / 卡片封面（这两个是不同形态下的同一位置，不会同时可见）。
         /// 收回球与音乐球的互斥靠两条机制各自保证：图层互斥（收回期间音乐层不占位）
@@ -802,7 +807,7 @@ namespace alpha_island
 
         private void DismissActiveNotifications()
         {
-            _greetingTimer?.Stop();
+            CompleteGreetingLifetime();
             _layers.HideAll();
             _clipboardLocked = false;
             _clipboard?.DismissCopiedPending();

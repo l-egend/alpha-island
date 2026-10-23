@@ -18,16 +18,8 @@ namespace alpha_island.Core
         // ---------- 外观 ----------
         /// <summary>液态玻璃通透度 0.05~0.98。</summary>
         public double GlassOpacity { get; set; } = 0.08;
-        /// <summary>是否尝试真实背景模糊（做不到时会自动降级，见 Interop/WindowEffects）。</summary>
-        public bool LiquidGlassBackdrop { get; set; } = true;
-        /// <summary>是否启用凝胶形变动效（关闭则退回普通缓动）。</summary>
-        public bool GelAnimation { get; set; } = true;
 
         // ---------- 布局与交互 ----------
-        /// <summary>true = 悬停只到一级长椭圆、点击才进二级卡片；false = 悬停直接进二级。</summary>
-        public bool TwoStepExpand { get; set; } = true;
-        /// <summary>一级展开里是否显示左侧封面。</summary>
-        public bool ShowCover { get; set; } = true;
 
         // ---------- 音频可视化 ----------
         public bool VisualizerEnabled { get; set; } = true;
@@ -43,8 +35,6 @@ namespace alpha_island.Core
         public int LyricsOffsetMs { get; set; } = 0;
 
         // ---------- 行为 ----------
-        /// <summary>关闭时：仅在换曲瞬间弹一下胶囊，之后自动收起。</summary>
-        public bool KeepCompactWhilePlaying { get; set; }
 
         /// <summary>换曲时是否弹出一级胶囊做"接下来"提示。</summary>
         public bool UpNextEnabled { get; set; } = true;
@@ -86,8 +76,6 @@ namespace alpha_island.Core
         public bool ClipboardNotifyEnabled { get; set; } = true;
         /// <summary>已复制驻留弹窗下，鼠标右键是否替换为自动粘贴。</summary>
         public bool ClipboardRightClickPaste { get; set; } = true;
-        /// <summary>粘贴完成提示的停留秒数，1~5；复制提示保持到粘贴或主动取消。</summary>
-        public int ClipboardAutoCollapseSeconds { get; set; } = 2;
 
         // ---------- 文件中转站 ----------
         /// <summary>是否启用拖拽文件中转站功能。</summary>
@@ -106,17 +94,12 @@ namespace alpha_island.Core
         {
             IsFreshInstallation = false;
             GlassOpacity = other.GlassOpacity;
-            LiquidGlassBackdrop = other.LiquidGlassBackdrop;
-            GelAnimation = other.GelAnimation;
-            TwoStepExpand = other.TwoStepExpand;
-            ShowCover = other.ShowCover;
             VisualizerEnabled = other.VisualizerEnabled;
             ShowWaveLayer = other.ShowWaveLayer;
             Sensitivity = other.Sensitivity;
             LyricsEnabled = other.LyricsEnabled;
             ShowTranslation = other.ShowTranslation;
             LyricsOffsetMs = other.LyricsOffsetMs;
-            KeepCompactWhilePlaying = other.KeepCompactWhilePlaying;
             UpNextEnabled = other.UpNextEnabled;
             UpNextSeconds = other.UpNextSeconds;
             PauseNotifyEnabled = other.PauseNotifyEnabled;
@@ -132,7 +115,6 @@ namespace alpha_island.Core
             BatteryNotifySeconds = other.BatteryNotifySeconds;
             ClipboardNotifyEnabled = other.ClipboardNotifyEnabled;
             ClipboardRightClickPaste = other.ClipboardRightClickPaste;
-            ClipboardAutoCollapseSeconds = other.ClipboardAutoCollapseSeconds;
             FileTransferEnabled = other.FileTransferEnabled;
 
             // Extras 是注册表驱动态设置项的容器，必须跟着拷贝，
@@ -169,7 +151,8 @@ namespace alpha_island.Core
                 {
                     if (!File.Exists(candidate)) continue;
                     var loaded = AtomicJsonFile.Read<IslandOptions>(candidate, JsonOptions);
-                    bool retiredPreference = loaded?.Extras?.ContainsKey("HardwarePowerElevatedReader") == true
+                    bool retiredPreference = loaded != null && SettingsMigration.Required(loaded)
+                        || loaded?.Extras?.ContainsKey("HardwarePowerElevatedReader") == true
                         || loaded?.Extras?.ContainsKey("MemoryTrimEnabled") == true;
                     loaded = loaded?.Normalized();
                     if (loaded == null) continue;
@@ -199,26 +182,27 @@ namespace alpha_island.Core
             return defaults;
         }
 
-        public void Save(bool allowRecovery = false)
-            => Save(AppPaths.OptionsFile, allowRecovery);
-
-        internal void Save(string path, bool allowRecovery = false)
+        public void Save(bool allowRecovery = false) => TrySave(allowRecovery);
+        internal void Save(string path, bool allowRecovery = false) => TrySave(path, allowRecovery);
+        public bool TrySave(bool allowRecovery = false) => TrySave(AppPaths.OptionsFile, allowRecovery);
+        internal bool TrySave(string path, bool allowRecovery = false)
         {
             try
             {
                 if (_loadFailed && !allowRecovery)
                 {
                     IslandLog.Warn("Options", "原设置读取失败，保留文件；修改设置或恢复默认后再保存");
-                    return;
+                    return false;
                 }
                 SettingsRegistry.SetExtra(this, "AiApiKey", string.Empty);
                 AtomicJsonFile.Write(path, JsonSerializer.Serialize(this, JsonOptions));
-                _loadFailed = false;
-                IsFreshInstallation = false;
+                _loadFailed = false; IsFreshInstallation = false;
+                return true;
             }
             catch (Exception ex)
             {
                 IslandLog.Warn("Options", "保存失败: " + ex.Message);
+                return false;
             }
         }
 
@@ -237,7 +221,6 @@ namespace alpha_island.Core
             VolumeNotifySeconds = Math.Clamp(VolumeNotifySeconds, 1, 5);
             BluetoothNotifySeconds = Math.Clamp(BluetoothNotifySeconds, 2, 30);
             BatteryNotifySeconds = Math.Clamp(BatteryNotifySeconds, 2, 10);
-            ClipboardAutoCollapseSeconds = Math.Clamp(ClipboardAutoCollapseSeconds, 1, 5);
 
             if (LooksCorrupted(GreetingText)) GreetingText = "欢迎回来";
 
@@ -247,6 +230,7 @@ namespace alpha_island.Core
             // Retired privileged reader preference must not survive old configuration imports.
             Extras.Remove("HardwarePowerElevatedReader");
             Extras.Remove("MemoryTrimEnabled");
+            SettingsMigration.Apply(this);
             SettingsRegistry.Normalize(this);
             SettingsRegistry.SetExtra(this, "AiApiKey", string.Empty);
 

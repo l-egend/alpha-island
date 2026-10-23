@@ -15,6 +15,8 @@ public sealed class ApiChatPlugin : IIslandPlugin
     public void Initialize(IPluginContext context)
     {
         _context = context; _options = new(context);
+        try { new ApiPersonaLibrary(Path.Combine(context.ConfigDirectory, "ai", "personas")).EnsureDirectory(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { context.Log("人格文件夹暂不可用，可在设置中重新打开。"); }
         OnSettingsChanged();
         context.RegisterPage(new("chat", "AI 对话", () => _view = new(context), "\uE99A", 314, 100,
             Activated: () => _view?.ActivatePage()) { Available = () => _options.Enabled,
@@ -57,11 +59,12 @@ internal enum AgentRunState { Idle, Thinking, Streaming, ToolWait, Error }
 internal sealed class Activity(IPluginContext context)
 {
     internal AgentRunState State;
+    internal string Model = "";
     private string _detail = "";
     internal void Set(AgentRunState state, string detail, string owner = "ai")
     {
-        State = state; _detail = detail;
-        context.ReportActivity(state switch { AgentRunState.Streaming => "streaming", AgentRunState.Error => "error", AgentRunState.Idle => "idle", _ => "thinking" }, detail);
+        State = state; _detail = detail; if (state == AgentRunState.Thinking) Model = detail;
+        context.ReportActivity(state switch { AgentRunState.Streaming => "streaming", AgentRunState.ToolWait => "working", AgentRunState.Error => "error", AgentRunState.Idle => "idle", _ => "thinking" }, detail, Model);
     }
     internal void Reset(string owner = "ai") => Set(AgentRunState.Idle, "");
     internal string Describe() => State == AgentRunState.Thinking ? "正在思考 · " + _detail : State == AgentRunState.Streaming ? "正在回复 · " + _detail : _detail;
@@ -81,8 +84,9 @@ public partial class ApiChatView : IDisposable
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/alpha-island;component/Themes/Controls.xaml") });
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/alpha-island;component/Themes/LiquidGlass.xaml") });
         InitializeComponent();
+        InitializeAiFeedback();
         _chatSessions = new(Path.Combine(context.DataDirectory, "ai", "sessions"));
-        _aiConfigFactory = settings => ChatConfig.From(settings, false) with { ApiKey = AiSecretStore.Load(Path.Combine(context.ConfigDirectory,"ai","secrets.dat")) };
+        _aiConfigFactory = settings => ChatConfig.From(settings, false) with { ApiKey = AiSecretStore.Load(Path.Combine(context.ConfigDirectory,"ai","secrets.dat")), SystemPrompt = ApiAssistantPrompt.PersonaFrom(settings) };
         SyncAiCardContent();
     }
     internal void ActivatePage() => SyncAiCardContent();
@@ -92,8 +96,8 @@ public partial class ApiChatView : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        StopAiStreaming(); ++_aiGeneration; _disposed = true; _aiErrorTimer?.Stop();
-        _chatHistoryWindow?.Close(); _chatHistoryWindow = null; _ai.Dispose();
+        StopAiStreaming(); EndAiWaiting(); ++_aiGeneration; _disposed = true; _aiErrorTimer?.Stop(); _aiStateReads.Clear();
+        _modelAvatar?.Dispose(); _modelAvatar = null; _chatHistoryWindow?.Close(); _chatHistoryWindow = null; _ai.Dispose();
         _activity.Reset();
     }
 }

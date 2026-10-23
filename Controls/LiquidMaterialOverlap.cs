@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using alpha_island.Animation;
 using Brush = System.Windows.Media.Brush;
 
 namespace alpha_island.Controls;
@@ -35,7 +36,7 @@ internal static class LiquidMaterialOverlap
             state.Brush = body.Background; state.Binding = BindingOperations.GetBindingBase(body, Border.BackgroundProperty); state.Active = true;
         }
         var rect = new Rect(0, 0, Math.Max(1, body.ActualWidth), Math.Max(1, body.ActualHeight));
-        var drawing = new DrawingGroup { ClipGeometry = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(rect), overlap) };
+        var drawing = new DrawingGroup { ClipGeometry = LiquidGeometrySnapshot.Combine(new RectangleGeometry(rect), overlap, GeometryCombineMode.Exclude) };
         drawing.Children.Add(new GeometryDrawing(state.Brush, null, new RectangleGeometry(rect)));
         body.SetCurrentValue(Border.BackgroundProperty, new DrawingBrush(drawing)
         { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = rect, ViewportUnits = BrushMappingMode.RelativeToBoundingBox, Viewport = new Rect(0, 0, 1, 1), Stretch = Stretch.Fill });

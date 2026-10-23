@@ -52,5 +52,6 @@ internal sealed partial class DesktopNotificationPill
         if (_stackCount != value && value > 1) ActionIconMotion.Play(StackCountButton);
         if (value <= 1) ActionIconMotion.Stop(StackCountButton);
         _stackCount = value;
+        UpdateContentWidth();
     }
 }

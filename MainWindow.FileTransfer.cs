@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // File transfer station.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -82,7 +81,7 @@ namespace alpha_island
         {
             e.Handled = true;
             e.Effects = DragDropEffects.None;
-            if (_exiting || !_options.FileTransferEnabled || _exportingTransferItem
+            if (_exiting || GameDoNotDisturbActive || !_options.FileTransferEnabled || _exportingTransferItem
                 || _approvalCurrent != null || ComponentSwitchGestureActive) return false;
 
             var effect = FileDropPayload.StagingEffect(e.AllowedEffects);
@@ -236,6 +235,8 @@ namespace alpha_island
         {
             if (_exiting) return;
             if (_isDraggingVolumeSlider || ComponentSwitchGestureActive) return;
+            if (_state == IslandState.Card && IsCardControlSource(System.Windows.Input.Mouse.Captured as DependencyObject))
+            { _isSwiping = false; return; }
 
             // 若正在岛体上手势上滑，通过全局坐标快速响应收起，绝不误触文件中转站
             if (_isSwiping)

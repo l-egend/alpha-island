@@ -28,8 +28,8 @@ public partial class SettingsWindow
         actions.Children.Add(detect); actions.Children.Add(setup); content.Children.Add(actions);
         _integrationStatus = new TextBlock { Text = "打开设置后自动检测。", Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap };
         content.Children.Add(_integrationStatus);
-        _integrationProviders = new StackPanel(); content.Children.Add(_integrationProviders);
-        panel.Children.Add(new Border { Child = content, Style = (Style)FindResource("W11Card") });
+        panel.Children.Add(SettingCard(content));
+        _integrationProviders = new StackPanel(); panel.Children.Add(_integrationProviders);
         Page_Ai.Children.Insert(1, panel);
         IsVisibleChanged += async (_, e) => { if (e.NewValue is true && _persistSettings) await RefreshAgentIntegrationsAsync(); };
     }
@@ -46,11 +46,11 @@ public partial class SettingsWindow
             _integrationProviders.Children.Clear();
             foreach (var item in report.Providers)
             {
-                var row = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
+                var row = new StackPanel { Margin = new Thickness(16, 12, 16, 12) };
                 row.Children.Add(new TextBlock { Text = item.Name, Style = (Style)FindResource("W11RowLabel") });
                 row.Children.Add(new TextBlock { Text = item.StatusText + (item.AllProjects ? "\n项目范围：所有项目" : item.Scope.Length > 0 ? "\n项目范围：" + item.Scope : "") +
                     (item.Profile.Length > 0 && item.Detected ? "\n配置档：" + item.Profile : ""), Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap });
-                var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+                var buttons = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
                 var connect = new Button { Content = "接入 / 修复", Style = (Style)FindResource("W11Button"), IsEnabled = item.Detected && item.Status != "scope-required" };
                 connect.Click += async (_, _) => await RefreshAgentIntegrationsAsync("Install", item.Id);
                 buttons.Children.Add(connect);
@@ -73,7 +73,7 @@ public partial class SettingsWindow
                 }
                 var disable = new Button { Content = "停用接入", Style = (Style)FindResource("W11Button"), Margin = new Thickness(8, 0, 0, 0), IsEnabled = item.Status == "configured" };
                 disable.Click += async (_, _) => await RefreshAgentIntegrationsAsync("Remove", item.Id);
-                buttons.Children.Add(disable); row.Children.Add(buttons); _integrationProviders.Children.Add(row);
+                buttons.Children.Add(disable); row.Children.Add(buttons); _integrationProviders.Children.Add(SettingCard(row));
             }
             if (mode != "Detect" && mode != "Remove" && report.Providers.Any(p => p.Status == "configured"))
             {

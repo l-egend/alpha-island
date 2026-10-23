@@ -22,6 +22,8 @@ internal static partial class Program
         options.VolumeNotifyEnabled = true;
         SettingsRegistry.Write(options, "NotificationQuietMode", false);
         SetAgentField(window, "_volumeService", service); SetAgentField(window, "_volumeFlyoutGuard", guard);
+        int receivedKeys = 0;
+        keys.PreviewKeyPressed += (_, e) => { if (e.VirtualKey is 0xAD or 0xAE or 0xAF) Interlocked.Increment(ref receivedKeys); };
         if (intercept) keys.PreviewKeyPressed += (_, e) => PrivateCall(window, "OnVolumeKeyPreview", null, e);
         keys.KeyPressed += (_, e) => PrivateCall(window, "OnVolumeKeyPressed", null, e);
         try
@@ -34,7 +36,8 @@ internal static partial class Program
             {
                 SettingsRegistry.Write(options, "NotificationGameQuietEnabled", true);
                 PrivateCall(window, "ApplyGameActivity", new GameActivityState(1, true, "音量回归游戏", "用户指定", 1));
-                PrivateCall(window, "OnGameQuietNoticeExpired", null, EventArgs.Empty);
+                PrivateCall(window, "FinishGameQuietIntro");
+                Check(!guard.Running && !AgentField<bool>(window, "_volumeKeysTakeoverEnabled"), "游戏模式关闭原生浮层隐藏钩子并放行真实音量键");
                 PrivateCall(window, "OnVolumeChanged", null, new VolumeInfo(service.CurrentPercent, service.IsMuted));
                 Check(AgentField<bool>(window, "_gameQuietActive") && !AgentField<IslandLayerHost>(window, "_layers").IsActive("volume"),
                     "游戏免打扰仍屏蔽非用户操作产生的音量通知");
@@ -54,13 +57,17 @@ internal static partial class Program
                         && FlashCloak(native, 14, out cloak, 4) == 0 && cloak == 0) visible++;
                     Thread.Sleep(1);
                 }
-                Console.WriteLine($"key={i + 1}, uncloaked visible samples={visible}, expected={expected}, actual={device.AudioEndpointVolume.MasterVolumeLevelScalar * 100:0.00}, cache={service.CurrentPercent}");
-                Check(visible == 0, "音量键全程不显示系统浮层，即使界面线程忙碌 " + i);
+                Console.WriteLine($"key={i + 1}, received={receivedKeys}, interception={AgentField<bool>(window, "_volumeKeysTakeoverEnabled")}, hooked={AgentField<KeyboardHook>(keys, "_hook").IsHooked}, uncloaked visible samples={visible}, expected={expected}, actual={device.AudioEndpointVolume.MasterVolumeLevelScalar * 100:0.00}, cache={service.CurrentPercent}");
+                Check(gameQuiet ? visible > 0 : visible == 0, gameQuiet
+                    ? "游戏模式显示 Windows 原生音量条，界面线程忙碌也能确认音量 " + i
+                    : "音量键全程不显示系统浮层，即使界面线程忙碌 " + i);
                 Check(Math.Abs(device.AudioEndpointVolume.MasterVolumeLevelScalar * 100 - expected) < .6,
                     "音量仍按 2% 步长在后台调节 " + i);
                 PumpAnimations(40);
-                Check(AgentField<IslandLayerHost>(window, "_layers").IsActive("volume")
-                    && window.VolumeText.Text == expected + "%", "界面恢复后岛显示当前真实音量 " + i);
+                Check(gameQuiet
+                    ? !AgentField<IslandLayerHost>(window, "_layers").IsActive("volume") && AgentField<IslandState>(window, "_state") == IslandState.Bar
+                    : AgentField<IslandLayerHost>(window, "_layers").IsActive("volume") && window.VolumeText.Text == expected + "%",
+                    "普通模式显示真实音量，游戏模式维持最小态 " + i);
             }
             if (gameQuiet)
             {
@@ -72,8 +79,8 @@ internal static partial class Program
                 SetAgentField(window, "_approvalCurrent", approval);
                 PrivateCall(window, "PresentCurrentApproval");
                 PressVolumeTestKey(0xAF); Thread.Sleep(180); PumpAnimations(60);
-                Check(layers.IsActive("volume") && !layers.IsActive("approval") && AgentField<string>(window, "_activeMainIslandKey") == "volume",
-                    "后台审批等待期间仍显示主动音量反馈，审批继续保持免打扰");
+                Check(!layers.IsActive("volume") && !layers.IsActive("approval") && AgentField<IslandState>(window, "_state") == IslandState.Bar,
+                    "后台审批和主动音量调节都不突破游戏最小态");
                 SetAgentField(window, "_approvalCurrent", null); layers.Hide("approval"); AgentStatus.Reset(owner: "approval");
                 PumpAnimations((int)(Math.Max(1, options.VolumeNotifySeconds) * 1000) + 100);
                 PrivateCall(window, "HoverTimer_Tick", null, EventArgs.Empty);

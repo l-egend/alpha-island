@@ -30,7 +30,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Volume adjustment and volume card drawer.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -44,7 +43,7 @@ namespace alpha_island
         private bool UserVolumeFeedbackActive => Environment.TickCount64 < _volumeUserFeedbackUntil;
         private volatile bool _volumeKeysTakeoverEnabled;
         private DispatcherTimer? _volumeKeyFeedbackTimer;
-        private bool VolumeFlyoutTakeoverAllowed => !_exiting && !_sessionLocked && _options.VolumeNotifyEnabled
+        private bool VolumeFlyoutTakeoverAllowed => !_exiting && !_sessionLocked && !GameDoNotDisturbActive && _options.VolumeNotifyEnabled
             && !SettingsRegistry.GetBool(_options, "NotificationQuietMode", false);
 
         private void SyncVolumeFlyoutTakeover()
@@ -308,8 +307,6 @@ namespace alpha_island
         {
             if (_state == IslandState.Card)
             {
-                if (_pages.ActiveId is IslandPageIds.Notifications or IslandPageIds.System) return;
-
                 if (_pages.ActiveId == IslandPageIds.Volume)
                 {
                     // Only the main volume track adjusts master volume. The drawer's
@@ -324,9 +321,8 @@ namespace alpha_island
                     return;
                 }
 
-                // 其它任何页：滚轮翻页（内层"剪切板历史 / AI 气泡还没滚到底"的守卫在 TryWheelSwitchPage 里）。
-                // 没换页时不设 Handled，让内层滚动条照常工作。
-                if (TryWheelSwitchPage(e.Delta, e.OriginalSource as DependencyObject)) e.Handled = true;
+                // Card content owns its wheel events, including the ends of a list.
+                // ComponentHandle is the only surface that switches pages with the wheel.
                 return;
             }
 

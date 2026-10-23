@@ -15,6 +15,11 @@ namespace alpha_island.Services
     /// <summary>一条对话消息（OpenAI 格式的 role/content）。</summary>
     public sealed record ChatMessage(string Role, string Content)
     {
+        /// <summary>Local reminder turns remain in history but are never sent to a remote provider.</summary>
+        public bool LocalOnly { get; init; }
+        public string? ToolCallId { get; init; }
+        public ChatToolCall[]? ToolCalls { get; init; }
+        public string? ReasoningContent { get; init; }
         public const string RoleSystem = "system";
         public const string RoleUser = "user";
         public const string RoleAssistant = "assistant";
@@ -83,7 +88,7 @@ namespace alpha_island.Services
     }
 
     /// <summary>
-    /// B 组①：OpenAI 兼容的对话客户端。
+    /// OpenAI 兼容的对话客户端。
     ///
     /// 与 <see cref="LyricsService"/> 里的 HttpClient 用法不同，这里**必须流式**：
     /// 桌面小卡片等不起"整段读完再显示"，所以用 <c>stream: true</c> + SSE 逐行读
@@ -128,10 +133,13 @@ namespace alpha_island.Services
         /// <summary>
         /// 流式对话：边收边吐增量文本。抛 <see cref="ChatException"/> 时 <see cref="LastError"/> 已填好。
         /// </summary>
-        public async IAsyncEnumerable<string> StreamAsync(
+        public IAsyncEnumerable<string> StreamAsync(IReadOnlyList<ChatMessage> history, ChatConfig config,
+            CancellationToken cancellationToken = default) => StreamCoreAsync(history, config, cancellationToken, null);
+
+        private async IAsyncEnumerable<string> StreamCoreAsync(
             IReadOnlyList<ChatMessage> history,
             ChatConfig config,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            [EnumeratorCancellation] CancellationToken cancellationToken, ToolStreamState? toolState)
         {
             LastError = "";
 
@@ -153,8 +161,12 @@ namespace alpha_island.Services
             }
             foreach (var m in history)
             {
-                if (string.IsNullOrWhiteSpace(m.Content)) continue;
-                messages.Add(new { role = m.Role, content = m.Content });
+                if (m.LocalOnly || string.IsNullOrWhiteSpace(m.Content) && m.ToolCalls?.Length is not > 0) continue;
+                var message = new Dictionary<string, object?> { ["role"] = m.Role, ["content"] = m.Content };
+                if (m.ToolCallId != null) message["tool_call_id"] = m.ToolCallId;
+                if (m.ToolCalls?.Length > 0) message["tool_calls"] = m.ToolCalls.Select(t => new { id = t.Id, type = "function", function = new { name = t.Name, arguments = t.Arguments } });
+                if (m.ReasoningContent != null) message["reasoning_content"] = m.ReasoningContent;
+                messages.Add(message);
             }
 
             var payload = new Dictionary<string, object?>
@@ -165,6 +177,14 @@ namespace alpha_island.Services
                 ["max_tokens"] = config.MaxTokens,
                 ["messages"] = messages
             };
+            if (toolState?.Tools.Length > 0)
+            {
+                payload["tools"] = toolState.Tools.Select(t => new { type = "function", function = new { name = t.Name, description = t.Description, parameters = t.Parameters } });
+                payload["tool_choice"] = "auto";
+                payload["stream_options"] = new { include_usage = true };
+                if (config.HostForLog.EndsWith("deepseek.com", StringComparison.OrdinalIgnoreCase))
+                    payload["thinking"] = new { type = "disabled" };
+            }
             string json = JsonSerializer.Serialize(payload, ConversationFiles.JsonOptions);
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -210,6 +230,7 @@ namespace alpha_island.Services
                     throw new ChatException(LastError);
                 }
 
+                if (toolState != null) toolState.RequestAccepted = true;
                 stream = await response.Content.ReadAsStreamAsync(linked.Token).ConfigureAwait(false);
                 reader = new StreamReader(stream, Encoding.UTF8);
 
@@ -233,7 +254,7 @@ namespace alpha_island.Services
 
                     string data = line.Substring(5).Trim();
                     if (data.Length == 0) continue;
-                    if (data == "[DONE]") break;
+                    if (data == "[DONE]") { if (toolState != null) toolState.Completed = true; break; }
 
                     string? delta = null;
                     string? failure = null;
@@ -241,6 +262,8 @@ namespace alpha_island.Services
                     {
                         using var doc = JsonDocument.Parse(data);
                         var root = doc.RootElement;
+                        toolState?.Observe(root);
+                        if (toolState?.HasCalls == true) linked.CancelAfter(_idleTimeout);
 
                         if (root.TryGetProperty("error", out var err))
                         {
@@ -286,6 +309,9 @@ namespace alpha_island.Services
                         yield return delta;
                     }
                 }
+
+                if (toolState?.HasCalls == true && !toolState.Completed)
+                    throw new ChatException("工具请求流中断，未执行任何工具，请重新提问");
 
             }
             finally
@@ -333,7 +359,7 @@ namespace alpha_island.Services
     }
 
     /// <summary>
-    /// B 组①：会话历史落盘（<c>%LOCALAPPDATA%\alpha-island\ai\sessions\&lt;id&gt;.json</c>）。
+    /// 会话历史落盘（<c>%LOCALAPPDATA%\alpha-island\ai\sessions\&lt;id&gt;.json</c>）。
     /// 保留完整本地历史；发送给模型的上下文上限由对话页独立控制。
     /// </summary>
     public static class ChatHistoryStore

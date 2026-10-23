@@ -92,6 +92,16 @@ public partial class MainWindow
     {
         if (!MusicIslandCanShow || _approvalCurrent != null || _clipboardLocked || _sessionLocked) return;
         _musicIslandDismissed = false;
+            _startupMediaPromptUntil = DateTime.MinValue;
+            if (!_isPinned && _smtc?.Current is { } info)
+            {
+                _upNextTitle = info.DisplayTitle;
+                _upNextKind = info.IsPlaying ? "play" : "pause";
+                _upNextUntil = DateTime.UtcNow.AddSeconds(3);
+                _upNextShowing = true;
+                ScheduleUpNextDismiss(3);
+                SyncUpNextContent();
+            }
         if (_state == IslandState.Bar)
         {
             SwitchMainIsland("music"); SetState(IslandState.Pill);

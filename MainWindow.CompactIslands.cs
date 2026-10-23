@@ -54,6 +54,23 @@ public partial class MainWindow
         e.Handled = true;
     }
 
+    private void SideBubble_PreviewMouseRightButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (GameDoNotDisturbActive || VoiceIslandVisible || _sideBubbleComponentKey is not { } key) return;
+        if (key == "music") SetMusicPinned(!_isPinned, preserveCard: true);
+        else SetLayerPinned(key, !_layers.IsPinned(key), promoteToMain: false, preserveCard: true);
+    }
+
+    private void UpdateCompactIslandPinState()
+    {
+        if (_sideBubbleComponentKey is not { } key) return;
+        bool pinned = key == "music" ? _isPinned : _layers.IsPinned(key);
+        SideBubble.BorderBrush = (System.Windows.Media.Brush)FindResource(pinned ? "AccentCyan" : "GlassEdgeBrush");
+        string title = key == "system" ? SysNotifyTitle.Text + "\n" + SideBubbleDetail.Text : GetSatelliteDisplayName(key);
+        SideBubble.ToolTip = $"{title}（{(pinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）";
+    }
+
     // External agent status/approvals have their own pill, independent of the AI chat page.
     private bool TryOpenAgentIsland(string? key)
     {

@@ -40,7 +40,7 @@ namespace alpha_island.Interop
 
         /// <summary>
         /// 显示托盘图标。<paramref name="icon"/> 传 null 时按 <see cref="LoadAppIcon"/> 的兜底链取图标
-        /// （C 组①：以前这里写死 <c>SystemIcons.Application</c>，现在是应用自己的多尺寸图标）。
+        /// （以前这里写死 <c>SystemIcons.Application</c>，现在是应用自己的多尺寸图标）。
         /// </summary>
         public void Show(string tooltip, Icon? icon)
         {

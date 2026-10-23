@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Media data, spectrum push, playback progress and transport controls.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -37,12 +36,13 @@ namespace alpha_island
 
         /// <summary>调试钩子（ALPHA_ISLAND_FAKE_MEDIA=1）：用合成「正在播放」顶替真实 SMTC 会话。</summary>
         private bool _fakeMediaForDebug;
+        private DateTime _startupMediaPromptUntil;
         
         
 
         private void SyncPausedMediaVisibility()
         {
-            bool hidden = ShouldHidePausedMedia || ShouldHideForegroundMedia || GameDoNotDisturbActive && !_isPinned;
+            bool hidden = ShouldHidePausedMedia || ShouldHideForegroundMedia || GameDoNotDisturbActive;
             bool wasHidden = _workspace.Media.Hidden;
             _workspace.Media.Hidden = hidden;
             if (hidden)
@@ -118,6 +118,7 @@ namespace alpha_island
 
         private void ApplyMedia(NowPlayingInfo info)
         {
+            bool firstPlaying = !_sawMedia && info.IsPlaying;
             var transition = _workspace.Media.Preview(info);
             bool playbackChanged = transition.PlaybackChanged;
             _mediaWindows?.SetSource(info.SourceApp);
@@ -175,7 +176,7 @@ namespace alpha_island
                 StartLyricsFetch(info);
 
                 // 换曲提示：弹出细条→一级胶囊，中间显示新曲名、右侧"接下来"，过一会儿自己收回
-                // _sawMedia 保证只有"真的换了一首"才弹，开机第一首不弹。
+                // 首次播放由下面的启动提示处理，避免与换曲提示重复。
                 if (info.IsPlaying && _sawMedia) BeginUpNext(info);
             }
             else if (_options.LyricsEnabled && info.SupportsLyrics && LyricsIdentity(info) != _lyricsKey)
@@ -201,7 +202,10 @@ namespace alpha_island
             }
 
             _workspace.Media.Commit(info);
+            if (firstPlaying && _options.PlayNotifyEnabled)
+                _startupMediaPromptUntil = DateTime.UtcNow.AddSeconds(Math.Max(10, _options.GreetingSeconds + 2));
             SyncPausedMediaVisibility();
+            TryShowStartupMediaPrompt();
             SyncVisualizers();
             // A visible card does not reload its icon when only playback state changes.
             // Timeline / metadata refreshes keep the same state and must not replay this cue.
@@ -210,6 +214,7 @@ namespace alpha_island
 
         private void ApplyNoMedia()
         {
+            _startupMediaPromptUntil = DateTime.MinValue;
             PlaybackOrderButton.Visibility = Visibility.Collapsed;
             if (_runtimeEnabled)
             {
@@ -257,8 +262,22 @@ namespace alpha_island
                 CollapseToBar();
         }
 
+        private bool TryShowStartupMediaPrompt()
+        {
+            if (_startupMediaPromptUntil == DateTime.MinValue) return false;
+            if (DateTime.UtcNow > _startupMediaPromptUntil || _smtc?.Current is not { IsPlaying: true } info || !_options.PlayNotifyEnabled)
+            { _startupMediaPromptUntil = DateTime.MinValue; return false; }
+            if (GreetingActive || !CanPresentMediaStatePrompt) return false;
+            _startupMediaPromptUntil = DateTime.MinValue;
+            BeginPlayPrompt(info);
+            if (!_upNextShowing) return false;
+            _upNextUntil = DateTime.UtcNow.AddSeconds(3);
+            ScheduleUpNextDismiss(3);
+            return true;
+        }
+
         /// <summary>
-        /// 封面统一处理：① 回缩成球时球里显示专辑封面（用户要求换掉固定图标）；
+        /// 封面统一处理：① 回缩成球时球里显示专辑封面；
         /// ② 从封面提取主色调，给一级胶囊的频谱柱和完全展开的流体波浪上色。
         /// 用引用比较去重 —— SMTC 元数据抖动很频繁，不要每次都重算调色板（要遍历 1024 个像素）。
         /// </summary>
@@ -280,7 +299,7 @@ namespace alpha_island
                 MusicOrbGradient.Opacity = 1.0 - coverOn;
             }
 
-            // 可选的 3D 封面（C 组④）：同一张封面同步进 3D 场景并按需播一次翻转；
+            // 可选的 3D 封面：同一张封面同步进 3D 场景并按需播一次翻转；
             // 2D 画刷照旧更新，关掉开关切回 2D 时不用重新取图。
             SyncCover3DArt(art);
 
@@ -288,17 +307,9 @@ namespace alpha_island
 
             // Copilot 原型的四色阶（暖橙红 / 洋红 / 紫罗兰 / 蓝）按封面主色相旋转生成；
             // 每根柱子/每一层波浪自己的 alpha 由控件内部按原型常量叠加，这里给满不透明原色。
-            var ramp = palette.Ramp.Length >= 4 ? palette.Ramp : CoverPalette.DefaultRamp;
-
-            PillSpectrum.ColorLow = ramp[0];
-            PillSpectrum.ColorMid = ramp[1];
-            PillSpectrum.ColorHigh = ramp[2];
-            PillSpectrum.ColorExtra = ramp[3];
-
-            CardWave.ColorLow = ramp[0];
-            CardWave.ColorMid = ramp[1];
-            CardWave.ColorHigh = ramp[2];
-            CardWave.ColorExtra = ramp[3];
+            _spectrumAlbumRamp = palette.Ramp.Length >= 4 ? palette.Ramp : CoverPalette.DefaultRamp;
+            UpdateSpectrumColors(_spectrumPaletteReady);
+            _spectrumPaletteReady = true;
         }
 
         // ================= 频谱 =================

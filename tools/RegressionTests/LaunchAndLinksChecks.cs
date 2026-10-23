@@ -61,7 +61,7 @@ internal static partial class Program
             && BootLogAccess.GrantReadDescriptor(granted, user) == granted, "日志所有者保持不变，重复授权不叠加 ACL");
         var actual = BootTimingService.Read();
         Console.WriteLine("Boot timing live: " + actual.DisplayText + " | " + actual.Reason);
-        Check(actual.DesktopDuration == null || actual.DesktopDuration > TimeSpan.Zero, "普通权限未授权时明确不可用，不回退到近似值");
+        Check(actual.DesktopDuration == null || actual.DesktopDuration > TimeSpan.Zero, "本机读取保留明确的精确或参考结果，无有效时间时不伪造耗时");
     }
 
     private static void LaunchAndLinksUiChecks(alpha_island.MainWindow window, Grid root, string testRoot)

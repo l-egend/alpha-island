@@ -36,20 +36,6 @@ internal sealed class PluginIslandPage : IIslandPage
         try { return _page.Available?.Invoke() ?? true; }
         catch (Exception ex) { _failed(ex); return false; }
     }
-    internal bool KeepsWheel(DependencyObject? source, int delta)
-    {
-        bool consumes = false;
-        for (var node = source; node != null; node = node is Visual || node is System.Windows.Media.Media3D.Visual3D
-            ? VisualTreeHelper.GetParent(node) : (node as FrameworkContentElement)?.Parent)
-        {
-            if (node is Isolation.RemotePluginView or System.Windows.Controls.ComboBox or Slider) consumes = true;
-            if (node is ScrollViewer scroll && (delta < 0
-                ? scroll.VerticalOffset < scroll.ScrollableHeight - 1
-                : delta > 0 && scroll.VerticalOffset > 1)) consumes = true;
-            if (ReferenceEquals(node, View)) return consumes;
-        }
-        return false;
-    }
     public void OnActivated() => Invoke(_page.Activated);
     public void OnDeactivated() => Invoke(_page.Deactivated);
     public void OnViewportHeightChanged(double height) { if (View is FrameworkElement element) element.Height = height; }

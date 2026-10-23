@@ -12,8 +12,8 @@ namespace alpha_island.Animation;
 public enum ActionIconAnimation { None, Pulse, Connect, Disconnect, Spin, Tick }
 
 /// <summary>
-/// Presentation and lifecycle gate for finite SemanticIcon transitions. No whole-icon transforms,
-/// frame callbacks, timers or repeating clocks are kept while idle.
+/// Presentation and lifecycle gate for finite SemanticIcon transitions. Caller transforms remain
+/// intact; no frame callbacks, timers or repeating clocks are kept while idle.
 /// </summary>
 public static class ActionIconMotion
 {
@@ -186,12 +186,13 @@ public static class ActionIconMotion
             // with a short EaseOut so held dragging responds on the very next frames.
             bool volumeInput = _icons.All(icon => icon.ResolvedShape == IconShape.Volume);
             bool muteTransition = volumeInput && _icons.Any(icon => icon.VolumeStateChanging);
+            bool popEntrance = _icons.All(icon => icon.UsesPopEntrance);
             var animation = new DoubleAnimation
             {
-                From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(volumeInput ? (muteTransition ? 320 : 180) : 1400),
+                From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(volumeInput ? (muteTransition ? 320 : 180) : popEntrance ? 700 : 1400),
                 EasingFunction = volumeInput
                     ? new QuadraticEase { EasingMode = EasingMode.EaseOut }
-                    : new CubicEase { EasingMode = EasingMode.EaseInOut },
+                    : popEntrance ? null : new CubicEase { EasingMode = EasingMode.EaseInOut },
                 FillBehavior = FillBehavior.HoldEnd
             };
             _completion = animation;

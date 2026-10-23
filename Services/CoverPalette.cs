@@ -7,7 +7,7 @@ using PixelFormats = System.Windows.Media.PixelFormats;
 namespace alpha_island.Services
 {
     /// <summary>
-    /// 从专辑封面提取主色调，给频谱柱 / 波浪层上色（用户要求"色彩取自专辑封面主色调"）。
+    /// 从专辑封面提取主色调，给频谱柱 / 波浪层上色。
     ///
     /// 取色思路：缩到 32x32 → 转 Bgra32 → 逐像素转 HSL →
     /// 丢掉几乎全黑 / 全白 / 低饱和的像素，按色相分 24 个桶累加权重（权重 = 饱和度² × 明度）→
@@ -27,11 +27,8 @@ namespace alpha_island.Services
         /// <summary>
         /// 四色色阶：<c>暖橙红 → 洋红 → 紫罗兰 → 蓝</c>。
         ///
-        /// 设计原型（Copilot 的 JSX）把这四个色写死成
-        /// <c>#ff7a59 / #ff3d81 / #8b5cf6 / #3b82f6</c>；
-        /// 但用户要求"色彩取自专辑封面主色调"，所以这里**以封面主色相为锚点**，
-        /// 按原型调好的色相偏移展开，饱和度/明度统一抬到霓虹档。
-        /// 效果：无论封面偏什么颜色，冷暖跨度都和原型一模一样，只是整体旋转到封面的色域。
+        /// 以封面主色相为锚点，按预设色相偏移展开四色色阶，保持冷暖跨度，
+        /// 并提高饱和度和明度，以便频谱在深色背景下清晰显示。
         /// </summary>
         public Color[] Ramp { get; private set; } = Array.Empty<Color>();
 
@@ -227,6 +224,34 @@ namespace alpha_island.Services
                 Ramp = RampFromBuckets(weight, sumR, sumG, sumB, best, primary),
                 IsFallback = false
             };
+        }
+
+        /// <summary>Keep the album hue/saturation; move lightness only as far as needed for the sampled desktop.</summary>
+        internal static Color AgainstBackground(Color album, double background)
+        {
+            if (!double.IsFinite(background) || background is < 0 or > 1) return album;
+            static double Linear(byte channel)
+            { double c = channel / 255d; return c <= .04045 ? c / 12.92 : Math.Pow((c + .055) / 1.055, 2.4); }
+            double Contrast(Color color)
+            {
+                double light = .2126 * Linear(color.R) + .7152 * Linear(color.G) + .0722 * Linear(color.B);
+                return (Math.Max(light, background) + .05) / (Math.Min(light, background) + .05);
+            }
+            var best = album; double score = Contrast(album);
+            if (score >= 3) return album;
+            int direction = background > .2 ? -1 : 1;
+            for (int step = 1; step <= 22; step++)
+            {
+                foreach (int sign in new[] { direction, -direction })
+                {
+                    var candidate = Adjust(album, 1, sign * step * .01);
+                    candidate.A = album.A;
+                    double contrast = Contrast(candidate);
+                    if (contrast >= 3) return candidate;
+                    if (contrast > score) { score = contrast; best = candidate; }
+                }
+            }
+            return best;
         }
 
         /// <summary>在 HSL 空间里调饱和度和明度（比直接乘 RGB 通道更不容易溢出成白/黑）。</summary>

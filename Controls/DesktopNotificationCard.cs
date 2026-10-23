@@ -36,10 +36,13 @@ internal static class DesktopEventAppearance
         DesktopEventKind.PowerDisconnected => ("\uE945", Color.FromRgb(0xFB, 0x92, 0x3C)),
         DesktopEventKind.LowBattery => ("\uE850", Color.FromRgb(0xFB, 0x92, 0x3C)),
         DesktopEventKind.BluetoothLowBattery => ("\uE850", Color.FromRgb(0xFB, 0x92, 0x3C)),
+        DesktopEventKind.DeviceBatteryFull => ("\uE83F", Color.FromRgb(0x4C, 0xD9, 0x95)),
+        DesktopEventKind.DeviceCharging => ("\uE945", Color.FromRgb(0x4C, 0xD9, 0x95)),
         DesktopEventKind.CriticalBattery => ("\uE850", Color.FromRgb(0xFF, 0x55, 0x55)),
         DesktopEventKind.Locked => ("\uE72E", Color.FromRgb(0xA7, 0x8B, 0xFA)),
         DesktopEventKind.Unlocked => ("\uE785", Color.FromRgb(0xA7, 0x8B, 0xFA)),
         DesktopEventKind.System => ("\uE950", Color.FromRgb(0xFB, 0xBF, 0x24)),
+        DesktopEventKind.Assistant => ("\uE99A", Color.FromRgb(0x22, 0xD3, 0xEE)),
         DesktopEventKind.BootTiming => ("\uE823", Color.FromRgb(0x60, 0xA5, 0xFA)),
         DesktopEventKind.Weather => ("\uE9BD", Color.FromRgb(0x38, 0xBD, 0xF8)),
         DesktopEventKind.WifiRadio => ("\uE701", Color.FromRgb(0x60, 0xA5, 0xFA)),
@@ -53,6 +56,10 @@ public sealed class DesktopNotificationCard : Border
     public event Action<DesktopNotification>? OpenRequested;
     public event Action<DesktopNotification>? DismissRequested;
     public event Action<DesktopNotification>? BlockAppRequested;
+    public event Action<DesktopNotification>? PinRequested;
+    public event Action<DesktopNotification>? ReadRequested;
+    public event Action<DesktopNotification, AssistantNoticeAction>? ReminderActionRequested;
+    public event Action<DesktopNotification, string>? ReminderResponseRequested;
     public DesktopNotification Notification { get; }
     internal TextBlock TitleText { get; }
     internal TextBlock BodyText { get; }
@@ -139,14 +146,40 @@ public sealed class DesktopNotificationCard : Border
         _fullTextPanel = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(8),
             Background = new SolidColorBrush(Color.FromArgb(0x18, 255, 255, 255)), Child = _fullText,
             Margin = new Thickness(0, 5, 0, 0), Visibility = Visibility.Collapsed };
-        _fullTextButton = ActionButton("查看全文", () => SetFullContentExpanded(!FullContentExpanded));
+        _fullTextButton = ActionButton("查看全文", () => { SetFullContentExpanded(!FullContentExpanded); if (FullContentExpanded) ReadRequested?.Invoke(item); });
         _fullTextButton.Margin = new Thickness(0, 0, 8, 0);
         // Keep the body image alongside the full reader, not just its clipped preview.
         Grid.SetColumn(_fullTextPanel, 1); content.Children.Add(_fullTextPanel);
         _fullTextButton.FontSize = 12;
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 7, 0, 6) };
+        var toolbar = new WrapPanel { Margin = new Thickness(0, 7, 0, 6) };
         toolbar.Children.Add(_fullTextButton);
         stack.Children.Insert(1, toolbar);
+        var pin = ActionButton(item.IsPinned ? "取消置顶" : "置顶", () => PinRequested?.Invoke(item));
+        pin.ToolTip = "置顶仅影响通知中心排序，不让岛常驻展开"; toolbar.Children.Add(pin);
+        if (item.IsPinned || item.Reminder is { Pending: true })
+        {
+            var status = Text((item.Reminder is { Pending: true } ? "待处理" : "") + (item.IsPinned ? " · 已置顶" : ""), 10, 0xD0);
+            stack.Children.Insert(2, status);
+        }
+        if (item.Reminder is { } reminder && AssistantReminderRules.Valid(reminder) && reminder.Expires > DateTimeOffset.Now)
+        {
+            var actions = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            foreach (var action in reminder.Actions)
+                actions.Children.Add(ActionButton(action.Label, () => ReminderActionRequested?.Invoke(item, action)));
+            if (reminder.Pending)
+            {
+                if (reminder.Rule != "habit") actions.Children.Add(ActionButton("已处理", () => ReminderResponseRequested?.Invoke(item, "done")));
+                if (AssistantReminderRules.EngineNames.Contains(reminder.Rule)) actions.Children.Add(ActionButton("稍后提醒", () => ReminderResponseRequested?.Invoke(item, "later")));
+            }
+            if (AssistantReminderRules.EngineNames.Contains(reminder.Rule)) actions.Children.Add(ActionButton("今天不再提醒", () => ReminderResponseRequested?.Invoke(item, "today")));
+            stack.Children.Add(actions);
+        }
+        if (!string.IsNullOrWhiteSpace(item.ActionFeedback))
+        {
+            var feedback = Text(item.ActionFeedback, 11, 0xFF); feedback.TextWrapping = TextWrapping.Wrap;
+            feedback.Foreground = new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24)); feedback.Margin = new Thickness(0, 6, 0, 0);
+            stack.Children.Add(feedback);
+        }
         if (item.CanOpenApp)
         {
             OpenButton = ActionButton("打开应用", () => OpenRequested?.Invoke(item)); toolbar.Children.Add(OpenButton);
@@ -172,7 +205,7 @@ public sealed class DesktopNotificationCard : Border
     internal static Button ActionButton(string title, Action action)
     {
         var button = new Button { Content = title, FontSize = 10.5, Padding = new Thickness(8, 3, 8, 3),
-            Margin = new Thickness(0, 0, 6, 0), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+            Margin = new Thickness(0, 0, 6, 5), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
         button.SetResourceReference(StyleProperty, "ThemedButton");
         if (title == "清空记录") button.Content = new StackPanel { Orientation = Orientation.Horizontal,
             Children = { new AlphaIsland.PluginSdk.GlyphIcon { Text = "\uE74D", Width = 16, Height = 16, Margin = new Thickness(0, 0, 5, 0),

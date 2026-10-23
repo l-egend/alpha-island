@@ -22,27 +22,42 @@ public partial class ApiSettingsView : UserControl, IDisposable
         _context = context; _options = context == null ? new MemorySettings() : new PluginChatSettings(context);
         _aiSecretsFile = aiSecretsFile ?? (context == null ? null : Path.Combine(context.ConfigDirectory,"ai","secrets.dat"));
         _aiConnectionService = connectionService ?? new ChatService();
-        InitializeComponent(); LoadFrom(_options);
+        InitializeComponent(); AddAssistantSettings(); LoadFrom(_options);
         Unloaded += (_, _) => CancelAiConnection();
     }
     internal void LoadFrom(IChatSettings settings)
     {
         _options = settings; _suppress = true;
         AiBaseUrlBox.Text = settings.GetText("AiBaseUrl","https://api.deepseek.com/v1");
-        AiSystemPromptBox.Text = settings.GetText("AiSystemPrompt","");
+        LoadPersona(settings);
+        foreach (var pair in _assistantOptions) pair.Value.IsChecked = !string.Equals(settings.GetText(pair.Key, "true"), "false", StringComparison.OrdinalIgnoreCase);
         RefreshAiKeyState(); RefreshAiModelConnection(); SyncAiAutomaticState(); _suppress = false;
     }
     private void ApplyChanges()
     {
         if (_suppress || _disposed) return;
+        if (AiSystemPromptBox.Text.Length > ApiAssistantPrompt.MaximumPersonaCharacters)
+        {
+            _suppress = true;
+            try { AiSystemPromptBox.Text = AiSystemPromptBox.Text[..ApiAssistantPrompt.MaximumPersonaCharacters]; }
+            finally { _suppress = false; }
+            UpdatePersonaInfo();
+        }
         _options.SetValue("AiBaseUrl", AiBaseUrlBox.Text.Trim());
         _options.SetValue("AiModel", AiModelBox.SelectedItem as string ?? "");
-        _options.SetValue("AiSystemPrompt", AiSystemPromptBox.Text);
+        _options.SetValue("AiPersonaPrompt", AiSystemPromptBox.Text);
+        _options.SetValue("AiPersonaFile", _personaFile);
+        foreach (var pair in _assistantOptions) _options.SetValue(pair.Key, pair.Value.IsChecked == true);
         _options.SetValue("AiApiKey", ""); SyncAiAutomaticState();
         OptionsChanged?.Invoke(this, _options); _context?.Refresh();
     }
     private void TextBox_Changed(object sender, TextChangedEventArgs e)
-    { if (_suppress) return; if (ReferenceEquals(sender,AiBaseUrlBox)) ResetAiModelConnection(); ApplyChanges(); }
+    {
+        if (_suppress) return;
+        if (ReferenceEquals(sender,AiBaseUrlBox)) ResetAiModelConnection();
+        if (ReferenceEquals(sender,AiSystemPromptBox)) { _personaFile = ""; UpdatePersonaInfo(); }
+        ApplyChanges();
+    }
     private void Setting_Changed(object sender, RoutedEventArgs e) { }
     private void OpenAiConversation_Click(object sender, RoutedEventArgs e)
     { if (AiEnabledToggle.IsChecked != true) return; AiConversationRequested?.Invoke(this, EventArgs.Empty); _context?.OpenPage("chat"); }

@@ -17,6 +17,7 @@ public partial class MainWindow
     private ProductivityViewModel? _productivityViewModel;
     private void RegisterProductivityPage()
     {
+        InitializeDesktopAssistant();
         var service = new ProductivityService(Dispatcher, IslandTicker.Shared(Dispatcher),
             _runtimeEnabled ? Path.Combine(AppPaths.Root, "productivity.json") : null,
             SettingsRegistry.GetBool(_options, "ProductivityEnabled", true));
@@ -48,8 +49,9 @@ public partial class MainWindow
             catch (Exception ex) { System.Windows.MessageBox.Show("导出失败：" + ex.Message, "活动统计"); }
         }), UtilityButton("清除统计", service.Clear)));
         panel.Children.Add(UtilityText("仅保留本机最近 90 天时长；不记录聊天内容。各类别可重叠，不能相加作为电脑使用总时长。", 9));
+        if (_desktopAssistant != null) panel.Children.Add(new alpha_island.Controls.TimelineView(_desktopAssistant, _utilitiesLifetime.Token));
         var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        scroll.PreviewMouseWheel += (_, args) => { scroll.ScrollToVerticalOffset(scroll.VerticalOffset - args.Delta / 3d); args.Handled = true; };
+        scroll.PreviewMouseWheel += (_, args) => { if (alpha_island.Controls.TimelineView.ContainsList(args.OriginalSource as DependencyObject)) return; scroll.ScrollToVerticalOffset(scroll.VerticalOffset - args.Delta / 3d); args.Handled = true; };
         var view = new Grid { Height = 324, VerticalAlignment = VerticalAlignment.Center, RenderTransform = new TranslateTransform() };
         view.Children.Add(scroll); CardViewport.Children.Add(view);
         _pages.Register(new DelegateIslandPage("productivity", "生产力统计", view, 12, 354,
@@ -77,15 +79,22 @@ public partial class MainWindow
         model.Refresh(); Render(); OnProductivityFocusChanged(); OnProductivityAgentChanged(null, EventArgs.Empty);
     }
     private void OnProductivityMediaChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
-        => _productivity?.SetActivity(ProductivityActivity.Music, _workspace.Media.Current is { IsPlaying: true, ContentKind: MediaContentKind.Music });
-    private void OnProductivityFocusChanged() => _productivity?.SetActivity(ProductivityActivity.Focus, _pomodoro.Running && !_pomodoro.IsBreak);
+    {
+        _productivity?.SetActivity(ProductivityActivity.Music, _workspace.Media.Current is { IsPlaying: true, ContentKind: MediaContentKind.Music });
+        _desktopAssistant?.NotifyActivityChanged();
+    }
+    private void OnProductivityFocusChanged()
+    { _productivity?.SetActivity(ProductivityActivity.Focus, _pomodoro.Running && !_pomodoro.IsBreak); _assistantReminders?.TickNow(); }
     private void OnProductivityAgentChanged(object? sender, EventArgs args)
     {
         if (!Dispatcher.CheckAccess()) { if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(() => OnProductivityAgentChanged(sender, args)); return; }
         _productivity?.SetActivity(ProductivityActivity.Agent, AgentStatus.Snapshot.Any(activity => activity.State is AgentRunState.Thinking or AgentRunState.Working or AgentRunState.Streaming or AgentRunState.ToolWait));
+        _assistantReminders?.TickNow();
     }
     private void StopProductivity()
     {
+        _assistantReminders?.Dispose(); _assistantReminders = null;
+        _desktopAssistant?.Dispose(); _desktopAssistant = null; _desktopTools?.Dispose();
         _workspace.Media.PropertyChanged -= OnProductivityMediaChanged; _workspace.Focus.Changed -= OnProductivityFocusChanged;
         AgentStatus.Changed -= OnProductivityAgentChanged; _productivity?.Dispose(); _productivity = null;
     }

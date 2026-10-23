@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Island shape/size/geometry and the state machine.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -84,9 +83,9 @@ namespace alpha_island
         /// </summary>
         private void SetState(IslandState next, bool force = false, string? preferredPage = null)
         {
-            // Game quiet blocks automatic empty-pill transitions from media/assistant handoffs.
-            if (GameDoNotDisturbActive && next == IslandState.Pill && !HasActiveNotification && !HasVisibleMusicPin)
-                next = IslandState.Bar;
+            // All entry points, including explicit page requests and manual pins,
+            // share the game lock. No notification may reopen the contour.
+            if (GameDoNotDisturbActive) next = GameQuietIntroActive ? IslandState.Pill : IslandState.Bar;
             // 审批操作位于胶囊：不能被普通点击或选页入口切到没有审批按钮的卡片。
             if (_approvalCurrent != null && !GameDoNotDisturbActive && next == IslandState.Card) next = IslandState.Pill;
             // 暂停隐藏只撤下音乐内容；所有自动降级/再展开入口也必须跳过没有载荷的胶囊。
@@ -204,7 +203,22 @@ namespace alpha_island
             ApplyReveal();
             SyncComponentHandle();
 
-            if (_animator != null)
+            if (GameDoNotDisturbActive)
+            {
+                _widthOnlyMorph = false;
+                var quietGeometry = GeometryFor(next);
+                _animator?.SetImmediate(quietGeometry);
+                FitIslandHost(quietGeometry);
+                _layers.EndMorph();
+                _reveal = 1.0;
+                ApplyReveal();
+                CancelSiriOrb();
+                ClearCardTransitionBlur();
+                CardCarouselHost.Visibility = Visibility.Collapsed;
+                CardCarouselHost.Opacity = 0;
+                CardCarouselHost.IsHitTestVisible = false;
+            }
+            else if (_animator != null)
             {
                 // 从小岛回到主岛：只靠两条弹簧的相位差做"横向先摊开、高度后追上"的融合，
                 // 不再给路径点。原因（ALPHA_ISLAND_TRACE 实测轨迹）：原来的 via 把宽度先推到
@@ -381,7 +395,7 @@ namespace alpha_island
                     break;
 
                 case IslandActionType.SysNotify:
-                    // 系统状态通用提示（A 组②③④⑤）：字形跟着提示层走（内存/飞行模式/隐私灯各不同），
+                    // 系统状态通用提示：字形跟着提示层走（内存/飞行模式/隐私灯各不同），
                     // 层里没写过字形时退回"内存"字形，别让圆心里空着。
                     OrbCover.Opacity = 0;
                     OrbCoverRing.Opacity = 0;

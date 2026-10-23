@@ -43,6 +43,7 @@ namespace alpha_island.Core
             {
                 new("运行环境", EnvironmentText()),
                 new("能力检测", CapabilityText()),
+                new("内存快照", MemoryText()),
             };
 
             (string Title, Func<string> Body)[] extra;
@@ -58,6 +59,18 @@ namespace alpha_island.Core
 
             list.Add(new DiagnosticsSection("最近日志", RecentLogText(60)));
             return list;
+        }
+
+        private static string MemoryText()
+        {
+            using var process = Process.GetCurrentProcess();
+            var heap = GC.GetGCMemoryInfo();
+            return $"当前进程 PID：{process.Id}（独立插件需分别统计）\n"
+                + $"工作集（含共享页面）：{process.WorkingSet64 / 1048576d:F1} MiB\n"
+                + $"私有提交：{process.PrivateMemorySize64 / 1048576d:F1} MiB\n"
+                + $"托管堆：{GC.GetTotalMemory(false) / 1048576d:F1} MiB\n"
+                + $"GC 已提交 / 碎片：{heap.TotalCommittedBytes / 1048576d:F1} / {heap.FragmentedBytes / 1048576d:F1} MiB\n"
+                + "GC 模式：" + (System.Runtime.GCSettings.IsServerGC ? "Server" : "Workstation");
         }
 
         /// <summary>取一段已注册段落（不触发其它段落）。没注册过返回空串。</summary>

@@ -136,8 +136,8 @@ internal static partial class Program
                 Check(input.Batches.Count == 1, "禁用后点击路径也不发送按键");
             }
             finally { screen.Close(); SynchronizationContext.SetSynchronizationContext(previousContext); }
-            Check(Descendants<Button>(islandRoot).Any(b => Equals(b.Content, "调用外部翻译"))
-                && Descendants<Button>(islandRoot).Any(b => Equals(b.Content, "快捷键设置")), "岛卡片同时提供外部调用和快捷键设置入口");
+            Check(Descendants<Button>(islandRoot).Any(b => System.Windows.Automation.AutomationProperties.GetName(b) == "调用外部翻译")
+                && Descendants<Button>(islandRoot).Any(b => System.Windows.Automation.AutomationProperties.GetName(b) == "快捷键设置"), "岛卡片同时提供外部调用和快捷键设置入口");
             Directory.CreateDirectory("bin/external-translation-previews");
             SaveThemePreview(settingsRoot, "bin/external-translation-previews/settings.png");
         }

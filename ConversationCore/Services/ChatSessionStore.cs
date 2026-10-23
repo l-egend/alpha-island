@@ -19,6 +19,8 @@ internal sealed class ChatSessionStore(string? directory = null)
         public string Title { get; set; } = "";
         public string Updated { get; set; } = "";
         public List<ChatMessage> Messages { get; set; } = new();
+        public string DesktopContext { get; set; } = "";
+        public bool ApiStarted { get; set; }
     }
 
     private string PathFor(string id)
@@ -50,6 +52,21 @@ internal sealed class ChatSessionStore(string? directory = null)
         return new SessionFile { Session = id };
     }
     internal List<ChatMessage> Load(string id = ChatHistoryStore.DefaultSessionId) => Read(id).Messages;
+    internal bool HasStartedApi(string id)
+    {
+        var file = Read(id);
+        return file.ApiStarted || file.Messages.Any(m => m.Role == ChatMessage.RoleAssistant && !m.LocalOnly);
+    }
+    internal void MarkApiStarted(string id)
+    {
+        var file = Read(id);
+        if (file.ApiStarted) return;
+        file.ApiStarted = true; Write(id, file, true);
+    }
+    internal string ReadDesktopContext(string id)
+    { string value = Read(id).DesktopContext ?? ""; return value.Length <= 4096 ? value : ""; }
+    internal void WriteDesktopContext(string id, string context)
+    { if (context.Length > 4096) throw new ArgumentException("系统状态过长"); var file = Read(id); file.DesktopContext = context; Write(id, file, false); }
     internal bool Exists(string id) => File.Exists(PathFor(id)) || File.Exists(PathFor(id) + ".bak");
     private static string Title(SessionFile file) => !string.IsNullOrWhiteSpace(file.Title) ? file.Title
         : file.Messages.FirstOrDefault(m => m.Role == ChatMessage.RoleUser)?.Content.Replace('\n', ' ').Trim() is { Length: > 0 } text
@@ -81,9 +98,23 @@ internal sealed class ChatSessionStore(string? directory = null)
     {
         var file = Read(id);
         file.Session = id;
+        if (messages.Count == 0) { file.DesktopContext = ""; file.ApiStarted = false; }
         file.Messages = messages.Where(m => (m.Role is ChatMessage.RoleUser or ChatMessage.RoleAssistant)
             && !string.IsNullOrWhiteSpace(m.Content)).ToList();
         Write(id, file, keepBackup);
+    }
+    internal void SaveTail(string id, int prefixCount, IReadOnlyList<ChatMessage> messages)
+    {
+        var file = Read(id);
+        if (prefixCount < 0 || prefixCount > file.Messages.Count)
+            throw new IOException("对话历史已变化，请重新打开后保存");
+        var prefix = file.Messages.Take(prefixCount).Select(message => message with
+        { Content = SensitiveTextDetector.Inspect(message.Content).Redacted });
+        file.Messages = prefix.Concat(messages).Where(message => (message.Role is ChatMessage.RoleUser or ChatMessage.RoleAssistant)
+            && !string.IsNullOrWhiteSpace(message.Content)).ToList();
+        if (file.Messages.Count == 0) { file.DesktopContext = ""; file.ApiStarted = false; }
+        file.Session = id;
+        Write(id, file, true);
     }
     private void Write(string id, SessionFile file, bool keepBackup)
     {

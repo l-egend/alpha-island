@@ -159,6 +159,7 @@ namespace alpha_island.Services
 
         /// <summary>当前默认音频设备名称。</summary>
         public string CurrentDeviceName => _currentDeviceName ?? "系统扬声器";
+        internal string CurrentDeviceIdentifier => _currentDeviceId ?? "";
 
         public VolumeService(Dispatcher dispatcher)
         {

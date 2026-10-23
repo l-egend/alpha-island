@@ -21,7 +21,7 @@ namespace alpha_island.Services
     }
 
     /// <summary>
-    /// 网速采样（A 组①）。**本类不含定时器** —— 节拍由 <see cref="IslandTicker"/> 的
+    /// 网速采样。**本类不含定时器** —— 节拍由 <see cref="IslandTicker"/> 的
     /// <c>netspeed</c> 订阅提供（1 秒一拍），这里只做「选网卡 → 累计字节差分 → 算速率」。
     ///
     /// 为什么不用 <c>NetworkInterface.GetIPv4Statistics()</c> 直接读单块网卡：
@@ -29,7 +29,7 @@ namespace alpha_island.Services
     /// 而"当前默认路由走哪块"用 <c>NetworkInterface</c> 拿不到；把 Up 状态的物理网卡**全部累加**
     /// 既不用判断默认路由，又天然覆盖"插网线自动切有线"的场景。
     ///
-    /// 排除规则（照抄计划 §4 的 A 组①）：Loopback / Tunnel 一律不算，名字或描述里带
+    /// 排除规则（网络接口过滤）：Loopback / Tunnel 一律不算，名字或描述里带
     /// clash / tap / wintun / vpn / hyper-v / vmware / tailscale / zerotier 的虚拟网卡也不算 ——
     /// 它们要么不承载真实流量，要么会把同一份流量再统计一遍（Clash 的 TUN 网卡尤其明显）。
     /// </summary>
@@ -69,6 +69,8 @@ namespace alpha_island.Services
         /// <summary>本服务启动后采得的流量，不含建立基线之前的网卡历史。</summary>
         public long SessionDownloadedBytes { get; private set; }
         public long SessionUploadedBytes { get; private set; }
+        internal long ObservedDownloadedBytes { get; private set; }
+        internal long ObservedUploadedBytes { get; private set; }
         public double SessionPeakDownload { get; private set; }
         public double SessionPeakUpload { get; private set; }
 
@@ -156,6 +158,8 @@ namespace alpha_island.Services
             deltaDown = Math.Max(0, deltaDown);
             deltaUp = Math.Max(0, deltaUp);
             Current = new NetworkSpeedSample(deltaDown / seconds, deltaUp / seconds);
+            ObservedDownloadedBytes = deltaDown > long.MaxValue - ObservedDownloadedBytes ? long.MaxValue : ObservedDownloadedBytes + deltaDown;
+            ObservedUploadedBytes = deltaUp > long.MaxValue - ObservedUploadedBytes ? long.MaxValue : ObservedUploadedBytes + deltaUp;
             SessionDownloadedBytes += deltaDown;
             SessionUploadedBytes += deltaUp;
             SessionPeakDownload = Math.Max(SessionPeakDownload, Current.DownBytesPerSecond);

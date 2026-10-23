@@ -23,6 +23,7 @@ namespace alpha_island.Animation
 
         private static readonly ConditionalWeakTable<Border, State> States = new();
         public static event Action<Border, TimeSpan>? MotionStarted;
+        public static event Action<Border>? MotionFinished;
 
         /// <returns>是否需要重新播放入场动画。</returns>
         public static bool Show(Border orb)
@@ -36,6 +37,7 @@ namespace alpha_island.Animation
             state.Hiding = false;
             state.TargetX = null; state.Returned = null;
             ResetAnimations(orb);
+            MotionFinished?.Invoke(orb);
             orb.Visibility = Visibility.Visible;
             orb.Opacity = 1;
             orb.IsHitTestVisible = true;
@@ -56,7 +58,7 @@ namespace alpha_island.Animation
             translate.X = startX; translate.Y = 0;
             if (scale != null) scale.ScaleX = scale.ScaleY = 1;
             if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave)
-            { translate.X = targetX; state.TargetX = null; return; }
+            { translate.X = targetX; state.TargetX = null; MotionFinished?.Invoke(orb); return; }
             if (orb.Child is UIElement content)
             {
                 var reveal = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(105));
@@ -64,7 +66,11 @@ namespace alpha_island.Animation
             }
             var duration = LiquidCellMotion.SplitDuration;
             var move = CreateSplitMove(startX, targetX);
-            move.Completed += (_, _) => { if (state.Generation == generation) state.TargetX = null; };
+            move.Completed += (_, _) =>
+            {
+                if (state.Generation != generation) return;
+                state.TargetX = null; MotionFinished?.Invoke(orb);
+            };
             MotionStarted?.Invoke(orb, duration);
             AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate, TranslateTransform.XProperty, move);
         }
@@ -96,9 +102,13 @@ namespace alpha_island.Animation
             state.TargetX = targetX; state.Kind = LiquidMotionKind.Reflow;
             double from = translate.X;
             AnimationReset.Translate(translate); translate.X = targetX;
-            if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave) { state.TargetX = null; return; }
+            if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave) { state.TargetX = null; MotionFinished?.Invoke(orb); return; }
             var move = new DoubleAnimation(from, targetX, LiquidCellMotion.ReflowDuration) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-            move.Completed += (_, _) => { if (state.Generation == generation) state.TargetX = null; };
+            move.Completed += (_, _) =>
+            {
+                if (state.Generation != generation) return;
+                state.TargetX = null; MotionFinished?.Invoke(orb);
+            };
             MotionStarted?.Invoke(orb, LiquidCellMotion.ReflowDuration);
             AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(translate, TranslateTransform.XProperty, move);
         }
@@ -198,6 +208,7 @@ namespace alpha_island.Animation
             ResetAnimations(orb);
             if (translate != null) { translate.X = x; translate.Y = y; }
             orb.Opacity = opacity;
+            MotionFinished?.Invoke(orb);
         }
         private static void FinishHide(Border orb, State state, int generation)
         {
@@ -207,6 +218,7 @@ namespace alpha_island.Animation
             ResetAnimations(orb);
             orb.Visibility = Visibility.Collapsed;
             orb.Opacity = 0;
+            MotionFinished?.Invoke(orb);
             returned?.Invoke();
         }
 

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -24,9 +25,10 @@ public partial class MainWindow
     private bool _componentCardAwaitingPointer;
     private long _componentSelectedTick;
     private Point _componentKeyboardPointer;
+    private IntPtr _componentMenuForegroundWindow;
     private readonly WheelAccumulator _componentWheel = new();
     private bool ComponentSwitchGestureActive => _componentPressActive || _componentMenuVisible;
-    private bool CanUseComponentSwitcher => !_exiting && !_sessionLocked && !_clipboardLocked && _approvalCurrent == null && _pages.Count > 1;
+    private bool CanUseComponentSwitcher => !_exiting && !GameDoNotDisturbActive && !_sessionLocked && _approvalCurrent == null && _pages.Count > 1;
 
     private void InitializeComponentSwitcher()
     {
@@ -45,12 +47,23 @@ public partial class MainWindow
         ComponentHandle.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
+            if (_componentMenuVisible)
+            {
+                _componentPressActive = false;
+                PollComponentPointer(commitImmediately: true);
+                if (ComponentHandle.IsMouseCaptured) ComponentHandle.ReleaseMouseCapture();
+                return;
+            }
             bool next = _componentPressActive && !_componentMenuVisible && ComponentHandle.ContainsHandlePoint(e.GetPosition(ComponentHandle));
-            if (_componentMenuVisible) PollComponentPointer(commitImmediately: true);
             CloseComponentSwitcher();
             if (next) StepComponent(1);
         };
-        ComponentHandle.LostMouseCapture += (_, _) => { if (_componentPressActive) CloseComponentSwitcher(); };
+        ComponentHandle.LostMouseCapture += (_, _) =>
+        {
+            // A Popup creates a separate HWND and can take capture during its first layout.
+            // Once visible, pointer polling and outside clicks own the menu lifetime.
+            if (_componentPressActive && !_componentMenuVisible) CloseComponentSwitcher();
+        };
         ComponentHandle.PreviewMouseWheel += (_, e) => { if (!_componentMenuVisible) TryWheelSwitchComponent(e.Delta); e.Handled = true; };
         ComponentHandle.PreviewKeyDown += (_, e) =>
         {
@@ -76,7 +89,17 @@ public partial class MainWindow
             }
         };
         _pages.PagesChanged += () => { CloseComponentSwitcher(); SyncComponentHandle(); };
-        Deactivated += (_, _) => CloseComponentSwitcher();
+        Deactivated += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_componentMenuVisible)
+            {
+                IntPtr foreground = Interop.NativeMethods.GetForegroundWindow();
+                IntPtr menuWindow = (PresentationSource.FromVisual(_componentMenu) as HwndSource)?.Handle ?? IntPtr.Zero;
+                if (foreground == _componentMenuForegroundWindow || foreground == menuWindow
+                    || foreground == (PresentationSource.FromVisual(ComponentHandle) as HwndSource)?.Handle) return;
+            }
+            CloseComponentSwitcher();
+        }), DispatcherPriority.Background);
         _componentHoldTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(400) };
         _componentHoldTimer.Tick += (_, _) =>
         {
@@ -114,6 +137,7 @@ public partial class MainWindow
         _componentMenu.SetPages(_pages.Pages, CurrentComponentId(), IslandBody.Background);
         _componentMenu.ArrangeArc(false, false, ComponentHandle.ActualHeight, ComponentHandle.ContourCornerRadius.TopRight);
         _componentHoveredId = null; _componentMenuVisible = true;
+        _componentMenuForegroundWindow = Interop.NativeMethods.GetForegroundWindow();
         ComponentHandle.Engaged = true; _hoverOutTicks = 0;
         if (!showPopup) { _componentMenu.Reveal(false); return; }
         _componentPopup ??= new Popup { AllowsTransparency = true, StaysOpen = true, Placement = PlacementMode.Custom,
@@ -165,6 +189,12 @@ public partial class MainWindow
                 if ((new Point(cursor.X, cursor.Y) - _componentKeyboardPointer).Length < 2) return;
                 _componentKeyboardNavigation = false;
             }
+            if (IsPointOnComponentHandle(cursor.X, cursor.Y))
+            {
+                UpdateComponentHover(_componentMenu.Layout.Anchor, commitImmediately);
+                return;
+            }
+            if (PresentationSource.FromVisual(_componentMenu) == null || !_componentMenu.IsArrangeValid) return;
             UpdateComponentHover(_componentMenu.PointFromScreen(new Point(cursor.X, cursor.Y)), commitImmediately);
         }
     }
@@ -185,11 +215,11 @@ public partial class MainWindow
             _componentHoveredId = id;
             _componentMenu.Highlight(id);
         }
-        // Hover only previews the target. Only releasing over an icon commits the selection.
+        // Hover previews; releasing over an icon commits. Releasing at the handle keeps
+        // the menu open so a long press also works as a click-to-open menu.
         if (commitImmediately)
         {
             if (id != null) SelectComponent(id);
-            else CloseComponentSwitcher();
         }
     }
 
@@ -233,7 +263,7 @@ public partial class MainWindow
     {
         if (_state != IslandState.Card || !_componentCardAwaitingPointer) return false;
         long elapsed = Environment.TickCount64 - _componentSelectedTick;
-        if (elapsed < 450 || (!cursorInside && elapsed < 1500)) return true;
+        if (elapsed < 450 || !cursorInside) return true;
         _componentCardAwaitingPointer = false;
         return false;
     }

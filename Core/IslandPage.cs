@@ -16,6 +16,7 @@ namespace alpha_island.Core
         public const string NetSpeed = "netspeed";
         public const string System = "system";
         public const string Notifications = "notifications";
+        public const string DeviceBatteries = "device-batteries";
 
         /// <summary>下载进度页（第二批③）：浏览器（Chrome / Edge）与 Steam 的下载进度。</summary>
         public const string Download = "download";

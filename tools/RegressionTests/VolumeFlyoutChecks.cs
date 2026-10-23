@@ -13,7 +13,14 @@ internal static partial class Program
     [DllImport("user32.dll", EntryPoint = "keybd_event")]
     private static extern void VolumeTestKey(byte key, byte scan, uint flags, UIntPtr extra);
     private static void PressVolumeTestKey(byte key)
-    { VolumeTestKey(key, 0, 0, UIntPtr.Zero); VolumeTestKey(key, 0, 2, UIntPtr.Zero); }
+    {
+        var inputs = new[] {
+            new NativeMethods.INPUT { type = NativeMethods.INPUT_KEYBOARD, u = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = key, dwFlags = 1 } } },
+            new NativeMethods.INPUT { type = NativeMethods.INPUT_KEYBOARD, u = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = key, dwFlags = 1 | NativeMethods.KEYEVENTF_KEYUP } } }
+        };
+        uint accepted = NativeMethods.SendInput(2, inputs, Marshal.SizeOf<NativeMethods.INPUT>());
+        if (accepted != 2) throw new InvalidOperationException("Volume test input was not accepted: " + accepted + "; Win32=" + Marshal.GetLastWin32Error());
+    }
 
     private static void VolumeFlyoutUiChecks(alpha_island.MainWindow window, Grid root)
     {

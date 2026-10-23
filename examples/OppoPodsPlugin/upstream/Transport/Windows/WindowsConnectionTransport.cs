@@ -65,6 +65,7 @@ public sealed class WindowsConnectionTransport : IPodTransport
         lock (_gate)
         {
             ThrowIfDisposed();
+            LastError = null;
             previous = _active;
             previousAttempts = _connecting.ToArray();
             _connecting.Clear();
@@ -182,6 +183,7 @@ public sealed class WindowsConnectionTransport : IPodTransport
         Stopwatch budget)
     {
         if (factories.Count == 0 || !IsCurrent(generation)) return null;
+        var failures = new List<string>();
 
         // 顺序尝试各传输：RFCOMM(首选) → Winsock SPP → GATT。
         // 从同一本地蓝牙射频并发发起多个 RFCOMM 连接会造成本地 RFCOMM 通道分配冲突
@@ -206,6 +208,7 @@ public sealed class WindowsConnectionTransport : IPodTransport
             var remainingMs = (int)Math.Max(1, _connectBudgetMs - budget.ElapsedMilliseconds);
             Log.D("WINCONNECT", $"顺序尝试 {transport.GetType().Name} addr={addr:X12}，预算剩余={remainingMs}ms");
             bool ok;
+            string? attemptError = null;
             try
             {
                 ok = transport.Connect();
@@ -213,7 +216,7 @@ public sealed class WindowsConnectionTransport : IPodTransport
             catch (Exception ex)
             {
                 ok = false;
-                LastError = Log.DescribeException(ex);
+                attemptError = Log.DescribeException(ex);
                 Log.Ex("WINCONNECT", transport.GetType().Name + ".Connect", ex);
             }
             RemoveConnecting(transport);
@@ -221,12 +224,17 @@ public sealed class WindowsConnectionTransport : IPodTransport
             if (ok && IsCurrent(generation))
                 return transport;
 
+            string reason = attemptError ?? transport.LastError ?? "连接失败";
+            if(reason.Length>220)reason=reason[..220]+"…";
+            string channel=transport is WindowsRfcommStreamTransport?"RFCOMM":transport is SppTransport?"SPP":transport is WindowsGattTransport?"GATT":"控制方式"+(i+1);
+            failures.Add(channel+"："+reason);
+
             if (IsCurrent(generation))
                 RecordChannelFailure(addr, i);
             ReleaseLocked(transport);
         }
 
-        LastError ??= "所有 Windows 蓝牙连接方式均失败";
+        LastError = failures.Count>0?string.Join("；",failures):"所有 Windows 蓝牙连接方式均失败";
         return null;
     }
 

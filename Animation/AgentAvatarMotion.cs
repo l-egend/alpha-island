@@ -16,13 +16,38 @@ namespace alpha_island.Animation;
 /// <summary>Shared, silent raster playback. Only presented avatars participate in one 12 fps clock.</summary>
 internal static class AgentAvatarMotion
 {
-    private sealed record Clip(BitmapSource[] Frames, double Fps);
+    private sealed record Clip(BitmapSource[] Frames, double Fps, long DecodedBytes = 0)
+    {
+        internal long Used;
+    }
+    private const int MaxCachedClips = 8;
+    private const long MaxCachedBytes = 32 * 1024 * 1024;
+    private static long _cacheUse;
     private static readonly Dictionary<(string Family, AgentRunState State), Clip> Clips = new();
     private static readonly ConditionalWeakTable<SemanticIcon, Track> Tracks = new();
     private static readonly HashSet<Track> Playing = new();
+    private static readonly Clip SuspendedClip = CreateSuspendedClip();
+    private static bool _suspended;
     private static readonly Stopwatch Time = Stopwatch.StartNew();
     private static DispatcherTimer? _timer;
     internal static bool ClockRunning => _timer?.IsEnabled == true;
+    private static Clip CreateSuspendedClip()
+    {
+        var frame = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Pbgra32, null, new byte[4], 4);
+        frame.Freeze();
+        return new([frame], 1);
+    }
+
+    internal static void SetSuspended(bool suspended)
+    {
+        if (_suspended == suspended) return;
+        _suspended = suspended;
+        foreach (var pair in Tracks) pair.Value.Change(pair.Value.Family, pair.Value.State);
+        // Hidden icon sources must release their cropped sheets as well as the
+        // dictionary; clearing only the cache would leave every track holding it.
+        if (suspended) Clips.Clear();
+        SyncClock();
+    }
     private static string? FamilyFor(string source, ImageSource? custom) => custom != null ? null : source switch
     {
         "antigravity" => "Gemini", "codex" => "Codex",
@@ -38,7 +63,7 @@ internal static class AgentAvatarMotion
         SyncClock();
     };
 
-    internal static void Configure(SemanticIcon icon, string source, AgentRunState state, ImageSource? custom)
+    internal static void Configure(SemanticIcon icon, string source, AgentRunState state, ImageSource? custom, bool snapshotSurface = false)
     {
         icon.VerifyAccess();
         if (FamilyFor(source, custom) is not { } family) { Release(icon); icon.Source = custom; return; }
@@ -48,7 +73,7 @@ internal static class AgentAvatarMotion
             if (existing.State != state || existing.Family != family) existing.Change(family, state);
             return;
         }
-        var track = new Track(icon, family, state);
+        var track = new Track(icon, family, state, snapshotSurface);
         Tracks.Add(icon, track);
         track.Attach();
     }
@@ -61,8 +86,9 @@ internal static class AgentAvatarMotion
 
     private static Clip Load(string family, AgentRunState state)
     {
+        if (_suspended) return SuspendedClip;
         if (state == AgentRunState.Working) return Load(family, AgentRunState.Streaming);
-        if (Clips.TryGetValue((family, state), out var clip)) return clip;
+        if (Clips.TryGetValue((family, state), out var clip)) { clip.Used = ++_cacheUse; return clip; }
         string name = state switch
         {
             AgentRunState.Thinking => "thinking", AgentRunState.Streaming => "streaming",
@@ -92,8 +118,20 @@ internal static class AgentAvatarMotion
             var frame = new CroppedBitmap(sheet, new Int32Rect(index % columns * size, index / columns * size, size, size));
             frame.Freeze(); frames[index] = frame;
         }
-        return Clips[(family, state)] = new(AgentAnimationLoop.Close(frames, fps,
-            state is AgentRunState.Idle or AgentRunState.Thinking or AgentRunState.ToolWait), fps);
+        var cycle = AgentAnimationLoop.Close(frames, fps,
+            state is AgentRunState.Idle or AgentRunState.Thinking or AgentRunState.ToolWait);
+        long bytes = (long)sheet.PixelWidth * sheet.PixelHeight * 4
+            + cycle.Where(frame => frame is not CroppedBitmap).Distinct().Sum(frame => (long)frame.PixelWidth * frame.PixelHeight * 4);
+        clip = new(cycle, fps, bytes) { Used = ++_cacheUse };
+        Clips[(family, state)] = clip;
+        while (Clips.Count > 1 && (Clips.Count > MaxCachedClips || Clips.Values.Sum(cached => cached.DecodedBytes) > MaxCachedBytes))
+        {
+            // Active tracks keep their own frame references; evicting an old
+            // cache entry never changes the animation currently on screen.
+            var oldest = Clips.Where(pair => !ReferenceEquals(pair.Value, clip)).MinBy(pair => pair.Value.Used);
+            Clips.Remove(oldest.Key);
+        }
+        return clip;
     }
 
     private static void SyncClock()
@@ -132,7 +170,8 @@ internal static class AgentAvatarMotion
         internal bool HasOverflowVisual => _adorner != null;
         private int _frame = -1;
         internal double StartedAt;
-        internal Track(SemanticIcon icon, string family, AgentRunState state) { Icon = icon; Family = family; State = state; _clip = Load(family, state); StartedAt = Time.Elapsed.TotalSeconds; }
+        private readonly bool _snapshotSurface;
+        internal Track(SemanticIcon icon, string family, AgentRunState state, bool snapshotSurface) { _snapshotSurface = snapshotSurface; Icon = icon; Family = family; State = state; _clip = Load(family, state); StartedAt = Time.Elapsed.TotalSeconds; }
         internal void Attach()
         {
             Icon.Loaded += Loaded; Icon.Unloaded += Unloaded; Icon.IsVisibleChanged += VisibilityChanged;
@@ -166,9 +205,9 @@ internal static class AgentAvatarMotion
         }
         internal void Refresh()
         {
-            bool presented = Icon.IsLoaded && Icon.IsVisible && _ancestors.Count > 0
-                && _ancestors.All(e => e.Opacity > .1);
-            if (Icon.IsLoaded && _adorner == null && AdornerLayer.GetAdornerLayer(Icon) is { } layer)
+            bool presented = !_suspended && Icon.IsLoaded && Icon.IsVisible && _ancestors.Count > 0
+                && _ancestors.All(e => e.Opacity > .1 || _snapshotSurface && e is Window);
+            if (!_snapshotSurface && Icon.IsLoaded && _adorner == null && AdornerLayer.GetAdornerLayer(Icon) is { } layer)
             {
                 _adornerLayer = layer;
                 _adorner = new AgentAvatarAdorner(Icon, () => _ancestors.Aggregate(1d, (value, element) => value * element.Opacity));

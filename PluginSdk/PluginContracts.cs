@@ -3,7 +3,7 @@ using System.Windows.Threading;
 
 namespace AlphaIsland.PluginSdk;
 
-public static class PluginApi { public const int Version = 2; public const int MinimumVersion = 1; }
+public static class PluginApi { public const int Version = 5; public const int MinimumVersion = 1; }
 
 /// <summary>Initialize 只注册贡献。宿主在 UI 线程调用所有生命周期方法。</summary>
 public interface IIslandPlugin : IDisposable
@@ -14,6 +14,10 @@ public interface IIslandPlugin : IDisposable
 
 public interface IPluginContext
 {
+    void RegisterTool(IToolHandler tool) => throw new NotSupportedException("宿主不支持工具注册");
+    IToolDispatcher Tools => UnavailableTools.Instance;
+    ValueTask<DesktopContextSnapshot> GetDesktopContextAsync(string prompt, CancellationToken cancellationToken = default)
+        => ValueTask.FromResult(DesktopContextSnapshot.Empty);
     string PluginId { get; }
     string PluginDirectory { get; }
     Dispatcher Dispatcher { get; }
@@ -39,8 +43,11 @@ public interface IPluginContext
     void Refresh() { }
     void OpenSettings() { }
     void ReportActivity(string state, string detail) { }
+    void ReportActivity(string state, string detail, string model) => ReportActivity(state, detail);
+    IModelAvatar? CreateModelAvatar() => null;
     /// <summary>Report fresh private-protocol battery data; the host owns reminder policy.</summary>
     void ReportBluetoothBattery(PluginBluetoothBattery battery) { }
+    void ReportDeviceBatteries(IReadOnlyList<PluginDeviceBattery> devices) { }
 }
 
 public sealed record PluginPage(string Key, string Title, Func<FrameworkElement> CreateView,

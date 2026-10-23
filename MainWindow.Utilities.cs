@@ -83,24 +83,35 @@ public partial class MainWindow
         _workspace.Focus.Changed += () => { _pomodoroTicker?.SetPaused(!_pomodoro.Running); UpdateCardPinSummary("focus"); };
         SyncFocus();
 
-        var tools = new StackPanel(); tools.Children.Add(UtilityText("屏幕工具", 15));
-        tools.Children.Add(UtilityButtons(UtilityButton("翻译 / 字幕 / 扫码", OpenScreenTools), UtilityButton("快速启动", ShowQuickLauncher)));
-        _externalTranslationButton = UtilityButton("调用外部翻译", async () => await InvokeExternalTranslationAsync());
-        tools.Children.Add(UtilityButtons(_externalTranslationButton, UtilityButton("快捷键设置", OpenExternalTranslationSettings)));
-        _externalTranslationHint = UtilityText("", 11); tools.Children.Add(_externalTranslationHint);
-        RefreshExternalTranslation();
-        RegisterUtility("screen-tools", "屏幕翻译与扫码", 10, tools);
+        RegisterScreenToolsCard();
     }
 
     private void OpenScreenTools()
     {
-        if (_screenTools == null)
+        if (_exiting || _sessionLocked) return;
+        try
         {
-            _screenTools = new ScreenToolsWindow(() => ChatConfig.From(_options), () => ExternalTranslationOptions.From(_options),
-                OpenExternalTranslationSettings, _externalTranslationShortcut);
-            _screenTools.Closed += (_, _) => _screenTools = null;
+            var tools = EnsureScreenTools();
+            tools.RefreshExternalTranslation(); Interop.UtilityWindowPresenter.Show(tools);
         }
-        _screenTools.RefreshExternalTranslation(); _screenTools.Show(); _screenTools.Activate();
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            IslandLog.Error("ScreenTools", ex);
+            _screenTools?.Close(); _screenTools = null;
+            if (_externalTranslationHint != null) _externalTranslationHint.Text = "屏幕工具未能打开，请重试或查看诊断日志。";
+            ShowSystemNotify("\uE8B5", "屏幕工具未能打开", "请重试；详细原因已写入诊断日志。", "屏幕工具");
+        }
+    }
+    private ScreenToolsWindow EnsureScreenTools()
+    {
+        if (_screenTools != null) return _screenTools;
+        _screenTools = new ScreenToolsWindow(() => ChatConfig.From(_options), () => ExternalTranslationOptions.From(_options),
+            OpenExternalTranslationSettings, _externalTranslationShortcut, completed: OnScreenToolCompleted,
+            speechConfiguration: () => SpeechSettings.Read(_options), subtitleLanguage: () => SettingsRegistry.GetText(_options, "SubtitleTargetLanguage", "zh-CN"),
+            subtitleStateChanged: active => { if (active && !_exiting && !_sessionLocked) { CloseComponentSwitcher(); CollapseToBar(force: true); } },
+            canUseTools: () => !_exiting && !_sessionLocked);
+        _screenTools.Closed += (_, _) => _screenTools = null;
+        return _screenTools;
     }
     private void RefreshExternalTranslation()
     {
@@ -157,6 +168,7 @@ public partial class MainWindow
     }
     private void StopUtilities()
     {
+        StopPersonalTools();
         StopLauncher();
         StopProductivity();
         _workspace.Notifications.Dispose();

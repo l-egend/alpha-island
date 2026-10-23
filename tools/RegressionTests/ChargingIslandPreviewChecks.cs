@@ -34,10 +34,9 @@ internal static partial class Program
         {
             PrivateCall(window, "UpdateChargingIsland", real); layers.HideAll();
             options.BatteryNotifyEnabled = false; settings.LoadFrom(options);
-            settings.ChargingIslandPreviewRequested += (_, _) => PrivateCall(window, "PreviewChargingIsland");
             int changed = 0; settings.OptionsChanged += (_, _) => changed++;
-            var button = (Button)settings.FindName("PreviewChargingIslandButton");
-            Check(button != null && button.IsEnabled && button.Content.ToString() == "测试充电小岛", "设置提供独立充电小岛测试按钮，关闭日常通知仍可用");
+            Check(settings.FindName("PreviewChargingIslandButton") == null, "设置中不再暴露充电小岛测试入口");
+            var button = new Button(); button.Click += (_, _) => PrivateCall(window, "PreviewChargingIsland");
             string before = JsonSerializer.Serialize(options);
             PrivateCall(window, "SetState", IslandState.Bar, true);
             button!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); PumpAnimations(200); root.UpdateLayout();

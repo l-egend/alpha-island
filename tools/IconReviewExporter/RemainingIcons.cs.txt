@@ -1,0 +1,319 @@
+using System.Globalization;
+using System.IO;
+using System.Net;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Xml.Linq;
+using alpha_island.Animation;
+using alpha_island.Controls;
+using AlphaIsland.PluginSdk;
+using Application = System.Windows.Application;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
+using FontFamily = System.Windows.Media.FontFamily;
+using Image = System.Windows.Controls.Image;
+
+internal static partial class Program
+{
+    private const int ReviewSize = 256;
+    private static readonly List<object> Omitted = new();
+    private static readonly List<string> NotIcons = new();
+    private static readonly HashSet<string> PreviouslyReviewedSemantic = new(StringComparer.Ordinal)
+    {
+        "wifi", "bluetooth", "volume", "volume-low", "volume-medium", "volume-high",
+        "battery", "battery-low", "battery-full", "system-monitor", "system-locked", "system-unlocked",
+        "in-ear", "ear-clip", "headphones", "speaker", "open-ear", "generic", "keyboard", "mouse", "gamepad", "input-device",
+        "agent-thinking", "agent-completed", "agent-error", "agent-idle"
+    };
+
+    private static int ExportRemaining(string[] args)
+    {
+        Root = Path.GetFullPath(args[0]);
+        string project = Path.Combine(Root, "alpha-island.csproj");
+        string version = typeof(SemanticIcon).Assembly.GetName().Version!.ToString(3);
+        if (!File.Exists(project) || !Regex.IsMatch(File.ReadAllText(project), @"<Version>\s*" + Regex.Escape(version) + @"\s*</Version>"))
+            throw new InvalidDataException("The rendered production assembly must match the current project version.");
+        Out = Path.Combine(Root, "bin", $"IconReview-{DateTime.Now:yyyyMMdd-HHmmss}-v{version}-remaining");
+        if (Directory.Exists(Out)) throw new IOException("Use a new export folder to preserve previous reviews.");
+        Directory.CreateDirectory(Out);
+        _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
+        var specs = Specs().Where(spec => !PreviouslyReviewedSemantic.Contains(spec.Id)).ToList();
+        foreach (var spec in Specs().Where(spec => PreviouslyReviewedSemantic.Contains(spec.Id)))
+            Omitted.Add(new { Kind = "Semantic", spec.Id, spec.Title, Reason = "之前已有图标修改记录", Source = "docs/icon-redesign-2026-10-11.md; docs/2026-10-11音量图标修复.md; docs/助手形象映射与循环播放修复.md" });
+        specs.RemoveAll(spec => spec.Id == "play-pause");
+        specs.Insert(0, new("02-系统与媒体", "playing", "播放", IconShape.PlayPause, "\uE768", false));
+        specs.Insert(1, new("02-系统与媒体", "paused", "暂停", IconShape.PlayPause, "\uE769", true));
+        ExportRemainingSemantic(specs);
+        ExportRemainingGlyphs();
+        foreach (string messenger in new[] { "qq", "wechat" })
+        {
+            string original = "Assets/Messengers/" + messenger + ".png";
+            string path = "08-通知应用标识/" + messenger + ".png";
+            Copy(original, path);
+            Entries.Add(new("08-通知应用标识", messenger, messenger == "qq" ? "QQ 通知标识" : "微信通知标识", "程序当前内置的应用标识，保留原始 32×32 PNG。", path, Sources: new[] { original, "Assets/Messengers/SOURCES.md" }));
+        }
+        Copy("Assets/Messengers/SOURCES.md", "08-通知应用标识/来源.md");
+        WriteRemainingReview(version);
+        VerifyRemainingReview();
+        Console.WriteLine(JsonSerializer.Serialize(new { Version = version, Folder = Out, Icons = Entries.Count,
+            SVGs = Directory.GetFiles(Out, "*.svg", SearchOption.AllDirectories).Length,
+            GIFs = Entries.Count(entry => entry.AnimationPath != null),
+            Files = Directory.GetFiles(Out, "*", SearchOption.AllDirectories).Length,
+            Bytes = Directory.GetFiles(Out, "*", SearchOption.AllDirectories).Sum(file => new FileInfo(file).Length) }));
+        Application.Current.Shutdown();
+        return 0;
+    }
+
+    private static SemanticIcon ReviewIcon(Spec spec, int size) => new()
+    {
+        Width = size, Height = size, Shape = spec.Shape, Text = spec.Text, Active = spec.Active,
+        Level = spec.Level, WeatherCode = spec.Weather, Foreground = Cyan, FontFamily = new FontFamily("Segoe MDL2 Assets")
+    };
+
+    private static void ExportRemainingSemantic(List<Spec> specs)
+    {
+        foreach (var spec in specs)
+        {
+            var icon = ReviewIcon(spec, ReviewSize);
+            Layout(icon, ReviewSize, ReviewSize);
+            string stem = spec.Category + "/" + spec.Id;
+            SavePng(Render(icon, ReviewSize, ReviewSize), stem + "/静态.png");
+            SaveActualSvg(icon, stem + "/可编辑.svg");
+        }
+        int columns = 6, width = columns * Tile, height = (int)Math.Ceiling(specs.Count / (double)columns) * Tile;
+        var canvas = new Canvas { Width = width, Height = height, Background = Brushes.Transparent };
+        var icons = specs.Select(spec => ReviewIcon(spec, Tile)).ToArray();
+        for (int index = 0; index < icons.Length; index++)
+        {
+            Canvas.SetLeft(icons[index], index % columns * Tile); Canvas.SetTop(icons[index], index / columns * Tile);
+            canvas.Children.Add(icons[index]);
+        }
+        using var source = new HwndSource(new HwndSourceParameters("Alpha Island remaining icon export")
+            { Width = width, Height = height, PositionX = -32000, PositionY = -32000, WindowStyle = unchecked((int)0x80000000) });
+        source.RootVisual = canvas; canvas.UpdateLayout(); Pump(40);
+        var frames = icons.Select(_ => new List<BitmapSource>()).ToArray();
+        void Capture()
+        {
+            canvas.UpdateLayout(); var shot = Render(canvas, width, height);
+            for (int index = 0; index < icons.Length; index++)
+            {
+                var frame = new CroppedBitmap(shot, new Int32Rect(index % columns * Tile, index / columns * Tile, Tile, Tile));
+                frame.Freeze(); frames[index].Add(frame);
+            }
+        }
+        Capture();
+        foreach (bool active in new[] { false, true })
+        {
+            for (int index = 0; index < icons.Length; index++)
+            {
+                icons[index].Active = active;
+                if (specs[index].Shape == IconShape.PlayPause) icons[index].Text = active ? "\uE769" : "\uE768";
+                ActionIconMotion.Play(icons[index], active ? ActionIconAnimation.Connect : ActionIconAnimation.Disconnect);
+            }
+            for (int step = 0; step < 40; step++) { Pump(40); Capture(); }
+        }
+        for (int index = 0; index < specs.Count; index++)
+        {
+            var spec = specs[index]; string stem = spec.Category + "/" + spec.Id;
+            bool changing = frames[index].Select(FrameDigest).Distinct().Take(2).Count() > 1;
+            if (changing)
+            {
+                for (int frame = 0; frame < frames[index].Count; frame++) SavePng(frames[index][frame], stem + $"/PNG帧/frame-{frame:D3}.png");
+                SaveGif(frames[index].Select(ThemeFrame).ToArray(), stem + "/状态过渡.gif");
+            }
+            Entries.Add(new(spec.Category, spec.Id, spec.Title,
+                "256px 透明 PNG / 可编辑 SVG 来自当前生产控件。" + (changing ? " GIF 和透明逐帧 PNG 为实际有限动画的开关预览；循环仅供审阅。" : "当前图形没有状态动画。"),
+                stem + "/静态.png", changing ? stem + "/状态过渡.gif" : null, changing ? stem + "/PNG帧" : null,
+                new[] { "Controls/SemanticIcon.cs", spec.Shape == IconShape.Weather ? "Controls/SemanticIcon.Weather.cs" : "Animation/ActionIconMotion.cs" }, changing));
+            ActionIconMotion.Stop(icons[index]);
+        }
+        source.RootVisual = null;
+    }
+
+    private static void ExportRemainingGlyphs()
+    {
+        var locations = new SortedDictionary<int, SortedSet<string>>();
+        string[] roots = { "Animation", "Controls", "Core", "Interop", "Services", "Settings", "Themes", "Plugins", "ConversationCore", "AgentTools", "examples" };
+        var files = Directory.EnumerateFiles(Root, "MainWindow*", SearchOption.TopDirectoryOnly)
+            .Concat(new[] { "App.xaml" }.Select(file => Path.Combine(Root, file)))
+            .Concat(roots.SelectMany(dir => Directory.EnumerateFiles(Path.Combine(Root, dir), "*", SearchOption.AllDirectories)))
+            .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase))
+            .Where(file => !Path.GetRelativePath(Root, file).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj" or "upstream" or "node_modules")).Distinct();
+        var pattern = new Regex(@"(?:\\u|&#x)([EeFf][0-9a-fA-F]{3})|([\uE000-\uF8FF])", RegexOptions.CultureInvariant);
+        foreach (string file in files)
+        {
+            string[] lines = File.ReadAllLines(file);
+            for (int line = 0; line < lines.Length; line++)
+                foreach (Match match in pattern.Matches(lines[line]))
+                {
+                    int code = match.Groups[1].Success ? int.Parse(match.Groups[1].Value, NumberStyles.HexNumber) : match.Groups[2].Value[0];
+                    if (!locations.TryGetValue(code, out var sources)) locations[code] = sources = new(StringComparer.Ordinal);
+                    sources.Add(Path.GetRelativePath(Root, file).Replace('\\', '/') + ":" + (line + 1));
+                }
+        }
+        var typeface = new Typeface(new FontFamily("Segoe MDL2 Assets"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        if (!typeface.TryGetGlyphTypeface(out var glyphTypeface)) throw new InvalidDataException("Segoe MDL2 Assets is unavailable.");
+        foreach (var (code, sources) in locations)
+        {
+            string glyph = char.ConvertFromUtf32(code), id = $"U-{code:X4}";
+            if (GlyphArtwork.Titles.TryGetValue(glyph, out string? title))
+            {
+                Omitted.Add(new { Kind = "Glyph", Id = id, Title = title, Reason = "0.1.40 已统一重绘；后续已改过的删除、网速、屏幕翻译、电池等仍排除", Sources = sources });
+                continue;
+            }
+            if (code is 0xE000 or 0xF8FF || code > 0xF8FF)
+            { NotIcons.Add(id + "：范围校验标记或非图标字符。来源：" + string.Join("; ", sources)); continue; }
+            if (code == 0xE9BD)
+            { NotIcons.Add(id + "：天气入口实际使用 SemanticIcon 的天气路径，已逐种天气导出。来源：" + string.Join("; ", sources)); continue; }
+            if (!glyphTypeface.CharacterToGlyphMap.ContainsKey(code))
+            { NotIcons.Add(id + "：本机 Segoe MDL2 Assets 未定义此字形，不将缺字方框作为素材。来源：" + string.Join("; ", sources)); continue; }
+            string category = GlyphCategory(sources), stem = category + "/" + id;
+            var icon = new GlyphIcon { Text = glyph, Width = ReviewSize, Height = ReviewSize,
+                FontFamily = new FontFamily("Segoe MDL2 Assets"), Foreground = Cyan };
+            Layout(icon, ReviewSize, ReviewSize);
+            SavePng(Render(icon, ReviewSize, ReviewSize), stem + ".png"); SaveActualSvg(icon, stem + ".svg");
+            title = code switch { 0xE898 => "上传 / 上行流量提示", 0xE917 => "时钟插件", _ => id };
+            Entries.Add(new(category, id, title, "实际字体图标已转为可编辑轮廓，无需安装字体即可查看 SVG。", stem + ".png", Sources: sources.ToArray()));
+        }
+    }
+
+    private static void Layout(FrameworkElement element, int width, int height)
+    { element.Measure(new(width, height)); element.Arrange(new(0, 0, width, height)); element.UpdateLayout(); }
+
+    private static void SaveActualSvg(Visual visual, string relative)
+    {
+        var drawing = VisualTreeHelper.GetDrawing(visual) ?? throw new InvalidDataException("Icon has no WPF drawing.");
+        XNamespace ns = "http://www.w3.org/2000/svg";
+        var root = new XElement(ns + "svg", new XAttribute("viewBox", $"0 0 {ReviewSize} {ReviewSize}"));
+        var definitions = new XElement(ns + "defs"); root.Add(definitions);
+        string Number(double value) => value.ToString("0.#########", CultureInfo.InvariantCulture);
+        string Matrix(Matrix value) => $"matrix({Number(value.M11)} {Number(value.M12)} {Number(value.M21)} {Number(value.M22)} {Number(value.OffsetX)} {Number(value.OffsetY)})";
+        XElement Shape(Geometry geometry, SolidColorBrush brush)
+        {
+            var path = PathGeometry.CreateFromGeometry(geometry);
+            string data = path.ToString(CultureInfo.InvariantCulture);
+            if (data.StartsWith("F0", StringComparison.Ordinal) || data.StartsWith("F1", StringComparison.Ordinal)) data = data[2..].TrimStart();
+            var item = new XElement(ns + "path", new XAttribute("d", data), new XAttribute("fill", $"#{brush.Color.R:X2}{brush.Color.G:X2}{brush.Color.B:X2}"),
+                new XAttribute("fill-rule", path.FillRule == FillRule.EvenOdd ? "evenodd" : "nonzero"));
+            double opacity = brush.Opacity * brush.Color.A / 255d;
+            if (opacity != 1) item.Add(new XAttribute("opacity", Number(opacity)));
+            if (path.Transform != null && !path.Transform.Value.IsIdentity) item.Add(new XAttribute("transform", Matrix(path.Transform.Value)));
+            return item;
+        }
+        void AddDrawing(Drawing node, XElement parent)
+        {
+            if (node is DrawingGroup group)
+            {
+                var container = new XElement(ns + "g"); parent.Add(container);
+                if (group.Transform != null && !group.Transform.Value.IsIdentity) container.Add(new XAttribute("transform", Matrix(group.Transform.Value)));
+                if (group.Opacity != 1) container.Add(new XAttribute("opacity", Number(group.Opacity)));
+                if (group.ClipGeometry != null)
+                {
+                    string id = "clip" + definitions.Elements().Count(); var clip = new XElement(ns + "clipPath", new XAttribute("id", id));
+                    clip.Add(Shape(group.ClipGeometry, Brushes.White)); definitions.Add(clip); container.Add(new XAttribute("clip-path", $"url(#{id})"));
+                }
+                foreach (Drawing child in group.Children) AddDrawing(child, container);
+            }
+            else if (node is GeometryDrawing shape)
+            {
+                if (shape.Brush is SolidColorBrush fill) parent.Add(Shape(shape.Geometry, fill));
+                if (shape.Pen?.Brush is SolidColorBrush ink) parent.Add(Shape(shape.Geometry.GetWidenedPathGeometry(shape.Pen), ink));
+            }
+            else if (node is GlyphRunDrawing text && text.ForegroundBrush is SolidColorBrush ink) parent.Add(Shape(text.GlyphRun.BuildGeometry(), ink));
+            else throw new InvalidDataException("Unsupported SVG drawing: " + node.GetType().Name);
+        }
+        AddDrawing(drawing, root);
+        File.WriteAllText(Path.Combine(Out, relative), new XDocument(root).ToString(), new UTF8Encoding(false));
+    }
+
+    private static string SvgFor(Entry entry) => entry.StaticPath.EndsWith("/静态.png", StringComparison.Ordinal)
+        ? entry.StaticPath[..^"静态.png".Length] + "可编辑.svg" : Path.ChangeExtension(entry.StaticPath, ".svg").Replace('\\', '/');
+
+    private static void WriteRemainingReview(string version)
+    {
+        string exclusions = "# 本次排除的已修改图标\n\n" +
+            "依据项目内 0.1.40 统一重绘记录及后续专项记录，本次未重复导出：\n\n" +
+            "- 应用品牌；Wi-Fi / 蓝牙及蓝牙设备轮廓；音量 / 静音；电池、充电闪电；CPU、锁定、鼠标等既有形状。\n" +
+            "- 设置、插件、通用控件中已经统一重绘的 GlyphArtwork 图标（包括其别名）；删除、网速、屏幕翻译与扫码的后续修改版。\n" +
+            "- Codex / Gemini / Claude / DeepSeek 助手形象及其逐帧动画。\n\n" +
+            "完整逐项记录见 manifest.json 的 Excluded；这些图标仅列名称，不附素材。\n\n" +
+            "记录：docs/icon-redesign-2026-10-11.md、docs/2026-10-11音量图标修复.md、docs/v0.1.49-网速切换图标与双曲线.md、docs/v0.1.97-删除动态图标与通知日期.md、docs/v0.1.98-屏幕翻译与扫码图标.md、docs/助手形象映射与循环播放修复.md。\n";
+        File.WriteAllText(Path.Combine(Out, "已修改图标排除清单.md"), exclusions, new UTF8Encoding(false));
+        File.WriteAllLines(Path.Combine(Out, "非图标字符说明.txt"), NotIcons, new UTF8Encoding(false));
+        string Quote(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
+        var rows = Entries.Select((entry, i) => string.Join(",", new[] {
+            (i + 1).ToString("D3"), entry.Title, entry.Category, entry.StaticPath,
+            File.Exists(Path.Combine(Out, SvgFor(entry))) ? SvgFor(entry) : "", entry.AnimationPath ?? "", string.Join("; ", entry.Sources ?? []) }.Select(Quote)));
+        string csv = "编号,名称,分类,PNG,SVG,动画,源文件\r\n" + string.Join("\r\n", rows);
+        File.WriteAllText(Path.Combine(Out, "编号索引.csv"), csv, new UTF8Encoding(true));
+        var html = new StringBuilder("<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Alpha Island 待修改图标</title><style>body{background:#111827;color:#eef3fc;font:15px 'Segoe UI','Microsoft YaHei',sans-serif;margin:32px}header{position:sticky;top:0;background:#111827ee;padding:12px 0}h1{margin:0 0 10px;font-size:26px}p,small{color:#aebdd2;line-height:1.7}input{width:min(600px,90%);padding:12px;border-radius:10px;border:1px solid #475569;background:#243044;color:white;font:inherit}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}.card{background:#1c273a;border:1px solid #354259;border-radius:15px;padding:18px}.pair{display:flex;gap:8px;align-items:center}img{width:88px;height:88px;object-fit:contain}a{color:#73def7}h3{font-size:16px}summary{cursor:pointer}pre{white-space:pre-wrap;font-size:11px}button{margin:10px 0;padding:7px 12px;cursor:pointer}</style>");
+        html.Append($"<header><h1>Alpha Island {E(version)} · 待修改图标 {Entries.Count} 项</h1><p>已排除之前改过的图标。按编号提出修改即可；PNG 为透明背景，SVG 可编辑，GIF 可预览当前实际动画。</p><input id=q placeholder='按名称、编号或分类搜索' aria-label='搜索图标'><button id=theme>切换浅色预览底</button></header><main class=grid>");
+        for (int index = 0; index < Entries.Count; index++)
+        {
+            var entry = Entries[index]; string id = (index + 1).ToString("D3");
+            html.Append($"<article class=card data-search='{E(id + " " + entry.Title + " " + entry.Category)}'><div class=pair><a href='{U(entry.StaticPath)}'><img src='{U(entry.StaticPath)}' alt='{E(entry.Title)}'></a>");
+            if (entry.AnimationPath != null) html.Append($"<a href='{U(entry.AnimationPath)}'><img loading=lazy src='{U(entry.AnimationPath)}' alt='实际状态动画'></a>");
+            html.Append($"</div><h3>{id} · {E(entry.Title)}</h3><small>{E(entry.Category)}<br>{E(entry.Note)}</small><p><a href='{U(entry.StaticPath)}'>PNG 原图</a>");
+            if (File.Exists(Path.Combine(Out, SvgFor(entry)))) html.Append($" · <a href='{U(SvgFor(entry))}'>可编辑 SVG</a>");
+            if (entry.FramesPath != null) html.Append($" · <a href='{U(entry.FramesPath)}/'>透明动画帧</a>");
+            html.Append($"</p><details><summary>源码位置</summary><pre>{E(string.Join("\n", entry.Sources ?? []))}</pre></details></article>");
+        }
+        html.Append("</main><script>q.oninput=()=>document.querySelectorAll('.card').forEach(c=>c.hidden=!c.dataset.search.toLowerCase().includes(q.value.toLowerCase()));theme.onclick=()=>document.querySelectorAll('.pair').forEach(p=>p.style.background=p.style.background?'':'#e9edf2');</script></html>");
+        File.WriteAllText(Path.Combine(Out, "index.html"), html.ToString(), new UTF8Encoding(false));
+        const int columns = 6, cw = 200, ch = 168;
+        int width = columns * cw, height = 112 + (int)Math.Ceiling(Entries.Count / (double)columns) * ch;
+        var sheet = new Canvas { Width = width, Height = height, Background = new SolidColorBrush(Color.FromRgb(0x11, 0x18, 0x27)) };
+        void Label(string value, double x, double y, double w, double size, bool muted = false)
+        {
+            var text = new TextBlock { Text = value, Width = w, FontSize = size, Foreground = muted ? Brushes.LightSlateGray : Brushes.White,
+                FontFamily = new FontFamily("Microsoft YaHei UI"), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
+            Canvas.SetLeft(text, x); Canvas.SetTop(text, y); sheet.Children.Add(text);
+        }
+        Label($"Alpha Island {version} · 待修改图标 · {Entries.Count} 项", 20, 20, width - 40, 25);
+        Label("已排除此前修改的图标；编号对应 index.html / 编号索引.csv；统一审阅色，实际随主题变化", 20, 64, width - 40, 13, true);
+        for (int index = 0; index < Entries.Count; index++)
+        {
+            int x = index % columns * cw, y = 110 + index / columns * ch;
+            var image = new Image { Width = 88, Height = 88, Source = Load(Entries[index].StaticPath) };
+            Canvas.SetLeft(image, x + 56); Canvas.SetTop(image, y); sheet.Children.Add(image);
+            Label($"{index + 1:D3}  {Entries[index].Title}", x + 8, y + 102, cw - 16, 13);
+            Label(Entries[index].Category, x + 8, y + 142, cw - 16, 11, true);
+        }
+        Layout(sheet, width, height); SavePng(Render(sheet, width, height), "图标总览.png");
+        File.WriteAllText(Path.Combine(Out, "先看这里.txt"), $"Alpha Island {version} 当前图标审阅包\r\n\r\n打开 index.html 可搜索、查看动画和下载单个图标。图标总览.png 提供同编号总览。\r\n共 {Entries.Count} 项；矢量图标同时提供 256×256 透明 PNG 与 SVG，动画额外保留透明 PNG 帧。QQ、微信标识保留原始 32×32 像素。\r\n此前修改过的图标未重复导出，详见 已修改图标排除清单.md。\r\n图标编号在此包内固定；修改时告诉我编号或直接替换对应 SVG/PNG。\r\n", new UTF8Encoding(true));
+        File.WriteAllText(Path.Combine(Out, "manifest.json"), JsonSerializer.Serialize(new
+        {
+            FormatVersion = 2, Version = version, ExportedAt = DateTimeOffset.Now, Mode = "remaining-after-previous-revisions",
+            AssemblySHA256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(typeof(SemanticIcon).Assembly.Location))),
+            Render = "Current production WPF controls; static 256px; state animation 96px / 40ms; SVG outlines from actual WPF Drawing.",
+            Entries = Entries.Select((entry, index) => new { Number = (index + 1).ToString("D3"), Entry = entry }), Excluded = Omitted,
+            ExcludedAssetGroups = new[] { "Assets/alpha-island*", "Assets/Bluetooth/*", "Assets/Agents/*", "删除/网速/屏幕翻译/充电图标" }
+        }, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+    }
+
+    private static void VerifyRemainingReview()
+    {
+        foreach (var entry in Entries)
+        {
+            var image = Load(entry.StaticPath);
+            int stride = image.PixelWidth * 4; var pixels = new byte[stride * image.PixelHeight];
+            new FormatConvertedBitmap(image, PixelFormats.Pbgra32, null, 0).CopyPixels(pixels, stride, 0);
+            if (!Enumerable.Range(0, image.PixelWidth * image.PixelHeight).Any(index => pixels[index * 4 + 3] > 40))
+                throw new InvalidDataException("Empty PNG: " + entry.Id);
+            string svg = Path.Combine(Out, SvgFor(entry));
+            if (File.Exists(svg)) foreach (var path in XDocument.Load(svg).Descendants().Where(item => item.Name.LocalName == "path")) _ = Geometry.Parse((string)path.Attribute("d")!);
+            if (entry.AnimationPath != null && !File.Exists(Path.Combine(Out, entry.AnimationPath))) throw new FileNotFoundException(entry.AnimationPath);
+            if (PreviouslyReviewedSemantic.Contains(entry.Id) || entry.Id.StartsWith("U-", StringComparison.Ordinal) && GlyphArtwork.Titles.ContainsKey(char.ConvertFromUtf32(Convert.ToInt32(entry.Id[2..], 16))))
+                throw new InvalidDataException("A previously reviewed icon leaked into the remaining set.");
+        }
+    }
+}

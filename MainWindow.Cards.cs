@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Card page carousel.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -211,68 +210,5 @@ namespace alpha_island
             }
         }
 
-        /// <summary>
-        /// 卡片正文的翻页逻辑保留；右侧轮廓线由组件切换器独立处理，避免与正文滚动混用。
-        /// <para>内层自己有滚动条的页（剪切板历史 / AI 气泡）先把自己的滚动条滚到底，才让翻页接管。</para>
-        /// </summary>
-        /// <returns>true = 真的换了页（调用方据此决定 Handled，这样内层滚动条还能正常工作）。</returns>
-        private readonly WheelAccumulator _pageWheel = new();
-        private long _lastWheelPageUtcTick;
-        private bool TryWheelSwitchPage(int delta, DependencyObject? wheelSource = null)
-        {
-            if (_state != IslandState.Card) return false;
-            // Keep the wheel in either volume drawer, including its scrollbar and edges.
-            if (_pages.ActiveId == IslandPageIds.Volume
-                && (IsDescendantOf(wheelSource, VolumeAppSessionsScroll) || IsDescendantOf(wheelSource, AudioDeviceScroll))) return false;
-
-            int index = _pages.ActiveIndex;
-            if (index < 0) return false;
-            if (_pages.Pages[index] is Plugins.PluginIslandPage plugin && plugin.KeepsWheel(wheelSource, delta)) return false;
-
-            if (delta < 0)
-            {
-                // 向下滚：切到下一页
-                if (index >= _pages.Count - 1) return false;
-
-                // 剪切板页自己有滚动条：只有滚到底才让翻页接管，否则滚轮会被"翻页"吃掉。
-                if (_pages.ActiveId == IslandPageIds.Clipboard &&
-                    ClipboardHistoryScroll.VerticalOffset < ClipboardHistoryScroll.ScrollableHeight - 1.0)
-                {
-                    return false;
-                }
-
-                if (_pageWheel.Consume(delta) == 0 || Environment.TickCount64 - _lastWheelPageUtcTick < 250) return true;
-                _lastWheelPageUtcTick = Environment.TickCount64;
-                SwitchCardPage(index + 1);
-                return true;
-            }
-
-            if (delta > 0)
-            {
-                // 向上滚：切到上一页
-                if (index <= 0) return false;
-
-                if (_pages.ActiveId == IslandPageIds.Clipboard &&
-                    ClipboardHistoryScroll.VerticalOffset > 1.0)
-                {
-                    return false;
-                }
-
-if (_pageWheel.Consume(delta) == 0 || Environment.TickCount64 - _lastWheelPageUtcTick < 250) return true;
-                _lastWheelPageUtcTick = Environment.TickCount64;
-                SwitchCardPage(index - 1);
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>仅在线条附近命中组件切换器，正文与滚动条仍使用自己的交互。</summary>
-        private void CardCarousel_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (_pages.ActiveId is IslandPageIds.Notifications or IslandPageIds.System) return;
-            // 宿主这一条保留：它负责卡片正文上的滚轮，兜底那条在 IslandBody_PreviewMouseWheel。
-            if (TryWheelSwitchPage(e.Delta, e.OriginalSource as DependencyObject)) e.Handled = true;
-        }
     }
 }

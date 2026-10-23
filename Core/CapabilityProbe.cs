@@ -21,7 +21,7 @@ namespace alpha_island.Core
         None = 0,
         /// <summary>DWM 背景模糊（系统「透明效果」开关）。</summary>
         TransparentEffects = 1,
-        /// <summary>Windows.Devices.Radios —— 飞行模式状态与无线电开关。</summary>
+        /// <summary>Windows.Devices.Radios —— Wi-Fi / 蓝牙等独立无线电开关。</summary>
         RadiosInfo = 2,
         /// <summary>CapabilityAccessManager  ConsentStore —— 麦克风/摄像头占用（只读注册表）。</summary>
         PrivacyConsentStore = 3,

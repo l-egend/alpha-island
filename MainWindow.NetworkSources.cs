@@ -24,6 +24,10 @@ public partial class MainWindow
             _externalNetwork.Reset(); service.ResetSession(); ClearNetSpeedHistory();
         }
         service.Sample();
+        var daily = plugin?.Id.StartsWith("alpha.trafficmonitor/", StringComparison.OrdinalIgnoreCase) == true
+            ? plugin : _plugins?.ReadNetwork(DateTimeOffset.UtcNow, "alpha.trafficmonitor");
+        _dailyTraffic?.Observe(DateTimeOffset.Now, service.ObservedDownloadedBytes, service.ObservedUploadedBytes,
+            daily?.Id ?? "", daily?.Sample);
         return CurrentNetworkSample;
     }
 }

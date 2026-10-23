@@ -8,13 +8,35 @@ namespace alpha_island.Settings;
 
 public partial class SettingsWindow
 {
+    private System.Windows.Threading.DispatcherTimer? _clipboardHistoryEditTimer;
+    private bool _clipboardHistoryLimitEditing;
+
+    private void ClipboardHistoryLimit_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs args)
+    {
+        if (_suppress) return;
+        _clipboardHistoryLimitEditing = true;
+        _clipboardHistoryEditTimer ??= new System.Windows.Threading.DispatcherTimer(
+            TimeSpan.FromMilliseconds(350), System.Windows.Threading.DispatcherPriority.Background,
+            (_, _) => CommitClipboardHistoryLimit(), Dispatcher);
+        _clipboardHistoryEditTimer.Stop();
+        // Wait for the number to settle before trimming history: typing 100 must not first trim to 1.
+        if (int.TryParse(ClipboardHistoryLimitBox.Text, out int value) && value is >= 0 and <= 100)
+            _clipboardHistoryEditTimer.Start();
+    }
+
     private void CommitClipboardHistoryLimit()
     {
         if (_suppress) return;
+        _clipboardHistoryEditTimer?.Stop();
         int current = SettingsRegistry.GetInt(_options, "ClipboardHistoryLimit", 10);
         int value = int.TryParse(ClipboardHistoryLimitBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
             ? Math.Clamp(parsed, 0, 100) : current;
+        _suppress = true;
         ClipboardHistoryLimitBox.Text = value.ToString(CultureInfo.InvariantCulture);
+        _suppress = false;
+        _clipboardHistoryLimitEditing = false;
+        if (value == current) return;
+        SettingsRegistry.Write(_options, "ClipboardHistoryLimit", value);
         ApplyChanges();
     }
     private void ClipboardHistoryLimit_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs args) => CommitClipboardHistoryLimit();

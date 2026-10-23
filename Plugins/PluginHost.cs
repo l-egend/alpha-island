@@ -30,8 +30,17 @@ internal sealed partial class PluginHost : IDisposable
         internal bool Running => Active && Instance != null && Error.Length == 0;
     }
 
-    internal sealed class Context : IPluginContext
+    internal sealed partial class Context : IPluginContext
     {
+        public IToolDispatcher Tools => PluginId == "ai.api-chat" || _host.AllowPluginTools ? _host.ToolDispatcher ?? UnavailableTools.Instance : UnavailableTools.Instance;
+        public void RegisterTool(IToolHandler tool)
+        {
+            VerifyRegistration(tool.Definition.Name);
+            if (_host.ToolDispatcher is AlphaIsland.AgentTools.ToolRegistry registry)
+                registry.Register(PluginId, tool, Lifetime, () => _host.AllowPluginTools);
+        }
+        public ValueTask<DesktopContextSnapshot> GetDesktopContextAsync(string prompt, CancellationToken cancellationToken = default)
+            => (PluginId == "ai.api-chat" || _host.AllowPluginTools) ? _host.ContextReader?.Invoke(prompt, cancellationToken) ?? ValueTask.FromResult(DesktopContextSnapshot.Empty) : ValueTask.FromResult(DesktopContextSnapshot.Empty);
         private readonly PluginHost _host;
         private readonly Entry _entry;
         internal readonly CancellationTokenSource Cancellation = new();
@@ -129,12 +138,14 @@ internal sealed partial class PluginHost : IDisposable
         }
         public void Refresh() { if (!_host._disposed && !Cancellation.IsCancellationRequested) _host.AvailabilityChanged?.Invoke(); }
         public void OpenSettings() { if (_entry.Running) _host.SettingsRequested?.Invoke(); }
-        public void ReportActivity(string state, string detail)
+        public IModelAvatar CreateModelAvatar() => new PluginModelAvatar(false);
+        public void ReportActivity(string state, string detail) => ReportActivity(state, detail, PluginId == "ai.api-chat" ? ReadConfiguration("AiModel", "") : "");
+        public void ReportActivity(string state, string detail, string model)
         {
             Dispatcher.VerifyAccess(); if (Cancellation.IsCancellationRequested || _host._disposed) return;
             string owner = "plugin:" + PluginId;
-            if (state == "idle") AgentStatus.Reset(owner:owner);
-            else AgentStatus.Set(state switch { "working" => AgentRunState.Working, "streaming" => AgentRunState.Streaming, "error" => AgentRunState.Error, "waiting" => AgentRunState.ToolWait, _ => AgentRunState.Thinking }, detail, owner);
+            if (state == "idle") AgentStatus.Finish(owner);
+            else AgentStatus.Set(state switch { "working" => AgentRunState.Working, "streaming" => AgentRunState.Streaming, "error" => AgentRunState.Error, "waiting" => AgentRunState.ToolWait, _ => AgentRunState.Thinking }, detail, owner, ModelArtwork.Family(model));
         }
         public void Log(string message) => IslandLog.Info("Plugin:" + PluginId, message);
         public void ReportBluetoothBattery(PluginBluetoothBattery battery)
@@ -144,6 +155,7 @@ internal sealed partial class PluginHost : IDisposable
                 || string.IsNullOrWhiteSpace(battery.Id) || battery.Id.Length > 128
                 || string.IsNullOrWhiteSpace(battery.Name) || battery.Name.Length > 256
                 || battery.Percent is < 0 or > 100) return;
+            CaptureLegacyBattery(battery);
             _host.DeviceBatteryReported?.Invoke(battery with { Id = PluginId + "/" + battery.Id });
         }
         public void NotifyPage(string key, string title, string detail, double seconds = 6)
@@ -218,7 +230,7 @@ internal sealed partial class PluginHost : IDisposable
     internal string? PageForActivity(string owner) => _entries.Where(e=>e.Running&&owner=="plugin:"+e.Manifest!.Id)
         .SelectMany(e=>e.Pages).OrderBy(p=>p.Order).FirstOrDefault(p=>p.IsAvailable(_options))?.Id;
     internal static bool IsEnabled(IslandOptions options, string id) => options.Extras.TryGetValue(EnabledKey(id), out var value)
-        ? value.ValueKind == JsonValueKind.True : id is "ai.api-chat" or "ai.local-agents";
+        ? value.ValueKind == JsonValueKind.True : id is "ai.api-chat" or "ai.local-agents" or "alpha.device-battery";
 
     internal void Discover()
     {
@@ -331,6 +343,7 @@ internal sealed partial class PluginHost : IDisposable
     }
     private void Stop(Entry entry)
     {
+        if (ToolDispatcher is AlphaIsland.AgentTools.ToolRegistry registry && entry.Manifest != null) registry.RemoveOwner(entry.Manifest.Id);
         entry.Active = false;
         try { entry.Context?.Cancellation.Cancel(); } catch (Exception ex) { IslandLog.Error("Plugins:取消插件任务失败", ex); }
         foreach (var page in entry.Pages.ToArray()) TryCleanup(() => _detach(page));
@@ -352,11 +365,11 @@ internal sealed partial class PluginHost : IDisposable
         string key = SettingKey(entry.Manifest!.Id, setting.Key);
         return NormalizeValue(setting, _options.Extras.TryGetValue(key, out var value) ? value : JsonSerializer.SerializeToElement(setting.DefaultValue));
     }
-    internal (string Id, string Title, PluginNetworkSample Sample)? ReadNetwork(DateTimeOffset now)
+    internal (string Id, string Title, PluginNetworkSample Sample)? ReadNetwork(DateTimeOffset now, string? ownerId = null)
     {
         _dispatcher.VerifyAccess();
         if (_disposed) return null;
-        foreach (var item in _entries.Where(e => e.Running && e.Context != null)
+        foreach (var item in _entries.Where(e => e.Running && e.Context != null && (ownerId == null || e.Manifest?.Id == ownerId))
             .SelectMany(e => e.Context!.NetworkSources.Select(s => (Entry: e, Source: s))).OrderByDescending(p => p.Source.Priority).ToArray())
         {
             try

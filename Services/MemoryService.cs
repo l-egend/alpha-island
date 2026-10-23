@@ -4,7 +4,7 @@ using alpha_island.Interop;
 
 namespace alpha_island.Services
 {
-    /// <summary>物理内存快照（A 组② 系统状态）。</summary>
+    /// <summary>物理内存快照。</summary>
     public readonly struct MemorySample
     {
         /// <summary>采样是否成功（拿不到 GlobalMemoryStatusEx 时为 false）。</summary>

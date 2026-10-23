@@ -201,7 +201,7 @@ public partial class MainWindow
     private void ApplyAgentArtwork(string key, SemanticIcon icon)
     {
         if (AgentSession(key) is not { } view) { AgentAvatarMotion.Release(icon); icon.Source = null; return; }
-        if (view.Activity is { ArtworkFamily.Length: > 0 }) view.ArtworkFamily = view.Activity.ArtworkFamily;
+        if (view.Activity is { } activity && (view.Source == "internal" || activity.ArtworkFamily.Length > 0)) view.ArtworkFamily = activity.ArtworkFamily;
         var custom = _agentSessionArtworks.GetValueOrDefault(view.Owner);
         AgentAvatarMotion.Configure(icon, AvatarSource(view), AgentStateFor(key), custom);
         bool enlarged = AgentHasDefaultAvatar(key);
@@ -219,7 +219,9 @@ public partial class MainWindow
         else if (icon.Name == "OrbGlyph") icon.Width = icon.Height = enlarged ? 32 : 26;
         icon.Tag = view.ArtworkKey;
     }
-    private static string AvatarSource(AgentSessionView view) => view.Source != "antigravity" ? view.Source : view.ArtworkFamily switch
+    private static string AvatarSource(AgentSessionView view) => view.Source == "internal"
+        ? AlphaIsland.PluginSdk.ModelArtwork.Source(view.ArtworkFamily)
+        : view.Source != "antigravity" ? view.Source : view.ArtworkFamily switch
     {
         // Older Antigravity hooks emitted "default" specifically for Claude models.
         "claude" or "default" => "claude-code",

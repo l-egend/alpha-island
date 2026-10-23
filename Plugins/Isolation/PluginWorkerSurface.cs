@@ -11,6 +11,7 @@ using Point = System.Windows.Point;
 using Rect = System.Windows.Rect;
 using Size = System.Windows.Size;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using ScrollBar = System.Windows.Controls.Primitives.ScrollBar;
 
 namespace alpha_island.Plugins.Isolation;
 
@@ -54,7 +55,7 @@ internal sealed class PluginWorkerSurface
                 string kind = element switch
                 {
                     C.PasswordBox => "password", C.TextBox => "input", C.ComboBox => "choice",
-                    C.CheckBox => "check", C.Slider => "slider", C.Button => "button", C.TextBlock => "text", _ => ""
+                    C.CheckBox => "check", C.Slider => "slider", ScrollBar => "scrollbar", C.Button => "button", C.TextBlock => "text", _ => ""
                 };
                 if (kind.Length != 0)
                 {
@@ -88,8 +89,8 @@ internal sealed class PluginWorkerSurface
                         (element as RangeBase)?.Minimum ?? 0, (element as RangeBase)?.Maximum ?? 100, (element as RangeBase)?.Value ?? 0,
                         element is C.PasswordBox password ? password.Password.Length > 0 : (element as C.CheckBox)?.IsChecked, clip.X - box.X, clip.Y - box.Y, clip.Width, clip.Height,
                         (control?.FontWeight ?? blockElement?.FontWeight ?? FontWeights.Normal).ToOpenTypeWeight() >= 600,
-                        blockElement?.TextWrapping == TextWrapping.Wrap, blockElement?.TextAlignment.ToString() ?? "Left",
-                        element is C.Button or C.CheckBox ? Snapshot(element, box.Width, box.Height) : "", element.ToolTip as string ?? ""));
+                        blockElement?.TextWrapping == TextWrapping.Wrap, element is ScrollBar bar ? bar.Orientation.ToString() : blockElement?.TextAlignment.ToString() ?? "Left",
+                        element is C.Button or C.CheckBox ? Snapshot(element, box.Width, box.Height) : "", element.ToolTip as string ?? "", (element as ScrollBar)?.ViewportSize ?? 0));
                     hidden.Add((element, element.Opacity));
                     return; // A control's template is rendered by the host, not duplicated as child controls.
                 }
@@ -133,9 +134,15 @@ internal sealed class PluginWorkerSurface
     {
         if (command.Action == "wheel")
         {
+            if (!double.IsFinite(command.Number) || !double.IsFinite(command.X) || !double.IsFinite(command.Y)) return false;
             var hit = View.InputHitTest(new Point(command.X, command.Y)) as DependencyObject;
-            for (var node = hit; node != null; node = VisualTreeHelper.GetParent(node))
-                if (node is C.ScrollViewer scroll) { scroll.ScrollToVerticalOffset(scroll.VerticalOffset - command.Number / 3); return true; }
+            for (var node = hit; node != null; node = ScrollParent(node))
+                if (node is C.ScrollViewer scroll)
+                {
+                    double target = Math.Clamp(scroll.VerticalOffset - command.Number / 3, 0, scroll.ScrollableHeight);
+                    if (Math.Abs(target - scroll.VerticalOffset) < .01) continue;
+                    scroll.ScrollToVerticalOffset(target); return true;
+                }
             return false;
         }
         if (!_elements.TryGetValue(command.Element, out var element) || !element.IsEnabled) return false;
@@ -164,6 +171,16 @@ internal sealed class PluginWorkerSurface
             case C.ComboBox combo when command.Action == "choice": combo.SetCurrentValue(Selector.SelectedIndexProperty, Math.Clamp((int)command.Number, -1, combo.Items.Count - 1)); return true;
             case C.CheckBox check when command.Action == "check": check.SetCurrentValue(ToggleButton.IsCheckedProperty, command.Checked); check.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); return true;
             case C.Slider slider when command.Action == "value" && double.IsFinite(command.Number): slider.SetCurrentValue(RangeBase.ValueProperty, Math.Clamp(command.Number, slider.Minimum, slider.Maximum)); return true;
+            case ScrollBar bar when command.Action == "scroll" && double.IsFinite(command.Number):
+                double offset = Math.Clamp(command.Number, bar.Minimum, bar.Maximum);
+                for (var node = ScrollParent(bar); node != null; node = ScrollParent(node))
+                    if (node is C.ScrollViewer owner)
+                    {
+                        if (bar.Orientation == C.Orientation.Vertical) owner.ScrollToVerticalOffset(offset);
+                        else owner.ScrollToHorizontalOffset(offset);
+                        return true;
+                    }
+                return false;
             case C.Button button when command.Action == "click":
                 button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 if (button.Command?.CanExecute(button.CommandParameter) == true) button.Command.Execute(button.CommandParameter);
@@ -171,4 +188,6 @@ internal sealed class PluginWorkerSurface
             default: return false;
         }
     }
+    private static DependencyObject? ScrollParent(DependencyObject node) => node is Visual
+        ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
 }

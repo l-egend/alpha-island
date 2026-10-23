@@ -14,9 +14,14 @@ public partial class MainWindow
         PresentBootTiming(new(null, null, "", "等待 Windows 提交精确记录", Waiting: true));
         try
         {
-            var reading = await BootTimingService.ReadWhenReadyAsync(() => _exiting);
+            BootTimingReading? shown = null;
+            var reading = await BootTimingService.ReadWhenReadyAsync(() => _exiting, available =>
+            {
+                if (_exiting || !SettingsRegistry.GetBool(_options, "StartupBootTimeNotify", true)) return;
+                PresentBootTiming(available); shown = available;
+            });
             if (_exiting || !SettingsRegistry.GetBool(_options, "StartupBootTimeNotify", true)) return;
-            PresentBootTiming(reading);
+            if (shown != reading) PresentBootTiming(reading);
         }
         catch (Exception ex)
         {

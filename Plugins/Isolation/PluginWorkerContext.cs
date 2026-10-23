@@ -7,10 +7,49 @@ using AlphaIsland.PluginSdk;
 namespace alpha_island.Plugins.Isolation;
 
 internal sealed class PluginWorkerContext(PluginStart start, Dispatcher dispatcher, Action<RemoteEvent> publish,
-    CancellationToken token) : IPluginContext
+    CancellationToken token) : IPluginContext, IToolDispatcher
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource<RemoteHostReply>> _hostCalls = new();
+    internal List<IToolHandler> ToolHandlers { get; } = new();
+    public IToolDispatcher Tools => this;
+    public void RegisterTool(IToolHandler tool)
+    {
+        Validate(tool.Definition.Name);
+        AlphaIsland.AgentTools.ToolRegistry.Validate(tool.Definition);
+        if (ToolHandlers.Count >= 32 || ToolHandlers.Any(t => t.Definition.Name == tool.Definition.Name)) throw new InvalidDataException("工具重复或超限");
+        ToolHandlers.Add(tool);
+    }
+    public async ValueTask<ToolDefinition[]> GetToolsAsync(CancellationToken cancellationToken = default)
+        => await HostCall<ToolDefinition[]>("tool-list", new { }, cancellationToken);
+    public async ValueTask<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
+        => await HostCall<ToolResult>("tool-execute", request, cancellationToken);
+    public async ValueTask<DesktopContextSnapshot> GetDesktopContextAsync(string prompt, CancellationToken cancellationToken = default)
+        => await HostCall<DesktopContextSnapshot>("desktop-context", prompt, cancellationToken);
+    private async Task<T> HostCall<T>(string kind, object data, CancellationToken cancellationToken)
+    {
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(token, cancellationToken);
+        cancel.CancelAfter(TimeSpan.FromSeconds(15));
+        if (_hostCalls.Count >= 16) throw new InvalidOperationException("宿主请求过多");
+        string id = Guid.NewGuid().ToString("N");
+        var completion = new TaskCompletionSource<RemoteHostReply>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _hostCalls[id] = completion;
+        try
+        {
+            publish(new("host-call", Value: PluginWire.Element(new RemoteHostCall(id, kind, PluginWire.Element(data)))));
+            var reply = await completion.Task.WaitAsync(cancel.Token);
+            if (reply.Error != null) throw new InvalidOperationException(reply.Error);
+            return PluginWire.Read<T>(reply.Data);
+        }
+        finally
+        {
+            _hostCalls.TryRemove(id, out _);
+            if (cancel.IsCancellationRequested) publish(new("host-cancel", id));
+        }
+    }
+    internal bool CompleteHostCall(RemoteHostReply reply)
+    { if (_hostCalls.TryGetValue(reply.Id, out var completion)) completion.TrySetResult(reply); return true; }
     private Dictionary<string, JsonElement> _values = start.Configuration;
-    private (string State, string Detail)? _lastActivity;
+    private (string State, string Detail, string Model)? _lastActivity;
     internal List<PluginPage> Pages { get; } = new();
     internal List<PluginSetting> Settings { get; } = new();
     internal List<PluginAction> Actions { get; } = new();
@@ -76,16 +115,18 @@ internal sealed class PluginWorkerContext(PluginStart start, Dispatcher dispatch
         _values = values;
         bool Flag(string key) => values.TryGetValue(key, out var value) && value.ValueKind == JsonValueKind.True;
         alpha_island.Animation.MotionPolicy.ProbeRenderTier();
-        alpha_island.Animation.MotionPolicy.Apply(Flag("ReduceMotionEnabled"), Flag("PowerSaveEnabled"));
+        alpha_island.Animation.MotionPolicy.Apply(Flag("ReduceEffectsEnabled"), Flag("ReduceEffectsEnabled"));
     }
     public void OpenPage(string key) => publish(new("open", key));
     public void OpenSettings() => publish(new("settings"));
     public void Refresh() => publish(new("refresh"));
     public void Log(string message) => publish(new("log", Text: message.Length > 2048 ? message[..2048] : message));
-    public void ReportActivity(string state, string detail)
+    public IModelAvatar CreateModelAvatar() => new PluginModelAvatar(true);
+    public void ReportActivity(string state, string detail) => ReportActivity(state, detail, PluginId == "ai.api-chat" ? ReadConfiguration("AiModel", "") : "");
+    public void ReportActivity(string state, string detail, string model)
     {
-        var next = (State: Clip(state, 256), Detail: Clip(detail, 4096)); if (_lastActivity == next) return;
-        _lastActivity = next; publish(new("activity", next.State, next.Detail));
+        var next = (State: Clip(state, 256), Detail: Clip(detail, 4096), Model: Clip(model, 512)); if (_lastActivity == next) return;
+        _lastActivity = next; publish(new("activity", next.State, next.Detail, Value: PluginWire.Element(next.Model)));
     }
     private static string Clip(string value, int limit)
     {
@@ -93,6 +134,7 @@ internal sealed class PluginWorkerContext(PluginStart start, Dispatcher dispatch
         return value[..(char.IsHighSurrogate(value[limit - 1]) ? limit - 1 : limit)];
     }
     public void ReportBluetoothBattery(PluginBluetoothBattery battery) => publish(new("battery", Battery: battery));
+    public void ReportDeviceBatteries(IReadOnlyList<PluginDeviceBattery> devices) => publish(new("device-batteries", DeviceBatteries: devices.Take(128).ToArray()));
     public void NotifyPage(string key, string title, string detail, double seconds = 6)
     {
         if (!Pages.Any(page => page.Key == key) || !double.IsFinite(seconds) || seconds is < 1 or > 30) return;

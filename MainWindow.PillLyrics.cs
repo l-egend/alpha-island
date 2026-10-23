@@ -28,7 +28,6 @@ using DataFormats = System.Windows.DataFormats;
 using DataObject = System.Windows.DataObject;
 
 // Pill lyric line: line-break transition and width fitting.
-// Moved verbatim out of the former single-file MainWindow.xaml.cs; no logic changes.
 namespace alpha_island
 {
     public partial class MainWindow
@@ -100,11 +99,12 @@ namespace alpha_island
             IslandSizing.LyricsCanResize(_activeMainIslandKey, _options.LyricsEnabled,
                 UpNextActive || _musicIslandDismissed || ShouldHidePausedMedia || (_greetingShowing && GreetingActive) || _approvalCurrent != null);
 
-        /// <summary>当前胶囊形态该用的宽度：通知层在展时回落到基准宽度。</summary>
+        /// <summary>提示内容与岛体共用宽度；专用紧凑布局和音乐歌词保留各自的尺寸规则。</summary>
         private double CurrentPillWidth => _activeMainIslandKey == "netspeed" ? StatusPillWidth
             : _activeMainIslandKey == "status" ? ResourcePillWidth
             : _activeMainIslandKey is ChargingIslandKey or ChargingPreviewIslandKey ? 148
             : _activeMainIslandKey == "system" && _systemNotifyCompact ? CompactSystemNotifyWidth
+            : _layers?.ContentWidth(_activeMainIslandKey) is double contentWidth ? contentWidth + 16
             : IslandSizing.PillWidth(PillLyricWantsWide, _pillLyricWidth);
 
         /// <summary>写入胶囊歌词：文本变化时做换行过场动画，然后重新量宽度决定伸缩 / 跑马灯。</summary>
@@ -411,7 +411,7 @@ namespace alpha_island
 
             _widthOnlyMorph = true;
             _pillWidthPending = false;
-            _animator.MorphTo(PillGeometry, _options.GelAnimation, IslandMetrics.PillWidthDuration,
+            _animator.MorphTo(PillGeometry, true, IslandMetrics.PillWidthDuration,
                 new CubicEase { EasingMode = EasingMode.EaseInOut },
                 completed: () =>
                 {
@@ -625,7 +625,7 @@ namespace alpha_island
 
         /// <summary>
         /// 换曲（上一首 / 下一首）提示的显示时长。
-        /// 用户反馈：等新歌都已经唱起来了，胶囊还在提示"接下来 上一首"，所以固定压到 1s。
+        /// 换曲提示保持 1 秒，避免新曲开始后仍显示上一首预告。
         /// 暂停 / 恢复播放提示均固定为 1.0s。
         /// </summary>
         private const double UpNextPromptSeconds = 1.0;
@@ -752,6 +752,7 @@ namespace alpha_island
 
             _activeMainIslandKey = "music";
             _layers.PreferredWinnerKey = null; // 允许问候语正常独占主岛
+            _greetingPending = true;
             _layers.ShowSeconds(IslandLayerHost.GreetingKey, _options.GreetingSeconds);
             SyncVolumeFlyoutTakeover();
             GreetingText.Text = string.IsNullOrWhiteSpace(_options.GreetingText) ? "欢迎回来" : _options.GreetingText;
@@ -768,30 +769,43 @@ namespace alpha_island
             }
         }
 
+        // All exit paths complete startup, including a gesture, reset or power notification.
+        // Visibility alone cannot identify a pending greeting after the layer was hidden.
+        private bool CompleteGreetingLifetime()
+        {
+            bool pending = _greetingPending || _greetingShowing || GreetingActive;
+            _greetingPending = false;
+            _greetingTimer?.Stop();
+            _greetingTimer = null;
+            _greetingFinishedTcs?.TrySetResult(true);
+            if (pending) _greetingAudio?.Stop();
+            return pending;
+        }
+
         private void ScheduleGreetingDismiss()
         {
             _greetingTimer?.Stop();
             double seconds = Math.Max(1.0, _options.GreetingSeconds);
-            _greetingTimer = new DispatcherTimer(DispatcherPriority.Normal)
+            var timer = new DispatcherTimer(DispatcherPriority.Normal)
             {
                 Interval = TimeSpan.FromSeconds(seconds)
             };
-            _greetingTimer.Tick += (_, __) =>
+            _greetingTimer = timer;
+            timer.Tick += (_, __) =>
             {
-                _greetingTimer.Stop();
-                DismissGreeting();
+                timer.Stop();
+                if (ReferenceEquals(_greetingTimer, timer)) DismissGreeting();
             };
-            _greetingTimer.Start();
+            timer.Start();
         }
 
         private void DismissGreeting()
         {
-            _greetingTimer?.Stop();
-            _greetingFinishedTcs?.TrySetResult(true);
-            if (!_greetingShowing && !GreetingActive) return;
+            if (!CompleteGreetingLifetime()) return;
 
             _layers.Hide(IslandLayerHost.GreetingKey);
             SyncVolumeFlyoutTakeover();
+            if (TryShowStartupMediaPrompt()) return;
             // 欢迎结束不能抢回刚由复制等事件选中的主岛。
             if (!IsIslandActive(_activeMainIslandKey))
             {
@@ -799,8 +813,9 @@ namespace alpha_island
                 _layers.PreferredWinnerKey = "music";
             }
 
-            // 若未置顶，且光标不在热区，且没有正在播放的媒体，自动平滑收回至细条
-            if (!HasVisibleMusicPin && !_layers.AnyPinned && _state == IslandState.Pill && !IsCursorInHotZone())
+            // 热区只保留有实际内容的播放器；欢迎撤下后没有内容时仍平滑收回。
+            if (!HasVisibleMusicPin && !_layers.AnyPinned && _state == IslandState.Pill
+                && (!IsIslandActive("music") || !IsCursorInHotZone()))
             {
                 if (!HasActiveNotification && !KeepPlayingMusicIslandVisible)
                 {

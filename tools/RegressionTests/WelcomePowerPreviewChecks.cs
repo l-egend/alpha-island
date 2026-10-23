@@ -69,33 +69,12 @@ internal static partial class Program
             try
             {
                 settings.LoadFrom(options);
-                Check(settings.FindName("BatteryRippleToggle") == null, "移除充放电波纹开关，测试入口继续保留");
+                Check(settings.FindName("PreviewChargingButton") == null && settings.FindName("PreviewUnpluggedButton") == null,
+                    "充放电测试按钮已从设置移除");
                 int changed = 0; settings.OptionsChanged += (_, _) => changed++;
-                settings.Left = -32000; settings.Top = -32000; settings.Width = settings.MinWidth;
-                settings.ShowInForeground(requestFocus: false);
-                PrivateCall(settings, "SelectPageByTag", "system"); PumpAnimations(300); settings.UpdateLayout();
-                var row = (Grid)settings.FindName("BatteryAnimationPreviewRow");
-                var lastButton = (Button)settings.FindName("PreviewUnpluggedButton");
-                var buttonEnd = lastButton.TranslatePoint(new Point(lastButton.ActualWidth, 0), row);
-                Check(row.ActualHeight >= 50 && lastButton.ActualWidth >= 64 && buttonEnd.X <= row.ActualWidth,
-                    "最窄设置窗口中两个测试按钮仍完整显示");
-                row.BringIntoView(); PumpAnimations(100); settings.UpdateLayout();
-                var settingsRoot = (Grid)settings.Content;
-                var fullSettings = new RenderTargetBitmap((int)settingsRoot.ActualWidth, (int)settingsRoot.ActualHeight,96,96,PixelFormats.Pbgra32);
-                fullSettings.Render(settingsRoot);
-                var rowOrigin = row.TransformToAncestor(settingsRoot).Transform(new Point(0,0));
-                int rowX = Math.Max(0,(int)Math.Round(rowOrigin.X)), rowY = Math.Max(0,(int)Math.Round(rowOrigin.Y));
-                int rowWidth = Math.Min((int)Math.Floor(row.ActualWidth),fullSettings.PixelWidth-rowX);
-                int rowHeight = Math.Min((int)Math.Floor(row.ActualHeight),fullSettings.PixelHeight-rowY);
-                Check(rowHeight >= row.ActualHeight-2 && rowWidth >= row.ActualWidth-2,
-                    "滚动到测试选项后整行内容在设置窗口内可见");
-                var rowBitmap = new CroppedBitmap(fullSettings, new Int32Rect(rowX,rowY,rowWidth,rowHeight));
-                var rowPng = new PngBitmapEncoder(); rowPng.Frames.Add(BitmapFrame.Create(rowBitmap));
-                using (var stream = File.Create(Path.Combine(output, "settings-preview-row.png"))) rowPng.Save(stream);
-                settings.BatteryAnimationPreviewRequested += (_, kind) => PrivateCall(window, "PreviewBatteryAnimation", kind);
-                var charging = (Button)settings.FindName("PreviewChargingButton");
-                var unplugged = (Button)settings.FindName("PreviewUnpluggedButton");
-                Check(charging.IsEnabled && unplugged.IsEnabled, "临时测试入口在关闭日常电池通知时仍可使用");
+                var charging = new Button(); var unplugged = new Button();
+                charging.Click += (_, _) => PrivateCall(window, "PreviewBatteryAnimation", BatteryPowerEvent.PluggedIn);
+                unplugged.Click += (_, _) => PrivateCall(window, "PreviewBatteryAnimation", BatteryPowerEvent.Unplugged);
                 PrivateCall(window, "SetState", IslandState.Bar, true);
                 charging.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check(animator.IsRunning && !AgentField<bool>(window.BatteryRipple, "_animating"),

@@ -12,6 +12,11 @@ internal sealed class ConversationPluginFixture(IslandOptions options,string roo
     public CancellationToken Lifetime=>CancellationToken.None;
     internal Action? RefreshRequested;
     internal Action<string>? PageRequested;
+    internal Func<string, DesktopContextSnapshot>? ContextRequested;
+    internal IToolDispatcher ToolDispatcher = UnavailableTools.Instance;
+    public IToolDispatcher Tools => ToolDispatcher;
+    public ValueTask<DesktopContextSnapshot> GetDesktopContextAsync(string prompt, CancellationToken cancellationToken = default)
+        => ValueTask.FromResult(ContextRequested?.Invoke(prompt) ?? DesktopContextSnapshot.Empty);
     public void RegisterPage(PluginPage page){}
     public void RegisterSetting(PluginSetting setting){}
     public void RegisterService(PluginService service){}
@@ -21,5 +26,6 @@ internal sealed class ConversationPluginFixture(IslandOptions options,string roo
     public void WriteConfiguration(string key,object value)=>SettingsRegistry.SetExtra(options,key,value);
     public void OpenPage(string key)=>PageRequested?.Invoke(key);
     public void Refresh()=>RefreshRequested?.Invoke();
+    public IModelAvatar CreateModelAvatar() => new alpha_island.Plugins.PluginModelAvatar(true);
     public void Log(string message){}
 }
