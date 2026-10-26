@@ -11,6 +11,7 @@ using Image = System.Windows.Controls.Image;
 using Panel = System.Windows.Controls.Panel;
 using Brushes = System.Windows.Media.Brushes;
 using Size = System.Windows.Size;
+using Point = System.Windows.Point;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using VerticalAlignment = System.Windows.VerticalAlignment;
 
@@ -33,6 +34,9 @@ internal sealed partial class DesktopNotificationStackCard : Grid
     private readonly Border _expansion;
     private readonly TextBlock _toggleHint;
     private readonly GlyphIcon _chevron;
+    private readonly Border _face;
+    private const double MiddleOpacity = .82;
+    private const double RearOpacity = .60;
     private long _transition;
     private bool _built;
 
@@ -43,16 +47,15 @@ internal sealed partial class DesktopNotificationStackCard : Grid
         Margin = new Thickness(2, 0, 2, 22);
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        RearCard = Plate(22, 14); MiddleCard = Plate(11, 7);
+        RearCard = Plate(.94, 12); MiddleCard = Plate(.97, 6);
+        MiddleCard.Opacity = MiddleOpacity; RearCard.Opacity = RearOpacity;
         Panel.SetZIndex(RearCard, -2); Panel.SetZIndex(MiddleCard, -1);
         Children.Add(RearCard); Children.Add(MiddleCard);
-        // Only the exposed lower edges belong to the rear cards. Clipping keeps
-        // their borders from showing through the translucent front and its text.
-        foreach (var (plate, offset) in new[] { (RearCard, 14d), (MiddleCard, 7d) })
-            plate.SizeChanged += (_, _) => plate.Clip = new RectangleGeometry(new Rect(0,
-                Math.Max(0, plate.ActualHeight - offset), plate.ActualWidth, Math.Min(offset, plate.ActualHeight)));
         RearCard.Visibility = group.Items.Length > 2 ? Visibility.Visible : Visibility.Collapsed;
-        var face = new Border { CornerRadius = new CornerRadius(17), BorderThickness = new Thickness(1) };
+        var face = _face = new Border { CornerRadius = new CornerRadius(17), BorderThickness = new Thickness(1) };
+        face.SizeChanged += (_, _) => UpdatePlateClips();
+        MiddleCard.SizeChanged += (_, _) => UpdatePlateClips(); RearCard.SizeChanged += (_, _) => UpdatePlateClips();
+        Loaded += (_, _) => UpdatePlateClips();
         face.SetResourceReference(Border.BackgroundProperty, "ControlSurfaceBrush");
         face.SetResourceReference(Border.BorderBrushProperty, "ControlBorderBrush");
         Children.Add(face);
@@ -112,12 +115,40 @@ internal sealed partial class DesktopNotificationStackCard : Grid
             TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         label.SetResourceReference(TextBlock.ForegroundProperty, resource); return label;
     }
-    private static Border Plate(double inset, double offset)
+    private static Border Plate(double scale, double offset)
     {
+        var transform = new TransformGroup();
+        transform.Children.Add(new ScaleTransform(scale, scale)); transform.Children.Add(new TranslateTransform(0, offset));
+        transform.Freeze();
         var plate = new Border { CornerRadius = new CornerRadius(17), BorderThickness = new Thickness(1),
-            Margin = new Thickness(inset, offset, inset, -offset), IsHitTestVisible = false };
+            RenderTransform = transform, RenderTransformOrigin = new Point(.5, 1), IsHitTestVisible = false };
         plate.SetResourceReference(Border.BackgroundProperty, "ControlSurfaceBrush");
         plate.SetResourceReference(Border.BorderBrushProperty, "ControlBorderBrush"); return plate;
+    }
+    private void UpdatePlateClips()
+    {
+        if (_face.ActualWidth <= 0 || _face.ActualHeight <= 0) return;
+        ClipPlate(MiddleCard, false); ClipPlate(RearCard, true);
+    }
+    private void ClipPlate(Border plate, bool rear)
+    {
+        if (plate.ActualWidth <= 0 || plate.ActualHeight <= 0) { plate.Clip = Geometry.Empty; return; }
+        Geometry covered = ContourIn(_face, plate);
+        if (rear && MiddleCard.ActualWidth > 0)
+            covered = new CombinedGeometry(GeometryCombineMode.Union, covered, ContourIn(MiddleCard, plate));
+        var clip = new CombinedGeometry(GeometryCombineMode.Exclude,
+            new RectangleGeometry(new Rect(plate.RenderSize), plate.CornerRadius.TopLeft, plate.CornerRadius.TopLeft), covered);
+        clip.Freeze(); plate.Clip = clip;
+    }
+    private static Geometry ContourIn(Border card, Visual target)
+    {
+        var transform = card.TransformToVisual(target);
+        var origin = transform.Transform(new Point());
+        var x = transform.Transform(new Point(1, 0)); var y = transform.Transform(new Point(0, 1));
+        return new RectangleGeometry(new Rect(card.RenderSize), card.CornerRadius.TopLeft, card.CornerRadius.TopLeft)
+        {
+            Transform = new MatrixTransform(new Matrix(x.X - origin.X, x.Y - origin.Y, y.X - origin.X, y.Y - origin.Y, origin.X, origin.Y))
+        };
     }
     private void UpdateAccessibility() => AutomationProperties.SetName(ToggleButton,
         $"{Group.Latest.AppName}，{Group.Items.Length} 个通知，{(IsExpanded ? "收起" : "展开")}");

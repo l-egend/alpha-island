@@ -5,8 +5,9 @@ using OppoPodsManager;
 
 namespace AlphaIsland.Plugins.OppoPods;
 
-public sealed class OppoPodsPlugin : IIslandPlugin
+public sealed class OppoPodsPlugin : IIslandPlugin, IPluginSuspendGuard
 {
+    public bool CanSuspend => _controller?.Snapshot.Busy != true;
     private IPluginContext? _context;
     private EarbudController? _controller;
     private EarbudView? _view;

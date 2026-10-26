@@ -318,8 +318,9 @@ public partial class MainWindow
     internal void ApplySessionNotification(bool locked)
     {
         _sessionLocked = locked;
-        if (locked) { _screenTools?.StopSubtitles(); _screenTools?.Hide(); }
+        if (locked) { _notificationAudio?.Stop(); _screenTools?.StopSubtitles(); _screenTools?.Hide(); }
         if (locked && _voiceAssistant?.Visible == true) _ = _voiceAssistant.CancelAsync();
+        ConfigureVoiceAssistant();
         SyncVolumeFlyoutTakeover();
         if (locked) { CloseComponentSwitcher(); _desktopInbox.DropPending(); FinishDesktopPopup(); }
         if (_notificationRoot != null) _notificationRoot.Visibility = locked ? Visibility.Hidden : Visibility.Visible;

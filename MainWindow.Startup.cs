@@ -180,6 +180,11 @@ namespace alpha_island
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             if (!_runtimeEnabled) return;
+            try
+            {
+                new StartupRegistrationService().RestoreIfRequested(SettingsRegistry.GetBool(_options, "StartupEnabled", false));
+            }
+            catch (Exception ex) { IslandLog.Warn("Startup", "恢复自启动失败：" + ex.Message); }
             PositionWindow();
             ApplyOptions();
 

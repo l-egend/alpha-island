@@ -17,7 +17,7 @@ public partial class MainWindow
             page => { CardViewport.Children.Add(page.View); _pages.Register(page); },
             page =>
             {
-                RemoveCardPinLayer(page.Id);
+                if (_plugins?.IsPageGameSuspended(page.Id) != true) RemoveCardPinLayer(page.Id);
                 AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(page.View,UIElement.OpacityProperty, null);
                 if (page.View.RenderTransform is TranslateTransform transform) AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(transform,TranslateTransform.YProperty, null);
                 _pages.Unregister(page.Id); CardViewport.Children.Remove(page.View);
@@ -37,7 +37,8 @@ public partial class MainWindow
             _pages.Sync(_options);
             if (_pages.IndexOf(VoiceChatPage) < 0 && _voiceAssistant?.Active == true) _ = _voiceAssistant.CancelAsync();
             ConfigureVoiceAssistant();
-            foreach (string id in _cardPinViews.Values.Where(v => _pages.IndexOf(v.PageId) < 0).Select(v => v.PageId).ToArray()) RemoveCardPinLayer(id);
+            foreach (string id in _cardPinViews.Values.Where(v => _pages.IndexOf(v.PageId) < 0
+                && !_plugins.IsPageGameSuspended(v.PageId)).Select(v => v.PageId).ToArray()) RemoveCardPinLayer(id);
             SwitchCardPage(Math.Max(0, _pages.ActiveIndex), animated: false);
             SyncCardPageVisuals();
             _tray?.SetPluginActions(_plugins.AvailableActions);
@@ -47,6 +48,9 @@ public partial class MainWindow
         {
             SyncDeviceBatteryCard();
             _pages.Sync(_options);
+            foreach (string id in _cardPinViews.Values.Where(v => v.PageId.StartsWith("plugin:", StringComparison.Ordinal)
+                && _pages.IndexOf(v.PageId) < 0 && !_plugins.IsPageGameSuspended(v.PageId)).Select(v => v.PageId).ToArray())
+                RemoveCardPinLayer(id);
             SwitchCardPage(Math.Max(0, _pages.ActiveIndex), animated: false);
             SyncCardPageVisuals();
             _tray?.SetPluginActions(_plugins.AvailableActions);

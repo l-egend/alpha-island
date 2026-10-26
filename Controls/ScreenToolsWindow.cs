@@ -34,11 +34,13 @@ internal sealed partial class ScreenToolsWindow : Window
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 4) };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1.2) };
     private readonly Button _liveButton;
+    private readonly Button _regionLiveButton;
     private Rectangle? _region;
     private CancellationTokenSource? _operation;
     private int _generation;
     private bool _busy;
     private bool _closed;
+    private bool _forceClose;
     private string _lastText = "";
     private SubtitleIslandWindow? _subtitle;
 
@@ -49,7 +51,7 @@ internal sealed partial class ScreenToolsWindow : Window
         Func<SpeechRecognitionOptions>? speechConfiguration = null, Func<string>? subtitleLanguage = null,
         Action<bool>? subtitleStateChanged = null, Func<ISpeechRecognizer, bool, ProviderVoiceCapture>? createSpeechCapture = null,
         Func<string, ChatConfig, CancellationToken, string, Task<string>>? translateCaption = null,
-        Func<bool>? canUseTools = null)
+        Func<bool>? canUseTools = null, Func<Rectangle, CancellationToken, Task<string>>? readCaptionRegion = null)
     {
         _copyText = copyText ?? (text => Interop.ClipboardTextWriter.Copy(text)); _completed = completed;
         _configuration = configuration;
@@ -58,13 +60,14 @@ internal sealed partial class ScreenToolsWindow : Window
         _subtitleLanguage = subtitleLanguage ?? (() => "zh-CN"); _subtitleStateChanged = subtitleStateChanged;
         _createSpeechCapture = createSpeechCapture ?? ((recognizer, loopback) => new ProviderVoiceCapture(recognizer, new WasapiSpeechAudioSource(loopback), continuous: true));
         _translateCaption = translateCaption ?? ((text, config, token, language) => _screen.TranslateAsync(text, config, token, language));
+        _readCaptionRegion = readCaptionRegion ?? _screen.ReadAsync;
         _canUseTools = canUseTools ?? (() => true);
         _externalConfiguration = externalConfiguration ?? (() => ExternalTranslationOptions.From(new IslandOptions()));
         _shortcutSimulation = shortcutSimulation ?? new ShortcutSimulationService();
         Resources.MergedDictionaries.Add(new ResourceDictionary
         { Source = new Uri("pack://application:,,,/alpha-island;component/Themes/LiquidGlass.xaml") });
         Title = "屏幕工具";
-        Width = 720; Height = 530; MinWidth = 580; MinHeight = 440;
+        Width = 760; Height = 590; MinWidth = 580; MinHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         SourceInitialized += (_, _) =>
         {
@@ -86,15 +89,18 @@ internal sealed partial class ScreenToolsWindow : Window
         actions.Children.Add(ActionButton("识字并复制", async () => await RecognizeAsync(copy: true)));
         actions.Children.Add(ActionButton("颜色吸管", async () => await PickColorAsync()));
         actions.Children.Add(ActionButton("翻译文字", async () => await TranslateOriginalAsync()));
-        _liveButton = ActionButton("开始字幕", ToggleSubtitles); actions.Children.Add(_liveButton);
-        actions.Children.Add(ActionButton("字幕区域", async () => await SelectSubtitleRegionAsync()));
+        _liveButton = ActionButton("开始语音识别", async () => await StartOrStopSpeechRecognitionAsync()); actions.Children.Add(_liveButton);
+        _regionLiveButton = ActionButton("开始区域翻译", async () => await StartOrStopRegionTranslationAsync()); actions.Children.Add(_regionLiveButton);
+        actions.Children.Add(ActionButton("选择翻译区域", async () => await SelectSubtitleRegionAsync()));
         actions.Children.Add(ActionButton("屏幕扫码", async () => await ScanAsync()));
         _externalButton = ActionButton("调用外部翻译", async () => await InvokeExternalTranslationAsync());
         actions.Children.Add(_externalButton);
         if (openExternalSettings != null) actions.Children.Add(ActionButton("外部翻译设置", openExternalSettings));
-        _captionSource.ItemsSource = new[] { "系统声音（语音识别）", "麦克风（语音识别）", "屏幕文字（本机 OCR）" };
+        _captionSource.ItemsSource = new[] { "系统声音", "麦克风" };
         _captionSource.SelectedIndex = 0;
-        _captionSource.SelectionChanged += (_, _) => { if (_subtitleRunning) StopSubtitles(); };
+        _captionSource.SelectionChanged += (_, _) => { if (SpeechRecognitionRunning) StopSubtitles(); };
+        System.Windows.Automation.AutomationProperties.SetName(_captionSource, "语音识别来源");
+        _captionSource.ToolTip = "仅用于语音识别；区域翻译不采集声音";
         _captionSource.Margin = new Thickness(0, 0, 8, 4); _captionSource.MinHeight = 30; _captionSource.Width = 200;
         actions.Children.Add(_captionSource);
         root.Children.Add(actions);
@@ -102,7 +108,7 @@ internal sealed partial class ScreenToolsWindow : Window
         var body = new Grid { Margin = new Thickness(0, 8, 0, 8) };
         body.ColumnDefinitions.Add(new()); body.ColumnDefinitions.Add(new());
         body.Children.Add(Pane("识别文字（可修改）", _original));
-        var translated = Pane("译文 / 扫码结果", _result); Grid.SetColumn(translated, 1); body.Children.Add(translated);
+        var translated = Pane("输出结果", _result); Grid.SetColumn(translated, 1); body.Children.Add(translated);
         Grid.SetRow(body, 2); root.Children.Add(body);
         var footer = new StackPanel();
         var resultActions = new WrapPanel();
@@ -114,13 +120,18 @@ internal sealed partial class ScreenToolsWindow : Window
         resultActions.Children.Add(ActionButton("打开识别链接", OpenResultLink));
         footer.Children.Add(resultActions);
         footer.Children.Add(_palette);
-        footer.Children.Add(new TextBlock { Text = "声音字幕读取默认输出或默认麦克风，使用语音模型识别、对话模型翻译；仅启动后分段发送，不保存录音。框选用于确定显示器；屏幕文字来源才会限制 OCR 区域。翻译岛只显示译文，右键可停止或复制。",
+        footer.Children.Add(new TextBlock { Text = "语音识别：系统声音或麦克风直接转文字，无需框选和翻译接口。\n区域翻译：框选屏幕文字，使用本机 OCR 与翻译接口，不采集声音。\n启动后可关闭此窗口，悬浮岛仍会工作；点 × 或右键停止。切换模式会停止上一项。",
             TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7, Margin = new Thickness(0, 8, 0, 0) });
         Grid.SetRow(footer, 3); root.Children.Add(footer); Content = root;
         _result.IsReadOnly = true;
         _timer.Tick += async (_, _) => { if (!_busy) await ReadAndTranslateAsync(); };
+        Closing += (_, args) =>
+        {
+            if (!_forceClose && _subtitleRunning && _canUseTools())
+            { args.Cancel = true; Hide(); _status.Text = "正在后台运行，可在悬浮岛停止。"; }
+        };
         Closed += (_, _) => { _closed = true; StopSubtitles(); _operation?.Cancel(); };
-        _status.Text = "选择字幕来源后点“开始字幕”，可直接框选区域；上方主岛与下方翻译岛独立。";
+        _status.Text = "语音识别与区域翻译可分别启动；运行时关闭工具窗口也会继续。";
         RefreshExternalTranslation();
     }
 
@@ -194,18 +205,10 @@ internal sealed partial class ScreenToolsWindow : Window
             _status.Text = decoded == null ? "没有识别到二维码，请重新框选完整二维码。" : "扫码完成，链接可由你选择打开。";
         });
     }
-    private async void ToggleSubtitles() => await StartOrStopSubtitlesAsync();
-    private async Task ReadAndTranslateAsync()
+    internal void Shutdown()
     {
-        if (!_region.HasValue || _busy || !_timer.IsEnabled) return;
-        int generation = _generation;
-        await RunAsync(async ct =>
-        {
-            string text = await _screen.ReadAsync(_region.Value, ct);
-            if (generation != _generation || !_timer.IsEnabled || text.Length == 0 || text == _lastText) return;
-            _original.Text = text; _nextCaption = text;
-            await TranslateCaptionQueueAsync(generation, _captionLifetime?.Token ?? ct);
-        });
+        if (_closed) return;
+        _forceClose = true; StopSubtitles(); _operation?.Cancel(); Close();
     }
     private async Task RunAsync(Func<CancellationToken, Task> action)
     {
@@ -225,7 +228,9 @@ internal sealed partial class ScreenToolsWindow : Window
     {
         if (_subtitle == null)
         {
-            _subtitle = new SubtitleIslandWindow(_region, _captionSource.SelectedIndex == 2, StopSubtitles, _copyText);
+            bool region = _captionMode == ScreenCaptionMode.RegionTranslation;
+            _subtitle = new SubtitleIslandWindow(region ? _captionRegion : null, region, StopSubtitles, _copyText,
+                region ? "区域翻译" : "语音识别 · " + (_captionSource.SelectedIndex == 0 ? "系统声音" : "麦克风"), region);
             _subtitle.Closed += (_, _) => { _subtitle = null; if (_subtitleRunning) StopSubtitles(); };
         }
         _subtitle.UpdateText(text);

@@ -79,7 +79,7 @@ namespace alpha_island
             _clipboardPastedUntil = DateTime.MinValue;
 
             UpdateClipboardLinkAppearance();
-            ClipboardPreviewText.Text = string.IsNullOrWhiteSpace(e.Summary) ? "剪切板内容" : e.Summary;
+            ClipboardPreviewText.Text = string.IsNullOrWhiteSpace(e.Summary) ? "剪贴板内容" : e.Summary;
 
             var cyan = (System.Windows.Media.Brush)FindResource("AccentCyan");
             ClipboardIcon.Foreground = cyan;

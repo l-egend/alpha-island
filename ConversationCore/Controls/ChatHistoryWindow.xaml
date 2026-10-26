@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="对话历史 · Alpha Island" Width="860" Height="600" MinWidth="740" MinHeight="480"
-        WindowStartupLocation="CenterOwner" Background="#202020" Foreground="White" FontFamily="Segoe UI"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource W11WindowBrush}"
+        Foreground="{DynamicResource W11TextPrimary}" FontFamily="{DynamicResource AppFontFamily}" UseLayoutRounding="True"
         Topmost="True" ShowInTaskbar="True">
     <Window.Resources>
         <ResourceDictionary>
@@ -10,33 +11,17 @@
                 <ResourceDictionary Source="/alpha-island;component/Themes/LiquidGlass.xaml"/>
                 <ResourceDictionary Source="/alpha-island;component/Themes/Win11Settings.xaml"/>
             </ResourceDictionary.MergedDictionaries>
-            <Style TargetType="Button" BasedOn="{StaticResource ThemedButton}">
-                <Setter Property="Background" Value="#333333"/>
-                <Setter Property="Foreground" Value="White"/>
-                <Setter Property="BorderBrush" Value="#555555"/>
-                <Setter Property="Height" Value="32"/>
-                <Setter Property="FontSize" Value="12"/>
+            <Style TargetType="Button" BasedOn="{StaticResource W11Button}">
                 <Setter Property="Margin" Value="0,0,8,0"/>
             </Style>
             <Style TargetType="TextBox" BasedOn="{StaticResource ThemedTextBox}">
-                <Setter Property="Background" Value="#282828"/>
-                <Setter Property="Foreground" Value="White"/>
-                <Setter Property="BorderBrush" Value="#555555"/>
-                <Setter Property="CaretBrush" Value="White"/>
+                <Setter Property="Background" Value="{DynamicResource W11ControlFill}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource W11ControlBorder}"/>
             </Style>
-            <Style TargetType="ListBox">
-                <Setter Property="Background" Value="#282828"/>
-                <Setter Property="Foreground" Value="White"/>
-                <Setter Property="BorderBrush" Value="#444444"/>
-                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-            </Style>
-            <Style TargetType="ListBoxItem">
-                <Setter Property="Padding" Value="8"/>
-                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            </Style>
+            <Style TargetType="ListBox" BasedOn="{StaticResource ThemedListBox}"/>
         </ResourceDictionary>
     </Window.Resources>
-    <Grid Margin="20" Background="#202020">
+    <Grid Margin="20" Background="{DynamicResource W11WindowBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -47,7 +32,7 @@
             </StackPanel>
             <StackPanel>
                 <TextBlock Text="对话历史" FontSize="20" FontWeight="SemiBold"/>
-                <TextBlock Text="记录保存在本机；修改历史不会自动重新生成回复。" Foreground="#BBBBBB" Margin="0,4,8,0"/>
+                <TextBlock Text="记录保存在本机；修改历史不会自动重新生成回复。" Foreground="{DynamicResource W11TextSecondary}" Margin="0,4,8,0" TextWrapping="Wrap"/>
             </StackPanel>
         </DockPanel>
         <Grid Grid.Row="1">
@@ -58,7 +43,7 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate><StackPanel>
                             <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold"/>
-                            <TextBlock Margin="0,5,0,0" FontSize="11" Foreground="#BBBBBB">
+                            <TextBlock Margin="0,5,0,0" FontSize="11.5" Foreground="{DynamicResource W11TextSecondary}">
                                 <Run Text="{Binding Updated, StringFormat={}{0:MM-dd HH:mm}}"/><Run Text=" · "/>
                                 <Run Text="{Binding MessageCount}"/><Run Text=" 条消息"/>
                             </TextBlock>
@@ -82,19 +67,19 @@
                 <ListBox x:Name="MessageList" Grid.Row="1" SelectionChanged="Message_Changed">
                     <ListBox.ItemTemplate>
                         <DataTemplate><StackPanel>
-                            <TextBlock Text="{Binding Role}" FontWeight="SemiBold" Foreground="#73D7E7"/>
+                            <TextBlock Text="{Binding Role}" FontWeight="SemiBold" Foreground="{DynamicResource AccentCyan}"/>
                             <TextBlock Text="{Binding Preview}" Margin="0,4,0,0" TextWrapping="Wrap" MaxHeight="58" TextTrimming="CharacterEllipsis"/>
                         </StackPanel></DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <TextBlock Grid.Row="2" Text="选中一条消息，可查看全文或编辑内容：" Foreground="#BBBBBB" Margin="0,10,0,6"/>
-                <TextBox x:Name="MessageEditor" Grid.Row="3" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                <TextBlock Grid.Row="2" Text="选中一条消息，可查看全文或编辑内容：" Foreground="{DynamicResource W11TextSecondary}" Margin="0,10,0,6"/>
+                <TextBox x:Name="MessageEditor" Grid.Row="3" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"/>
                 <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,10,0,0">
                     <Button x:Name="SaveMessageButton" Content="保存修改" Click="SaveMessage_Click"/>
                     <Button x:Name="DeleteMessageButton" Content="删除消息" Click="DeleteMessage_Click"/>
                 </StackPanel>
             </Grid>
         </Grid>
-        <TextBlock x:Name="StatusText" Grid.Row="2" Text="选择左侧会话查看记录" Foreground="#BBBBBB" Margin="0,14,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="StatusText" Grid.Row="2" Text="选择左侧会话查看记录" Foreground="{DynamicResource W11TextSecondary}" Margin="0,14,0,0" TextWrapping="Wrap"/>
     </Grid>
 </Window>

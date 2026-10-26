@@ -12,7 +12,7 @@ internal sealed record RemotePage(string Key, string Title, string Glyph, double
 internal sealed record RemoteAction(string Key, string Title, bool Available);
 internal sealed record RemoteNetwork(string Key, string Title, int Priority);
 internal sealed record RemoteRegistry(RemotePage[] Pages, PluginSetting[] Settings, RemoteAction[] Actions, bool HasSettings,
-    RemoteNetwork[] Networks, ToolDefinition[]? Tools = null);
+    RemoteNetwork[] Networks, ToolDefinition[]? Tools = null, bool SupportsRuntimeSuspension = false);
 internal sealed record RemoteHostCall(string Id, string Kind, JsonElement Data);
 internal sealed record RemoteHostReply(string Id, JsonElement Data, string? Error = null);
 internal sealed record RemotePageState(string Key, bool Available, string Summary);

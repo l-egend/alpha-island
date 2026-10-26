@@ -406,6 +406,7 @@ namespace alpha_island
 
             _options = isolatedOptions ?? IslandOptions.Load();
             InitializeLiquidGlass();
+            InitializeGreetingPortrait();
 
             // 卡拉OK 擦除：裁剪几何只挂一次，之后逐帧只改 Rect（见 OnKaraokeTick）
             LyricCurrentBright.Clip = _lyricWipe;
@@ -524,6 +525,8 @@ namespace alpha_island
         private SettingsWindow CreateSettingsWindow()
         {
             var window = new SettingsWindow();
+            window.GreetingPresetResolver = () => GreetingPresetForPresentation;
+            window.GreetingPreviewRequested += (_, _) => PreviewStartupGreeting();
             window.AssistantToolsRequested += OpenAssistantCenter;
             window.SetScreenToolsStatus(_screenHotkeyStatus);
             window.SetVoiceHotkeyStatus(_voiceHotkeyStatus);
@@ -535,6 +538,7 @@ namespace alpha_island
             {
                 _options.CopyFrom(options);
                 ApplyOptions();
+                ApplySettingsRuntimeText(window);
             };
             window.ResetRequested += Settings_ResetRequested;
             window.SetLauncherStatus(_launcherHotkeyStatus);
@@ -551,10 +555,7 @@ namespace alpha_island
         {
             var audio = _audio;
             window.UpdateDeviceText(audio?.DeviceName ?? "未检测到输出设备");
-            // 歌词按「网易云 → LRCLIB → 酷狗」的顺序回退，命中哪个源就显示哪个
-            window.UpdateLyricsSource(_lyrics == null
-                ? "网易云 → LRCLIB → 酷狗（未启用）"
-                : $"网易云 → LRCLIB → 酷狗 · 当前：{_lyricsDoc?.Source ?? "尚未命中"}");
+            window.UpdateLyricsSource(_lyrics == null || !_options.LyricsEnabled ? "未启用" : _lyricsDoc?.Source ?? "尚未命中");
         }
 
         /// <summary>
@@ -622,6 +623,7 @@ namespace alpha_island
         private void ApplyOptions()
         {
             ApplyGreetingMedia();
+            ApplyNotificationSoundOptions();
             ConfigureDesktopAssistant();
             ConfigureLauncher();
             _productivity?.SetEnabled(SettingsRegistry.GetBool(_options, "ProductivityEnabled", true));
@@ -630,7 +632,15 @@ namespace alpha_island
             ApplyVisualOptions();
 
             if (_audio != null) _audio.Sensitivity = (float)_options.Sensitivity;
-            if (_lyrics != null) _lyrics.Enabled = _options.LyricsEnabled;
+            if (_lyrics != null)
+            {
+                _lyrics.Enabled = _options.LyricsEnabled;
+                if (_lyrics.Configure(_options))
+                {
+                    _lyricsCts?.Cancel(); _lyricsKey = ""; _lyricsFetchingKey = "";
+                    ApplyLyrics(null);
+                }
+            }
 
             PillCoverHost.Visibility = Visibility.Visible;
             CardWave.Visibility = _options.ShowWaveLayer ? Visibility.Visible : Visibility.Collapsed;
@@ -738,6 +748,8 @@ namespace alpha_island
                 _mediaLostTimer?.Stop();
                 _greetingTimer?.Stop();
                 _greetingAudio?.Dispose();
+                _notificationAudio?.Dispose();
+                DisposeGreetingPortrait();
 
                 // 低频采样节拍先停（阶段 3.6）：服务释放期间不该再有任何 tick 回调进来
                 _ticker?.Dispose();

@@ -42,11 +42,12 @@ public partial class MainWindow
         foreach (var button in buttons) panel.Children.Add(button);
         return panel;
     }
-    private void RegisterUtility(string id, string title, int order, StackPanel content, Action? activated = null)
+    private void RegisterUtility(string id, string title, int order, FrameworkElement content, Action? activated = null,
+        double preferredHeight = IslandMetrics.CardHeightLyrics)
     {
         var view = new Grid { Height = 194, VerticalAlignment = VerticalAlignment.Center, RenderTransform = new TranslateTransform() };
         view.Children.Add(content); CardViewport.Children.Add(view);
-        _pages.Register(new DelegateIslandPage(id, title, view, order, IslandMetrics.CardHeightLyrics, activated: activated,
+        _pages.Register(new DelegateIslandPage(id, title, view, order, preferredHeight, activated: activated,
             viewportChanged: height => view.Height = height));
     }
     private void RegisterUtilityPages()
@@ -97,7 +98,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             IslandLog.Error("ScreenTools", ex);
-            _screenTools?.Close(); _screenTools = null;
+            _screenTools?.Shutdown(); _screenTools = null;
             if (_externalTranslationHint != null) _externalTranslationHint.Text = "屏幕工具未能打开，请重试或查看诊断日志。";
             ShowSystemNotify("\uE8B5", "屏幕工具未能打开", "请重试；详细原因已写入诊断日志。", "屏幕工具");
         }
@@ -112,6 +113,22 @@ public partial class MainWindow
             canUseTools: () => !_exiting && !_sessionLocked);
         _screenTools.Closed += (_, _) => _screenTools = null;
         return _screenTools;
+    }
+    private async Task ToggleScreenCaptionAsync(ScreenCaptionMode mode)
+    {
+        if (_exiting || _sessionLocked) return;
+        try
+        {
+            CloseComponentSwitcher();
+            var tools = EnsureScreenTools();
+            if (mode == ScreenCaptionMode.SpeechRecognition) await tools.StartOrStopSpeechRecognitionAsync();
+            else await tools.StartOrStopRegionTranslationAsync();
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            IslandLog.Error("ScreenTools", error); _screenTools?.Shutdown(); _screenTools = null;
+            ShowSystemNotify("\uE8B5", "屏幕工具未能启动", "请重新打开屏幕工具检查配置。", "屏幕工具");
+        }
     }
     private void RefreshExternalTranslation()
     {
@@ -172,6 +189,6 @@ public partial class MainWindow
         StopLauncher();
         StopProductivity();
         _workspace.Notifications.Dispose();
-        _pomodoroTicker?.Dispose(); _screenTools?.Close(); _utilitiesLifetime.Cancel(); StopWeatherPolling(); _weatherService.Dispose();
+        _pomodoroTicker?.Dispose(); _screenTools?.Shutdown(); _utilitiesLifetime.Cancel(); StopWeatherPolling(); _weatherService.Dispose();
     }
 }

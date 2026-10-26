@@ -222,7 +222,7 @@ public partial class MainWindow
         MediaHandoffOverlay? overlay = null;
         try
         {
-            BitmapSource? snapshot = service.Snapshot;
+            BitmapSource? snapshot = service.Snapshot ?? await service.CaptureWindowSnapshotAsync();
             if (_exiting || epoch != _agentHandoffEpoch || !service.IsTrackedWindowValid(target.Handle)) return;
             var source = AgentOpenSurface();
             var from = AgentIslandScreenRect();

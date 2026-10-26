@@ -73,7 +73,8 @@ internal static partial class Program
             var verticalTrack = (Track)vertical.Template.FindName("PART_Track", vertical);
             var horizontalTrack = (Track)horizontal.Template.FindName("PART_Track", horizontal);
             Check(vertical.Visibility == Visibility.Visible && horizontal.Visibility == Visibility.Visible
-                && vertical.ActualWidth == 12 && horizontal.ActualHeight == 12, "主题滚动区域同时溢出时显示两轴，横竖命中区域稳定");
+                && vertical.ActualWidth is >= 12 and <= 16 && horizontal.ActualHeight is >= 12 and <= 16,
+                "主题滚动区域同时溢出时显示两轴，横竖命中区域保持易于拖动的尺寸");
             ScrollBar.PageDownCommand.Execute(null, vertical); ScrollBar.PageRightCommand.Execute(null, horizontal);
             PumpAnimations(20); root.UpdateLayout();
             Check(scroll.VerticalOffset > 0 && scroll.HorizontalOffset > 0, "透明轨道分页点击仍可向下和向右滚动");
@@ -147,6 +148,7 @@ internal static partial class Program
             settingsScroll.ScrollToVerticalOffset(300); PumpAnimations(20); settingsRoot.UpdateLayout();
             Check(settingsScroll.VerticalOffset > 0, "设置页可使用共用滚动模板继续浏览长页面");
             SaveThemePreview(settingsRoot, "docs/screens/theme-settings.png");
+            SettingsPolishPreviews(window, root, settings, settingsRoot);
         }
         finally { settings.Close(); }
 

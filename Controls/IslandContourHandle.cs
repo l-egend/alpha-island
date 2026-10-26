@@ -3,11 +3,13 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using alpha_island.Animation;
+using AlphaIsland.PluginSdk;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 using Point = System.Windows.Point;
 using Size = System.Windows.Size;
 using Pen = System.Windows.Media.Pen;
+using Color = System.Windows.Media.Color;
 using Cursors = System.Windows.Input.Cursors;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 
@@ -32,6 +34,12 @@ public sealed class IslandContourHandle : FrameworkElement
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender,
             (owner, change) => { if ((bool)change.NewValue) ((IslandContourHandle)owner).StopHint(); }));
     private bool _hovered;
+    internal static readonly DependencyProperty BackdropColorProperty = DependencyProperty.Register(
+        "BackdropColor", typeof(Color), typeof(IslandContourHandle),
+        new FrameworkPropertyMetadata(Colors.White, FrameworkPropertyMetadataOptions.AffectsRender));
+    internal static readonly Color LightBackdropBlue = Color.FromRgb(0, 70, 140);
+    private Color? _backdropTarget;
+    private SolidColorBrush? _backdropBrush;
     private Geometry? _contour;
     private Size _contourSize;
     private CornerRadius _contourCorner;
@@ -53,9 +61,33 @@ public sealed class IslandContourHandle : FrameworkElement
         System.Windows.Automation.AutomationProperties.SetName(this, "切换组件");
         ToolTip = "单击下一卡片 · 滚轮切换 · 长按移向图标，松手确认 · 移远或 Esc 取消";
         Loaded += (_, _) => { MotionPolicy.Changed += OnMotionPolicyChanged; PlayHint(); };
-        Unloaded += (_, _) => { MotionPolicy.Changed -= OnMotionPolicyChanged; StopHint(); };
-        IsVisibleChanged += (_, e) => { if ((bool)e.NewValue) PlayHint(); else StopHint(); };
+        Unloaded += (_, _) => { MotionPolicy.Changed -= OnMotionPolicyChanged; StopHint(); FinishBackdropTransition(); };
+        IsVisibleChanged += (_, e) => { if ((bool)e.NewValue) PlayHint(); else { StopHint(); FinishBackdropTransition(); } };
         SizeChanged += (_, e) => { if (e.PreviousSize.Height < 26 && e.NewSize.Height >= 26) PlayHint(); };
+    }
+
+    internal void AdaptToBackdrop(double brightness, bool animate = true)
+    {
+        if (!double.IsFinite(brightness) || brightness is < 0 or > 1) return;
+        bool wasBlue = _backdropTarget == LightBackdropBlue;
+        var color = brightness > (wasBlue ? .28 : .31) ? LightBackdropBlue : Colors.White;
+        if (_backdropTarget == color) return;
+        var previous = (Color)GetValue(BackdropColorProperty);
+        _backdropTarget = color;
+        AnimationClockLifetime.Begin(this, BackdropColorProperty, null);
+        bool transition = animate && IsVisible && !MotionPolicy.InstantMorph && !MotionPolicy.PowerSave;
+        // This private property has no binding. A local base value survives replacement of its animation clock.
+        SetValue(BackdropColorProperty, transition ? previous : color);
+        if (transition)
+            AnimationClockLifetime.Begin(this, BackdropColorProperty,
+                new ColorAnimation(previous, color, TimeSpan.FromMilliseconds(480))
+                { EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
+    }
+
+    private void FinishBackdropTransition()
+    {
+        AnimationClockLifetime.Begin(this, BackdropColorProperty, null);
+        if (_backdropTarget is Color color) SetValue(BackdropColorProperty, color);
     }
 
     internal static Geometry BuildContour(Size size, CornerRadius corner)
@@ -139,18 +171,24 @@ public sealed class IslandContourHandle : FrameworkElement
     protected override void OnRender(DrawingContext drawingContext)
     {
         base.OnRender(drawingContext);
-        if (!ReferenceEquals(_lineBrush, Stroke))
+        Brush stroke = Stroke;
+        if (_backdropTarget.HasValue)
         {
-            _lineBrush = Stroke; _normalPen = MakePen(Stroke, 2.2); _highlightPen = MakePen(Stroke, 2.8);
+            var color = (Color)GetValue(BackdropColorProperty);
+            if (_backdropBrush == null || _backdropBrush.Color != color) _backdropBrush = new SolidColorBrush(color);
+            stroke = _backdropBrush;
+        }
+        if (!ReferenceEquals(_lineBrush, stroke))
+        {
+            _lineBrush = stroke; _normalPen = MakePen(stroke, 2.2); _highlightPen = MakePen(stroke, 2.8);
         }
         bool highlight = Engaged || _hovered || IsKeyboardFocused;
         var contour = CurrentContour;
         if (!HitBounds.IsEmpty) drawingContext.DrawRectangle(InputSurface, null, HitBounds);
         // Only the visible stroke moves. Native and WPF input keep the same generous target.
         drawingContext.PushTransform(new TranslateTransform(HintOffset, 0));
-        drawingContext.PushOpacity(highlight ? 1 : .72);
         drawingContext.DrawGeometry(null, highlight ? _highlightPen : _normalPen, contour);
-        drawingContext.Pop(); drawingContext.Pop();
+        drawingContext.Pop();
     }
 
     internal void PlayHint()
@@ -175,7 +213,7 @@ public sealed class IslandContourHandle : FrameworkElement
         AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(this,HintOffsetProperty, null); SetValue(HintOffsetProperty, 0d);
     }
 
-    private void OnMotionPolicyChanged() { if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave) StopHint(); }
+    private void OnMotionPolicyChanged() { if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave) { StopHint(); FinishBackdropTransition(); } }
     protected override void OnMouseEnter(MouseEventArgs e) { base.OnMouseEnter(e); _hovered = true; PlayHint(); InvalidateVisual(); }
     protected override void OnMouseLeave(MouseEventArgs e) { base.OnMouseLeave(e); _hovered = false; InvalidateVisual(); }
     protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e) { base.OnGotKeyboardFocus(e); StopHint(); InvalidateVisual(); }

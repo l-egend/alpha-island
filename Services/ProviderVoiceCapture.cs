@@ -44,11 +44,16 @@ internal sealed class ProviderVoiceCapture : IVoiceCapture
         token.ThrowIfCancellationRequested(); _startCancellation = token.Register(_lifetime.Cancel);
         _worker = ProcessAsync(_lifetime.Token);
         await _source.StartAsync(token).ConfigureAwait(false);
-        _idleFlush = new(_ =>
+        lock (_gate)
         {
-            if (_disposed || _finishing || _failed || Environment.TickCount64 - Interlocked.Read(ref _lastAudio) < 600) return;
-            lock (_gate) { if (!_disposed && !_finishing && !_failed) _segmenter.Flush(); }
-        }, null, 200, 200);
+            if (_disposed || _failed || token.IsCancellationRequested || _lifetime.IsCancellationRequested)
+                throw new OperationCanceledException(token);
+            _idleFlush = new(_ =>
+            {
+                if (_disposed || _finishing || _failed || Environment.TickCount64 - Interlocked.Read(ref _lastAudio) < 600) return;
+                lock (_gate) { if (!_disposed && !_finishing && !_failed) _segmenter.Flush(); }
+            }, null, 200, 200);
+        }
     }
     private void OnFrame(ReadOnlyMemory<short> pcm)
     {
@@ -110,7 +115,7 @@ internal sealed class ProviderVoiceCapture : IVoiceCapture
     public void Dispose()
     {
         if (_disposed) return; _disposed = true; _lifetime.Cancel(); _pending.Writer.TryComplete();
-        _idleFlush?.Dispose();
+        lock (_gate) { _idleFlush?.Dispose(); _idleFlush = null; }
         _source.Frame -= OnFrame; _source.Failed -= Fail; _source.Dispose(); _startCancellation.Dispose();
         lock (_gate) _segmenter.Clear();
         lock (_transcriptGate) _confirmed.Clear();

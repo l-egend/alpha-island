@@ -71,12 +71,19 @@ internal static partial class Program
             }
             var search = (TextBox)settings.FindName("SearchBox");
             var searchBorder = (Border)settings.FindName("SearchBorder");
+            var searchHost = (FrameworkElement)settings.FindName("SettingsSearchHost");
+            bool SearchFitsContent()
+            {
+                var origin = searchBorder.TranslatePoint(new System.Windows.Point(), root);
+                var hostOrigin = searchHost.TranslatePoint(new System.Windows.Point(), root);
+                return searchBorder.ActualWidth >= 200 && Math.Abs(origin.X - hostOrigin.X) <= 1
+                    && origin.X + searchBorder.ActualWidth <= hostOrigin.X + searchHost.ActualWidth + 1;
+            }
             double searchY = searchBorder.TranslatePoint(new System.Windows.Point(), root).Y;
             PrivateCall(settings, "ApplyNavExpanded", false, false); root.UpdateLayout();
-            Check(search.IsVisible && searchBorder.ActualWidth >= 200
-                && Math.Abs(searchBorder.TranslatePoint(new System.Windows.Point(searchBorder.ActualWidth / 2, 0), root).X - root.ActualWidth / 2) <= 1
+            Check(search.IsVisible && SearchFitsContent()
                 && System.Windows.Shell.WindowChrome.GetIsHitTestVisibleInChrome(searchBorder),
-                "收起导航后顶部搜索保持居中、可见且可交互");
+                "收起导航后顶部搜索与内容区左侧对齐、可见且可交互");
             search.Text = "ClipboardSensitiveGuardEnabled"; root.UpdateLayout();
             var match = items.Single(item => item.Visibility == Visibility.Visible);
             match.IsChecked = true; PumpAnimations(240); root.UpdateLayout();
@@ -89,9 +96,7 @@ internal static partial class Program
                 "内容滚动不影响顶部搜索的位置");
             SaveThemePreview(root, "bin/settings-v120-previews/navigation-collapsed.png");
             root.Width = 780; root.Height = 540; root.UpdateLayout();
-            Check(searchBorder.ActualWidth >= 200
-                && Math.Abs(searchBorder.TranslatePoint(new System.Windows.Point(searchBorder.ActualWidth / 2, 0), root).X - root.ActualWidth / 2) <= 1,
-                "最小窗口尺寸下搜索框仍居中且不挤压窗口按钮");
+            Check(SearchFitsContent(), "最小窗口尺寸下搜索框保持内容区对齐且不挤压窗口按钮");
             SaveThemePreview(root, "bin/settings-v120-previews/minimum-window.png");
             root.ClearValue(FrameworkElement.WidthProperty); root.ClearValue(FrameworkElement.HeightProperty);
             PrivateCall(settings, "ApplyNavExpanded", true, false); root.UpdateLayout();

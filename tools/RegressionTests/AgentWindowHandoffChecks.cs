@@ -135,6 +135,8 @@ internal static partial class Program
             PrivateCall(window, "SetState", IslandState.Bar, true);
         }
         AgentWindowMotionChecks(window, root);
+        AgentTrackedWindowSnapshotChecks(window);
+        AgentColdWindowRestoreChecks(window);
         AgentOnDemandCaptureChecks(window);
         AgentBoundedCaptureChecks(window);
     }
@@ -233,6 +235,115 @@ internal static partial class Program
             alpha_island.Animation.MotionPolicy.Apply(reduced, powerSave);
             NativeMethods.ShowWindowAsync(destination.Handle, NativeMethods.SW_RESTORE);
             if (previousForeground != IntPtr.Zero) NativeMethods.SetForegroundWindow(previousForeground);
+            AgentField<IslandLayerHost>(window, "_layers").HideAll();
+            PrivateCall(window, "SetState", IslandState.Bar, true);
+        }
+    }
+
+    private static void AgentTrackedWindowSnapshotChecks(alpha_island.MainWindow window)
+    {
+        using var first = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("First cached agent")
+        { Width = 320, Height = 180, PositionX = -30000, PositionY = -31000,
+            WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle = 0x08000080 });
+        using var second = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("Second cached agent")
+        { Width = 320, Height = 180, PositionX = -31000, PositionY = -31000,
+            WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle = 0x08000080 });
+        var firstTarget = new AgentAppWindow(first.Handle, "Codex", "First conversation", false);
+        var secondTarget = new AgentAppWindow(second.Handle, "Antigravity", "Second conversation", false);
+        var firstImage = AgentFixtureWindowSnapshot();
+        var secondImage = AgentFixtureWindowSnapshot();
+        using var tracker = new MediaWindowService(window.Dispatcher, 2000, 500) { RequireSnapshotForTransitions = true };
+        var snapshot = typeof(MediaWindowService).GetProperty("Snapshot", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        tracker.SetTrackedWindow(firstTarget); snapshot.SetValue(tracker, firstImage); WatcherCall(tracker, "SuppressTransitions");
+        tracker.SetTrackedWindow(secondTarget);
+        Check(tracker.Snapshot == null && !tracker.TransitionsSuppressed
+            && NativeMethods.GetProp(first.Handle, DwmTransitionLease.OriginalProperty) == IntPtr.Zero,
+            "切换到未缓存助手不串用上一助手画面，并归还上一窗口的系统过渡");
+        snapshot.SetValue(tracker, secondImage); WatcherCall(tracker, "SuppressTransitions");
+        tracker.SetTrackedWindow(firstTarget);
+        Check(ReferenceEquals(tracker.Snapshot, firstImage) && tracker.TransitionsSuppressed
+            && NativeMethods.GetProp(second.Handle, DwmTransitionLease.OriginalProperty) == IntPtr.Zero,
+            "Codex 与 Gemini 来回切换后仍取回各自真实窗口截图，避免放大退回默认动画");
+        tracker.SetTrackedWindow(secondTarget);
+        Check(ReferenceEquals(tracker.Snapshot, secondImage) && tracker.TransitionsSuppressed,
+            "第二个助手再次恢复时仍使用它自己的画面");
+        tracker.Dispose();
+        Check(tracker.Snapshot == null && NativeMethods.GetProp(first.Handle, DwmTransitionLease.OriginalProperty) == IntPtr.Zero
+            && NativeMethods.GetProp(second.Handle, DwmTransitionLease.OriginalProperty) == IntPtr.Zero,
+            "多助手追踪退出时释放缓存和全部系统动画抑制");
+    }
+
+    private static void AgentColdWindowRestoreChecks(alpha_island.MainWindow window)
+    {
+        using var source = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("Uncached minimized agent fixture")
+        { Width = 320, Height = 180, PositionX = -30000, PositionY = -31000,
+            WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle = 0x08000080 });
+        source.RootVisual = new Grid { Background = System.Windows.Media.Brushes.CornflowerBlue };
+        int prints = 0;
+        source.AddHook((IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+        {
+            if (message == 0x0317)
+            {
+                using var drawing = System.Drawing.Graphics.FromHdc(wParam);
+                drawing.Clear(System.Drawing.Color.CornflowerBlue);
+                prints++; handled = true;
+            }
+            return IntPtr.Zero;
+        });
+        var target = new AgentAppWindow(source.Handle, "Codex", "Uncached conversation", true);
+        var fixture = new AgentNativeWindowFixture(target);
+        var navigation = AgentField<AgentAppNavigationService>(window, "_agentNavigation");
+        var context = SynchronizationContext.Current;
+        bool reduce = alpha_island.Animation.MotionPolicy.ReduceMotion, save = alpha_island.Animation.MotionPolicy.PowerSave;
+        const string owner = "external:codex/uncached-restore-fixture";
+        void Until(Func<bool> ready, int timeout = 1500)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            while (!ready() && watch.ElapsedMilliseconds < timeout) PumpAnimations(10);
+        }
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(window.Dispatcher));
+            alpha_island.Animation.MotionPolicy.Apply(false, false);
+            NativeMethods.ShowWindowAsync(source.Handle, 6);
+            Until(() => NativeMethods.IsIconic(source.Handle), 400);
+            SetAgentField(window, "_agentNavigation", new AgentAppNavigationService(fixture));
+            AgentStatus.Set(AgentRunState.Thinking, "Uncached task", owner);
+            PrivateCall(window, "UpdateAgentStatusUi");
+            var tracker = AgentField<MediaWindowService>(window, "_agentWindows");
+            Check(tracker.Snapshot == null && NativeMethods.IsIconic(source.Handle),
+                "复现初始状态：助手已最小化且没有周期截图缓存");
+            BitmapSource? presentedFrame = null;
+            bool nativeSuppressed = false;
+            EventHandler sample = (_, _) =>
+            {
+                var overlay = AgentField<alpha_island.Animation.MediaHandoffOverlay?>(window, "_agentHandoff");
+                if (overlay == null) return;
+                var proxy = (Image)typeof(alpha_island.Animation.MediaHandoffOverlay).GetField("_windowImage",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(overlay)!;
+                if (proxy.Source is BitmapSource frame)
+                { presentedFrame = frame; nativeSuppressed |= tracker.TransitionsSuppressed; }
+            };
+            Task open;
+            CompositionTarget.Rendering += sample;
+            try
+            {
+                open = (Task)PrivateCall(window, "OpenAgentWindowAsync", target)!;
+                Until(() => open.IsCompleted);
+            }
+            finally { CompositionTarget.Rendering -= sample; }
+            Check(prints == 1 && presentedFrame != null && ReferenceEquals(presentedFrame, tracker.Snapshot) && nativeSuppressed,
+                "未缓存助手放大前按需获取真实窗口画面并抑制原生还原，不退回默认岛放大动画");
+            Check(open.IsCompletedSuccessfully && fixture.Activations == 1 && !NativeMethods.IsIconic(source.Handle),
+                "未缓存助手的真实画面放大完成后仅激活一次并还原窗口");
+        }
+        finally
+        {
+            AgentStatus.Reset(owner: owner); PrivateCall(window, "StopAgentWindowTracking");
+            SetAgentField(window, "_agentNavigation", navigation);
+            SynchronizationContext.SetSynchronizationContext(context);
+            alpha_island.Animation.MotionPolicy.Apply(reduce, save);
+            NativeMethods.ShowWindowAsync(source.Handle, NativeMethods.SW_RESTORE);
             AgentField<IslandLayerHost>(window, "_layers").HideAll();
             PrivateCall(window, "SetState", IslandState.Bar, true);
         }

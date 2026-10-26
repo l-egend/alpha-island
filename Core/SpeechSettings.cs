@@ -19,6 +19,6 @@ internal static class SpeechSettings
         if (options.Provider == "windows-local") return;
         _ = options.Endpoint(options.Provider is "mimo" or "chat-audio" ? "/chat/completions" : "/audio/transcriptions");
         if (options.Provider != "local-endpoint" && string.IsNullOrWhiteSpace(options.ApiKey))
-            throw new SpeechRecognitionException("请在设置 → 智能助手 → 语音识别中保存 MiMo API Key；它与对话模型的密钥独立。");
+            throw new SpeechRecognitionException("请在设置 → 智能助手 → 语音识别中保存语音接口的 API Key；它与对话模型的密钥独立。");
     }
 }

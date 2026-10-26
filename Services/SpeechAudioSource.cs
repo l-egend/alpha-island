@@ -68,7 +68,7 @@ internal sealed class WasapiSpeechAudioSource(bool loopback = false) : IPcmAudio
         { if (!_stopped && !_disposed) Failed?.Invoke("音频设备格式发生变化，请停止后重新启动识别。"); }
     }
     private void OnStopped(object? sender, StoppedEventArgs args)
-    { if (!_stopped && !_disposed) Failed?.Invoke(loopback ? "系统音频设备已断开或切换，请重新开始字幕。" : "麦克风已断开或被独占，本次录音已停止。"); }
+    { if (!_stopped && !_disposed) Failed?.Invoke(loopback ? "系统音频设备已断开或切换，请重新启动语音识别。" : "麦克风已断开或被独占，本次录音已停止。"); }
     public void Stop()
     {
         _stopped = true;

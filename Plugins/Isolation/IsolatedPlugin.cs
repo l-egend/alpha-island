@@ -29,6 +29,9 @@ internal sealed class IsolatedPlugin : IIslandPlugin
     internal Task ShutdownCompletion => _session.Completion;
     internal int ProcessId => _session.ProcessId;
     internal bool IsAlive => !_disposed && _session.IsAlive;
+    internal bool SupportsRuntimeSuspension { get; private set; }
+    internal Task<bool> PrepareGameSuspensionAsync() => _session.Request<bool>("prepare-game-suspension", new { });
+    internal Task<bool> ResumeAfterGamePreparationAsync() => _session.Request<bool>("resume-game-preparation", new { });
     internal event Action? Ready;
     [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint processId);
     internal IsolatedPlugin(Dispatcher dispatcher, Func<Dictionary<string, JsonElement>> configuration, Action<Exception> failed)
@@ -46,6 +49,7 @@ internal sealed class IsolatedPlugin : IIslandPlugin
         await _dispatcher.InvokeAsync(() =>
         {
             if (_disposed || context.Lifetime.IsCancellationRequested) return;
+            SupportsRuntimeSuspension = registry.SupportsRuntimeSuspension;
             SetStatus(initial);
             foreach (var page in registry.Pages)
                 context.RegisterPage(new(page.Key, page.Title, () => View(page.Key), page.Glyph, page.Height, page.Order)

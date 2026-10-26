@@ -22,9 +22,9 @@ public partial class SettingsWindow
     private void AddStatusDisplaySettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "小岛显示内容", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "浮窗显示内容", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var group = new StackPanel();
-        group.Children.Add(new TextBlock { Text = "网速与系统状态各自显示。勾选内容，用 ↑ / ↓ 调整对应小岛内的顺序；宽度随内容调整。",
+        group.Children.Add(new TextBlock { Text = "网速与系统状态分别显示。勾选需要的内容，用 ↑ / ↓ 调整显示顺序；浮窗宽度随内容调整。",
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(14, 12, 14, 6) });
         _statusDisplayRows = new StackPanel(); group.Children.Add(_statusDisplayRows);
         foreach (string key in StatusDisplayOptions.All)
@@ -48,7 +48,7 @@ public partial class SettingsWindow
             Grid.SetColumn(controls, 1); row.Children.Add(controls); _statusDisplayControls[key] = row; _statusDisplayCards[key] = SettingCard(row);
         }
         panel.Children.Add(group);
-        panel.Children.Add(new TextBlock { Text = "硬件功耗", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 20, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "硬件功耗", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 20, 0, 12) });
         var power = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
         power.Children.Add(new TextBlock { Text = "显示 CPU 封装＋独立 GPU 的实际功耗，接通电源也可读取。核显包含在 CPU 封装中。",
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap });
@@ -83,7 +83,7 @@ public partial class SettingsWindow
         {
             _statusDisplayRows.Children.Add(new TextBlock
             {
-                Text = network ? "网速小岛" : "系统状态小岛", Style = (Style)FindResource("W11RowHint"),
+                Text = network ? "网速浮窗" : "系统状态浮窗", Style = (Style)FindResource("W11RowHint"),
                 FontWeight = FontWeights.SemiBold, Margin = new Thickness(14, 14, 14, 4)
             });
             string[] group = _statusDisplayOrder.Where(key => IsNetworkStatusItem(key) == network).ToArray();

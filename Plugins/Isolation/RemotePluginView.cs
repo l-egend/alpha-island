@@ -138,7 +138,10 @@ internal sealed class RemotePluginView : C.Grid
                 if (item.Width > 8192 || item.Height > 8192) throw new InvalidDataException("插件控件尺寸过大");
                 element.Width = item.Width; element.Height = item.Height; element.IsEnabled = item.Enabled;
                 element.Clip = new RectangleGeometry(new Rect(item.ClipX, item.ClipY, Math.Max(0, item.ClipWidth), Math.Max(0, item.ClipHeight)));
-                var foreground = ParseBrush(item.Foreground, Brushes.White); var background = ParseBrush(item.Background, Brushes.Transparent);
+                var foreground = ParseBrush(item.Foreground, Brushes.White);
+                // Button snapshots include their background; assign the final brush once so refreshes do not restart hover transitions.
+                var background = item.Kind == "button" && item.Artwork.Length != 0
+                    ? Brushes.Transparent : ParseBrush(item.Background, Brushes.Transparent);
                 if (element is C.Control control)
                 {
                     control.Foreground = foreground; control.Background = background;
@@ -185,7 +188,7 @@ internal sealed class RemotePluginView : C.Grid
                         {
                             if (button.Tag as string != item.Artwork)
                             { button.Content = new C.Image { Source = Decode(item.Artwork), Stretch = Stretch.Fill }; button.Tag = item.Artwork; }
-                            button.Background = Brushes.Transparent; button.BorderThickness = new Thickness(0);
+                            button.BorderThickness = new Thickness(0);
                         }
                         else button.Content = item.Text;
                         break;

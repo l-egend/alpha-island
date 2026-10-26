@@ -786,7 +786,7 @@ namespace alpha_island
                 if (key is ChargingIslandKey or ChargingPreviewIslandKey)
                 {
                     if (grid.Children.OfType<BatteryChargePill>().FirstOrDefault() is { } charging) SetChargingIslandContent(charging, key);
-                    if (key == ChargingPreviewIslandKey) orb.ToolTip = isPinned ? "充电小岛测试已置顶（右键取消）" : "充电小岛测试（右键置顶，默认8秒后收回）";
+                    if (key == ChargingPreviewIslandKey) orb.ToolTip = isPinned ? "充电提示测试已置顶（右键取消）" : "充电提示测试（右键置顶，默认 8 秒后收回）";
                     return;
                 }
                 if (string.Equals(key, "netspeed", StringComparison.Ordinal))
@@ -1084,7 +1084,7 @@ namespace alpha_island
             "netspeed" => "实时网速",
             "status" => "系统状态",
             "charging" => "充电电量",
-            ChargingPreviewIslandKey => "充电小岛测试",
+            ChargingPreviewIslandKey => "充电提示测试",
             "system" => !string.IsNullOrWhiteSpace(SysNotifyTitle.Text) ? SysNotifyTitle.Text : "系统事件",
             DesktopToastKey => _notificationSummary.Title.Text,
             "clipboard" => "剪贴板",

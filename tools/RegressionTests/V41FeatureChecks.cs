@@ -94,6 +94,11 @@ internal static partial class Program
         Check(parts.Length == 3 && parts[0].Connected && parts[0].Percent == 8
             && parts[1].Charging && !parts[2].Connected,
             "私有耳机插件向宿主报告分路电量，未知或离线的盒电量不触发提醒");
+        V41MediaLyricChecks(window, root);
+    }
+
+    private static void V41MediaLyricChecks(alpha_island.MainWindow window, Grid root)
+    {
         var music = new NowPlayingInfo { Title = "Fixture", ContentKind = MediaContentKind.Music,
             SourceApp = "cloudmusic.exe", SessionId = "v41", State = PlaybackState.Playing,
             Position = TimeSpan.FromSeconds(10), Duration = TimeSpan.FromMinutes(3), CanShuffle = true, CanRepeat = true };

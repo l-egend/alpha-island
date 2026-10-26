@@ -30,7 +30,7 @@ internal static partial class Program
         var card = AgentField<Grid>(window, "_screenToolsCard");
         var grid = card.Children.OfType<Grid>().Single();
         var buttons = grid.Children.OfType<ToolActionButton>().ToArray();
-        Check(buttons.Length == 8 && buttons.All(b => b.ActualWidth > 150), "屏幕工具八个入口按两列等宽排列，充分利用卡片宽度");
+        Check(buttons.Length == 10 && buttons.All(b => b.ActualWidth > 150), "屏幕工具十个入口按两列等宽排列，充分利用卡片宽度");
         Check(buttons.Select(b => Math.Round(b.ActualWidth, 1)).Distinct().Count() == 1, "主工具和辅助操作列宽保持一致");
         var footer = AgentField<TextBlock>(window, "_externalTranslationHint");
         var footerOrigin = footer.TranslatePoint(new System.Windows.Point(), card);

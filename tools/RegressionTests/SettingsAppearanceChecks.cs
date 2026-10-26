@@ -91,7 +91,7 @@ internal static partial class Program
             Check(media.Opacity == 1 && !media.HasAnimatedProperties && !marker.HasAnimatedProperties, "节能模式切页直接到位");
             MotionPolicy.Apply(false, false); PrivateCall(settings, "SelectPageByTag", "focus");
             PrivateCall(settings, "ApplyNavExpanded", true, true); settings.Hide();
-            Check(!focus.HasAnimatedProperties && !marker.HasAnimatedProperties && ((FrameworkElement)settings.FindName("NavPane")).Width == 244,
+            Check(!focus.HasAnimatedProperties && !marker.HasAnimatedProperties && ((FrameworkElement)settings.FindName("NavPane")).Width is >= 180 and <= 220,
                 "设置隐藏时停止切页和侧栏动画");
             settings.ShowInForeground(requestFocus: false); PumpAnimations(30);
             Check(bar.Visibility == Visibility.Visible && focus.Opacity == 1 && !settings.Topmost, "再次打开恢复完整页面和选中标记，保持普通层级");

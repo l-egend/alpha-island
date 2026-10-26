@@ -8,8 +8,9 @@ using AlphaIsland.PluginSdk;
 using Microsoft.Win32;
 namespace AlphaIsland.Plugins.LocalAgents;
 
-public sealed class LocalAgentsPlugin : IIslandPlugin
+public sealed class LocalAgentsPlugin : IIslandPlugin, IPluginSuspendGuard
 {
+    public bool CanSuspend => _view?.CanSuspendForGame ?? true;
     private LocalAgentsView? _view;
     private IPluginContext _context=null!;
     private IReadOnlyList<LocalAgent> _agents=Array.Empty<LocalAgent>();
@@ -59,6 +60,7 @@ internal sealed class LocalAgentsView : UserControl,IDisposable
     private string _cwd="";
     private readonly string _historyPath;
     internal bool Busy=>_operation!=null;
+    internal bool CanSuspendForGame => !Busy && _input.Text.Length == 0 && _output.Text.Length == 0;
     internal string Summary=>_operation==null ? "本机 Agent" : _approvalAnswer!=null ? "等待确认" : "正在处理任务";
     internal LocalAgentsView(IPluginContext context,IReadOnlyList<LocalAgent> agents)
     {

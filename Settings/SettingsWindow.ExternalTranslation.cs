@@ -32,7 +32,7 @@ public partial class SettingsWindow
     private void AddExternalTranslationSettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "外部翻译软件", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "外部翻译软件", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var group = new StackPanel();
         CheckBox? enabled = null;
         foreach (var descriptor in SettingsRegistry.All.Where(d => d.Key.StartsWith("ExternalTranslation", StringComparison.Ordinal)))

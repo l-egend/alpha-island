@@ -16,7 +16,7 @@ public partial class SettingsWindow
     private void AddAgentIntegrationSettings()
     {
         var panel = new StackPanel { Tag = "Agent 自动接入 Codex Antigravity Claude Code DeepSeek Harness DSH 开箱即用" };
-        panel.Children.Add(new TextBlock { Text = "外部 Agent 自动接入", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "外部 Agent 自动接入", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var content = new StackPanel { Margin = new Thickness(16) };
         content.Children.Add(new TextBlock { Text = "自动识别本机配置。安装或首次启动时接入已检测到的应用；停用选择会保留。运行环境随安装包提供。",
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap });

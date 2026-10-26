@@ -5,8 +5,9 @@ using Windows.Gaming.Input;
 
 namespace AlphaIsland.Plugins.DeviceBattery;
 
-public sealed class DeviceBatteryPlugin : IIslandPlugin
+public sealed class DeviceBatteryPlugin : IIslandPlugin, IPluginSuspendGuard
 {
+    public bool CanSuspend => Volatile.Read(ref _busy) == 0;
     private IPluginContext _context = null!;
     private IPluginScheduledTask? _poll;
     private DeviceWatcher? _watcher;

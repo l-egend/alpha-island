@@ -123,7 +123,7 @@ namespace AlphaIsland.Plugins.ApiChat
             ScrollAiToEnd(force: true);
         }
 
-        private void SaveAiHistory()
+        private bool SaveAiHistory()
         {
             try
             {
@@ -131,8 +131,9 @@ namespace AlphaIsland.Plugins.ApiChat
                     _aiMessages.Select(m => m with { Content = SensitiveTextDetector.Inspect(m.Content).Redacted }).ToArray());
                 int excess = _aiMessages.Count - AiMaxResidentMessages;
                 if (excess > 0) { _aiMessages.RemoveRange(0, excess); _aiMessageOffset += excess; }
+                return true;
             }
-            catch (Exception ex) { _context.Log("保存对话历史失败: " + ex.Message); }
+            catch (Exception ex) { _context.Log("保存对话历史失败: " + ex.Message); return false; }
         }
 
         // ================= 气泡 =================

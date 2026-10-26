@@ -85,7 +85,7 @@ public partial class MainWindow
     {
         view.Tag = key;
         view.SetBattery(key == ChargingPreviewIslandKey ? _chargingPreviewStatus : _chargingStatus);
-        if (key == ChargingPreviewIslandKey) { view.StateText.Text = _layers.IsPinned(key) ? "测试已置顶" : "测试预览"; view.ToolTip = view.PercentText.Text + (_layers.IsPinned(key) ? " · 测试已置顶（右键取消后收回）" : " · 电量小岛测试（默认8秒，可右键置顶）"); }
+        if (key == ChargingPreviewIslandKey) { view.StateText.Text = _layers.IsPinned(key) ? "测试已置顶" : "测试预览"; view.ToolTip = view.PercentText.Text + (_layers.IsPinned(key) ? " · 测试已置顶（右键取消后收回）" : " · 充电提示测试（默认 8 秒，可右键置顶）"); }
     }
     private void PreviewChargingIsland()
     {
@@ -94,7 +94,7 @@ public partial class MainWindow
         if (_activeMainIslandKey != ChargingPreviewIslandKey) _chargingPreviewReturnKey = _activeMainIslandKey;
         SetChargingIslandContent(ChargingPreviewPrimary, ChargingPreviewIslandKey);
         ShowPillNotification(IslandNotification.Seconds(ChargingPreviewIslandKey, 8, deferredInCard: false) with
-            { Glyph = "\uE83F", Title = "充电小岛测试", Value = "80%" });
+            { Glyph = "\uE83F", Title = "充电提示测试", Value = "80%" });
         TryMorphPillWidth();
     }
     private void RestoreAfterChargingPreview()

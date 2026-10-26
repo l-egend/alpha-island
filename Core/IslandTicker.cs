@@ -49,6 +49,7 @@ namespace alpha_island.Core
         private Entry[] _snapshot = Array.Empty<Entry>();
 
         private bool _disposed;
+        private Func<string, bool>? _executionAllowed;
 
         /// <summary>上一拍的时刻（诊断用）：两次心跳差得远 = 这一拍之前 UI 线程被别的活占住了。</summary>
         private long _lastTickMs;
@@ -75,7 +76,7 @@ namespace alpha_island.Core
         internal TimeSpan ScheduledInterval => _timer.Interval;
         internal bool IsRunning => _timer.IsEnabled;
         public string Report() => $"统一心跳：{(_timer.IsEnabled ? "运行" : "暂停")}，下次唤醒 {_timer.Interval.TotalMilliseconds:0} ms\n"
-            + string.Join("\n", _snapshot.Select(entry => $"{entry.Key}：{(entry.Paused ? "已暂停" : entry.Interval.TotalSeconds.ToString("0.###") + " 秒")}"));
+            + string.Join("\n", _snapshot.Select(entry => $"{entry.Key}：{(!CanRun(entry) ? "已暂停" : entry.Interval.TotalSeconds.ToString("0.###") + " 秒")}"));
         public sealed class Subscription : IPausable, IDisposable
         {
             private IslandTicker? _owner;
@@ -83,7 +84,7 @@ namespace alpha_island.Core
             private Subscription(IslandTicker owner, Entry entry) { _owner = owner; _entry = entry; }
             private bool Current => _owner != null && !_owner._disposed
                 && _owner._entries.TryGetValue(_entry.Key, out var current) && ReferenceEquals(current, _entry);
-            public bool IsPaused => !Current || _entry.Paused;
+            public bool IsPaused => !Current || !_owner!.CanRun(_entry);
             public void SetPaused(bool paused) { if (Current) _owner!.SetPaused(_entry.Key, paused); }
             public void SetInterval(TimeSpan interval) { if (Current) _owner!.SetInterval(_entry.Key, interval); }
             public void TriggerNow() { if (Current) _owner!.TriggerNow(_entry.Key); }
@@ -121,7 +122,7 @@ namespace alpha_island.Core
             RebuildSnapshot();
             EnsureRunning();
 
-            if (runImmediately)
+            if (runImmediately && CanRun(entry))
             {
                 entry.NextDueMs = _now() + IntervalMs(interval);
                 Invoke(entry);
@@ -153,6 +154,20 @@ namespace alpha_island.Core
 
         public bool IsRegistered(string key) => _entries.ContainsKey(key);
 
+        internal void SetExecutionFilter(Func<string, bool>? allowed)
+        {
+            if (_disposed) return;
+            var previous = _executionAllowed;
+            _executionAllowed = allowed;
+            long now = _now();
+            foreach (var entry in _snapshot)
+                if ((previous?.Invoke(entry.Key) == false) && (allowed?.Invoke(entry.Key) ?? true))
+                    entry.NextDueMs = now + IntervalMs(entry.Interval);
+            EnsureRunning();
+        }
+
+        private bool CanRun(Entry entry) => !entry.Paused && (_executionAllowed?.Invoke(entry.Key) ?? true);
+
         /// <summary>改周期（设置页改了秒数就调它）。</summary>
         public void SetInterval(string key, TimeSpan interval)
         {
@@ -168,7 +183,7 @@ namespace alpha_island.Core
         public void TriggerNow(string key)
         {
             if (_disposed) return;
-            if (_entries.TryGetValue(key, out var entry) && !entry.Paused) Invoke(entry);
+            if (_entries.TryGetValue(key, out var entry) && CanRun(entry)) Invoke(entry);
         }
 
         public void Start() => EnsureRunning();
@@ -201,7 +216,7 @@ namespace alpha_island.Core
             {
                 var entry = list[i];
                 if (!_entries.TryGetValue(entry.Key, out var current) || !ReferenceEquals(current, entry)) continue;
-                if (entry.Paused) continue;
+                if (!CanRun(entry)) continue;
                 if (now < entry.NextDueMs) continue;
 
                 entry.NextDueMs = now + IntervalMs(entry.Interval);
@@ -240,7 +255,7 @@ namespace alpha_island.Core
             long nextDue = long.MaxValue;
             foreach (var entry in _snapshot)
             {
-                if (!entry.Paused) nextDue = Math.Min(nextDue, entry.NextDueMs);
+                if (CanRun(entry)) nextDue = Math.Min(nextDue, entry.NextDueMs);
             }
             if (nextDue == long.MaxValue) { _timer.Stop(); _lastTickMs = 0; return; }
             var interval = TimeSpan.FromMilliseconds(Math.Clamp(nextDue - _now(), _resolution.TotalMilliseconds, int.MaxValue));

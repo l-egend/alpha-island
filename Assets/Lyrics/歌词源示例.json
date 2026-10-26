@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "http.example",
+      "name": "示例来源（请替换接口地址）",
+      "kind": "http",
+      "enabled": false,
+      "urlTemplate": "https://example.com/lyrics?title={title}&artist={artist}&album={album}&duration={duration}",
+      "format": "json",
+      "resultsPath": "",
+      "lyricsPath": "syncedLyrics",
+      "plainLyricsPath": "plainLyrics",
+      "translationPath": "translatedLyrics",
+      "titlePath": "trackName",
+      "artistPath": "artistName",
+      "albumPath": "albumName",
+      "durationPath": "duration"
+    }
+  ]
+}

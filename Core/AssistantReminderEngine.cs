@@ -128,7 +128,7 @@ internal sealed partial class AssistantReminderEngine(TimeZoneInfo zone)
             {
                 int count = unread.Count(n => n.Created >= _gameStarted);
                 string total = frame.DayGameSeconds is { } seconds ? $"，今日累计 {Duration(seconds)}" : "";
-                Put(frame, "game", _gameStarted.UtcTicks.ToString(), "游戏收尾 · " + _gameName,
+                Put(frame, "game", _gameStarted.UtcTicks.ToString(), "游戏总结 · " + _gameName,
                     $"本次已观察 {Duration(_gameSeconds)}{total}。\n当前保留未读 {count} 条；期间 {_gameFinished} 个助手任务结束、{_gameDownloads} 个下载完成。",
                     true, [new("stats", "查看时长"), new("notifications", "查看未读"), new("break-five", "休息5分钟")], once: true);
                 if (quiet)

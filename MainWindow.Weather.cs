@@ -44,7 +44,10 @@ public partial class MainWindow
             { _weatherCity = cached.City; _weatherSnapshot = cached; _weatherConfirmed = true; }
             _weatherReminders = WeatherReminderPolicy.Load(WeatherReminderFile);
         }
-        var weather = new StackPanel();
+        var weather = new Grid { Margin = new System.Windows.Thickness(4, 4, 4, 12) };
+        weather.RowDefinitions.Add(new RowDefinition { Height = System.Windows.GridLength.Auto });
+        weather.RowDefinitions.Add(new RowDefinition());
+        weather.RowDefinitions.Add(new RowDefinition { Height = System.Windows.GridLength.Auto });
         var summary = new Grid();
         summary.ColumnDefinitions.Add(new ColumnDefinition());
         summary.ColumnDefinitions.Add(new ColumnDefinition { Width = System.Windows.GridLength.Auto });
@@ -58,16 +61,35 @@ public partial class MainWindow
             VerticalAlignment = System.Windows.VerticalAlignment.Center };
         Grid.SetColumn(_weatherArtwork, 1); summary.Children.Add(_weatherArtwork); weather.Children.Add(summary);
         ActionIconMotion.SetKind(_weatherArtwork, ActionIconAnimation.Pulse);
-        _weatherDetail = UtilityText(_weatherConfirmed ? "正在获取天气…" : "选择城市或使用定位后可开启天气提醒。"); weather.Children.Add(_weatherDetail);
-        _weatherQuery = new TextBox { Width = 100, Text = _weatherCity.Name, Margin = new System.Windows.Thickness(0, 2, 6, 2), FontSize = 11 };
-        var search = UtilityButtons(UtilityButton("搜索城市", async () => await SearchWeatherCitiesAsync()),
+        _weatherDetail = UtilityText(_weatherConfirmed ? "正在获取天气…" : "搜索城市或使用定位。");
+        var details = new ScrollViewer { Content = _weatherDetail, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new System.Windows.Thickness(0, 4, 0, 0) };
+        Grid.SetRow(details, 1); weather.Children.Add(details);
+        var actions = new StackPanel(); Grid.SetRow(actions, 2); weather.Children.Add(actions);
+        _weatherQuery = new TextBox { Text = _weatherCity.Name, FontSize = 11 };
+        var search = WeatherActionRow(_weatherQuery, UtilityButton("搜索城市", async () => await SearchWeatherCitiesAsync()),
             UtilityButton("使用定位", async () => { if (_weatherBusy) return; _weatherAuto = true; _weatherLocated = false; await RefreshWeatherAsync(true, requestLocation: true); }),
             UtilityButton("刷新", async () => await RefreshWeatherAsync(true)));
-        search.Children.Insert(0, _weatherQuery); weather.Children.Add(search);
-        _weatherCities = new ComboBox { Width = 240, FontSize = 11, DisplayMemberPath = "Display", HorizontalAlignment = HorizontalAlignment.Left };
-        var cityRow = UtilityButtons(UtilityButton("选择", async () => await UseWeatherCityAsync()), UtilityButton("设置", () => { ShowSettings(); _settingsWindow?.OpenWeatherSettings(); })); cityRow.Children.Insert(0, _weatherCities); weather.Children.Add(cityRow);
-        RegisterUtility("weather", "天气", 8, weather, () => _ = RefreshWeatherAsync(false, requestLocation: !_weatherConfirmed));
+        actions.Children.Add(search);
+        _weatherCities = new ComboBox { FontSize = 11, DisplayMemberPath = "Display" };
+        var cityRow = WeatherActionRow(_weatherCities, UtilityButton("选择", async () => await UseWeatherCityAsync()), UtilityButton("设置", () => { ShowSettings(); _settingsWindow?.OpenWeatherSettings(); })); actions.Children.Add(cityRow);
+        RegisterUtility("weather", "天气", 8, weather, () => _ = RefreshWeatherAsync(false, requestLocation: !_weatherConfirmed), preferredHeight: 260);
         if (_weatherSnapshot != null) ShowWeather(_weatherSnapshot, "缓存 · " + _weatherSnapshot.UpdatedUtc.ToLocalTime().ToString("HH:mm"));
+    }
+
+    private static Grid WeatherActionRow(System.Windows.FrameworkElement field, params System.Windows.Controls.Button[] buttons)
+    {
+        var row = new Grid { Margin = new System.Windows.Thickness(0, 12, 0, 0) };
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        field.Width = double.NaN; field.Height = 32; field.Margin = new System.Windows.Thickness(0);
+        field.HorizontalAlignment = HorizontalAlignment.Stretch; row.Children.Add(field);
+        foreach (var button in buttons)
+        {
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = System.Windows.GridLength.Auto });
+            button.Margin = new System.Windows.Thickness(12, 0, 0, 0); button.Height = 32;
+            Grid.SetColumn(button, row.ColumnDefinitions.Count - 1); row.Children.Add(button);
+        }
+        return row;
     }
 
     private void OnWeatherOptionsChanged()
@@ -170,7 +192,7 @@ public partial class MainWindow
                 _weatherLocated = true;
             }
             if (!_weatherConfirmed)
-            { _weatherDetail.Text = "选择城市或使用定位后可开启天气提醒。"; return; }
+            { _weatherDetail.Text = "搜索城市或使用定位。"; return; }
             var snapshot = await _weatherService.GetAsync(_weatherCity, cts.Token);
             if (_exiting) return;
             _weatherSnapshot = snapshot; _weatherLastUpdate = snapshot.UpdatedUtc;

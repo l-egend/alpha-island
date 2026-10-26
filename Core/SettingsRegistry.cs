@@ -273,17 +273,17 @@ namespace alpha_island.Core
         private static List<SettingDescriptor> Build()
         {
             var list = new List<SettingDescriptor>();
-            list.Add(ExtraBool("ReduceEffectsEnabled", "削减动效", "关闭液态玻璃、液态拉伸、3D 封面与逐帧装饰，切换直接到位并降低后台刷新频率", false, SettingsPageIds.Appearance, controlName: "ReduceEffectsToggle"));
-            list.Add(ExtraBool("NotificationMessengerEnabled", "QQ / 微信新消息提醒", "读取已登录应用的新消息、未读数或任务栏提醒；有正文时直接展示", true, SettingsPageIds.Notifications, controlName: "NotificationMessengerToggle"));
+            list.Add(ExtraBool("ReduceEffectsEnabled", "削减动效", "关闭液态玻璃、液态拉伸、3D 封面与逐帧装饰，并降低后台刷新频率", false, SettingsPageIds.Appearance, controlName: "ReduceEffectsToggle"));
+            list.Add(ExtraBool("NotificationMessengerEnabled", "QQ / 微信新消息提醒", "显示已登录应用的新消息与未读数", true, SettingsPageIds.Notifications, controlName: "NotificationMessengerToggle"));
 
             list.Add(ExtraBool("AgentDesktopToolsEnabled", "允许 AI 控制桌面功能", "开放扬声器、媒体、番茄钟与提醒指令；关闭后停止新的工具执行", true, SettingsPageIds.Assistant, controlName: "AgentDesktopToolsEnabledToggle"));
-            list.Add(ExtraText("SpeechProvider", "语音识别引擎", "语音指令和声音字幕共用；云端仅在唤醒或开始字幕后上传音频", "mimo", SettingsPageIds.Assistant, controlName: "SpeechProviderBox"));
-            list.Add(ExtraText("SpeechBaseUrl", "语音识别接口", "可填写基础地址或完整端点；与对话模型配置独立", SpeechSettings.DefaultUrl, SettingsPageIds.Assistant, controlName: "SpeechBaseUrlBox"));
-            list.Add(ExtraText("SpeechModel", "语音识别模型", "从接口获取后选择，或手动输入；请选择支持语音识别的模型", SpeechSettings.DefaultModel, SettingsPageIds.Assistant, controlName: "SpeechModelBox"));
-            list.Add(ExtraText("SpeechLanguage", "识别语种", "已知语种时可指定中文或英文，提高识别准确性", "auto", SettingsPageIds.Assistant, controlName: "SpeechLanguageBox"));
-            list.Add(ExtraText("SubtitleTargetLanguage", "字幕翻译语言", "下方翻译岛只显示译文，原文保留在工具窗口；相同语种保持原文", "zh-CN", SettingsPageIds.Assistant, controlName: "SubtitleTargetLanguageBox"));
-            list.Add(ExtraBool("VoiceWakeEnabled", "API 助手语音唤醒", "唤醒后才使用麦克风，停顿约 1.6 秒自动发送文字；右侧按钮或 Esc 取消，不保存录音", true, SettingsPageIds.Assistant, controlName: "VoiceWakeEnabledToggle"));
-            list.Add(ExtraText("VoiceWakeShortcut", "语音唤醒快捷键", "默认 Ctrl+Alt+V；再次按下取消当前录音或本次指令", "Ctrl+Alt+V", SettingsPageIds.Assistant, controlName: "VoiceWakeShortcutBox"));
+            list.Add(ExtraText("SpeechProvider", "语音识别引擎", "语音指令与语音识别共用", "mimo", SettingsPageIds.Assistant, controlName: "SpeechProviderBox"));
+            list.Add(ExtraText("SpeechBaseUrl", "语音识别接口", "支持基础地址或完整端点", SpeechSettings.DefaultUrl, SettingsPageIds.Assistant, controlName: "SpeechBaseUrlBox"));
+            list.Add(ExtraText("SpeechModel", "语音识别模型", "可获取模型列表或手动填写", SpeechSettings.DefaultModel, SettingsPageIds.Assistant, controlName: "SpeechModelBox"));
+            list.Add(ExtraText("SpeechLanguage", "识别语种", "指定语种可提高准确性", "auto", SettingsPageIds.Assistant, controlName: "SpeechLanguageBox"));
+            list.Add(ExtraText("SubtitleTargetLanguage", "区域翻译语言", "仅用于区域翻译", "zh-CN", SettingsPageIds.Assistant, controlName: "SubtitleTargetLanguageBox"));
+            list.Add(ExtraBool("VoiceWakeEnabled", "API 助手语音唤醒", "停顿后自动发送；右侧按钮或 Esc 取消", true, SettingsPageIds.Assistant, controlName: "VoiceWakeEnabledToggle"));
+            list.Add(ExtraText("VoiceWakeShortcut", "语音唤醒快捷键", "再次按下可取消", "Ctrl+Alt+V", SettingsPageIds.Assistant, controlName: "VoiceWakeShortcutBox"));
             list.Add(ExtraBool("VoiceWakeHoldEnabled", "长按右 Ctrl 唤醒", "按住右 Ctrl 0.6 秒切换语音；短按及 Ctrl 组合键保持原有用途", false, SettingsPageIds.Assistant, controlName: "VoiceWakeHoldEnabledToggle"));
             list.Add(ExtraBool("VoiceWakeSoundEnabled", "语音唤醒提示音", "识别器就绪后播放短提示音，听到提示音后即可说话", true, SettingsPageIds.Assistant, controlName: "VoiceWakeSoundEnabledToggle"));
             list.Add(ExtraBool("NaturalRemindersEnabled", "自然语言提醒", "支持一次性、每天、工作日、每周和间隔提醒；本机保存，程序恢复后补记错过事项", true, SettingsPageIds.Assistant, controlName: "NaturalRemindersEnabledToggle"));
@@ -298,7 +298,7 @@ namespace alpha_island.Core
             list.Add(ExtraBool("MeetingGuardEnabled", "会议麦克风静音提醒", "会议应用占用设备且默认通信麦克风在系统中静音时提醒；不录音、不自动开麦", true, SettingsPageIds.Assistant, controlName: "MeetingGuardEnabledToggle"));
             list.Add(ExtraBool("AgentProactiveEnabled", "本地助手建议", "规则在本机判断，提醒统一进入通知中心；待处理事项自动置顶，不自动调用 API", true, SettingsPageIds.Assistant, controlName: "AgentProactiveEnabledToggle"));
             foreach (var rule in new[] {
-                ("AssistantGameWrapEnabled", "游戏收尾卡", "游戏退出后汇总本次时长、保留未读和任务结束数"),
+                ("AssistantGameWrapEnabled", "游戏总结", "退出游戏后汇总本次时长、未读通知和已完成任务"),
                 ("AssistantQuietDigestEnabled", "免打扰与专注结束摘要", "结束后合并未读、助手和下载，不逐条补弹旧消息"),
                 ("AssistantAgentFollowupEnabled", "助手任务跟进", "等待授权过久、报告错误时提醒；明确结束的任务合并汇总"),
                 ("AssistantUsageBreakEnabled", "连续使用休息提醒", "仅观察最后输入时间；闲置五分钟、锁屏或休眠后重新计时"),
@@ -320,7 +320,7 @@ namespace alpha_island.Core
                 SettingsPageIds.Behavior, controlName: "LauncherShortcutBox"));
             list.Add(ExtraBool("ProductivityEnabled", "记录本机活动时长", "统计音乐、游戏、专注和助手运行；仅保存最近 90 天聚合时长，可在统计卡片导出和清除", true,
                 SettingsPageIds.Behavior, controlName: "ProductivityEnabledToggle"));
-            list.Add(ExtraBool("NotificationRememberHistory", "保留本机通知历史", "跨重启回溯最近 100 条；内容经当前 Windows 用户加密，关闭后清除已保存记录", true,
+            list.Add(ExtraBool("NotificationRememberHistory", "保留本机通知历史", "加密保留最近 100 条；关闭后清除", true,
                 SettingsPageIds.Notifications, controlName: "NotificationRememberHistoryToggle"));
 
             list.Add(ExtraInt("PomodoroFocusMinutes", "专注时长", "分钟；未开始的阶段立即生效，已开始的阶段保留进度",
@@ -417,11 +417,11 @@ namespace alpha_island.Core
                 Set = (o, v) => o.BluetoothNotifyEnabled = SettingDescriptor.ToBool(v, true)
             }));
 
-            list.Add(ExtraBool("BluetoothLowBatteryEnabled", "设备低电量提醒", "蓝牙、2.4G 和手柄电量达到 20% / 10% 时提醒；充电时不提醒，恢复后重新计次", true,
+            list.Add(ExtraBool("BluetoothLowBatteryEnabled", "设备低电量提醒", "电量达 20% / 10% 时提醒，充电时静默", true,
                 SettingsPageIds.Notifications, controlName: "BluetoothLowBatteryToggle"));
-            list.Add(ExtraBool("DeviceBatteryFullEnabled", "设备充满提醒", "仅在已观察到充电后达到 100% 时提醒；连接已满电设备不提醒", true,
+            list.Add(ExtraBool("DeviceBatteryFullEnabled", "设备充满提醒", "充电至 100% 时提醒；满电连接不提醒", true,
                 SettingsPageIds.Notifications, controlName: "DeviceBatteryFullToggle"));
-            list.Add(ExtraBool("DeviceBatteryChargingEnabled", "设备充电提醒", "蓝牙和接收器设备开始充电时提醒；持续充电不重复提示", true,
+            list.Add(ExtraBool("DeviceBatteryChargingEnabled", "设备充电提醒", "开始充电时提醒一次", true,
                 SettingsPageIds.Notifications, controlName: "DeviceBatteryChargingToggle"));
 
             list.Add(Typed(new SettingDescriptor
@@ -460,8 +460,8 @@ namespace alpha_island.Core
             {
                 Key = "ClipboardNotifyEnabled",
                 Kind = SettingKind.Bool,
-                Label = "剪切板提示",
-                Hint = "监听剪切板新增文本，保持提示至粘贴；可启用右键快捷粘贴",
+                Label = "剪贴板提示",
+                Hint = "监听新复制的文本，保持提示至粘贴；可启用右键快捷粘贴",
                 PageId = SettingsPageIds.Behavior,
                 ControlName = "ClipboardNotifyToggle",
                 DefaultValue = true,
@@ -478,13 +478,14 @@ namespace alpha_island.Core
                 Set = (o, v) => o.UpNextEnabled = o.PauseNotifyEnabled = o.PlayNotifyEnabled = SettingDescriptor.ToBool(v, true)
             }));
 
-            list.Add(ExtraInt("ClipboardHistoryLimit", "剪切板历史保存条数",
+            list.Add(ExtraInt("ClipboardHistoryLimit", "剪贴板历史保存条数",
                 "0 表示不保存；超出后移除最旧记录，修改后立即生效", 10, 0, 100, "条", SettingsPageIds.Behavior,
                 controlName: "ClipboardHistoryLimitBox"));
             list.Add(ExtraBool("StartupEnabled", "开机自启动", "登录 Windows 时自动启动 Alpha Island", false,
                 SettingsPageIds.General, controlName: "StartupEnabledToggle"));
             list.Add(ExtraBool("StartupBootTimeNotify", "开机耗时提醒", "自启动时显示开机耗时；缺少精确记录时提供参考值", true,
                 SettingsPageIds.General, controlName: "StartupBootTimeToggle", enabledBy: "StartupEnabled"));
+            list.Add(ExtraText("GreetingPreset", "启动欢迎组合", "内置兔子、奶龙、阿米娅和星野；可按组合随机切换", "", SettingsPageIds.Notifications));
             list.Add(ExtraText("GreetingImagePath", "左侧欢迎图片", "在启动问候中导入图片；保留本机副本，清除后恢复默认兔子图标", "", SettingsPageIds.Notifications));
             list.Add(ExtraBool("GreetingSoundEnabled", "欢迎音效", "欢迎提示出现时播放一次，可自选音效和试听", true,
                 SettingsPageIds.Notifications, controlName: "GreetingSoundToggle"));
@@ -503,13 +504,18 @@ namespace alpha_island.Core
             list.Add(ExtraBool("NotificationWifiRadio", "Wi-Fi 开关提醒", "开启或关闭 Wi-Fi 时提醒；遵守静默设置", true, SettingsPageIds.Notifications, controlName: "NotificationWifiRadioToggle"));
             list.Add(ExtraBool("NotificationBluetoothRadio", "蓝牙开关提醒", "开启或关闭系统蓝牙时提醒；与设备连接提醒独立", true, SettingsPageIds.Notifications, controlName: "NotificationBluetoothRadioToggle"));
             list.Add(ExtraBool("SystemToastEnabled", "接收 Windows 通知", "使用 Windows 通知读取权限；可在通知中心授权", true, SettingsPageIds.Notifications, controlName: "SystemToastToggle"));
-            list.Add(ExtraBool("NotificationReplaceSystemPopup", "由小岛接管系统通知", "接管 Windows 横幅，由小岛提示；静默与筛选同步生效，关闭后恢复系统弹窗", true, SettingsPageIds.Notifications, controlName: "NotificationReplaceSystemPopupToggle"));
+            list.Add(ExtraBool("NotificationReplaceSystemPopup", "由 Alpha Island 显示系统通知", "关闭后恢复 Windows 通知横幅", true, SettingsPageIds.Notifications, controlName: "NotificationReplaceSystemPopupToggle"));
             list.Add(ExtraBool("SessionEventNotifyEnabled", "锁屏与解锁事件", "", true, SettingsPageIds.Notifications, controlName: "SessionEventsToggle"));
-            list.Add(ExtraBool("NotificationGameQuietEnabled", "游戏时自动免打扰", "游戏进入前台时提示一次；切到后台仍保持，全部游戏退出后恢复原来的静默设置", true,
+            list.Add(ExtraBool("NotificationGameQuietEnabled", "游戏时自动免打扰", "游戏时收起并暂停非必要组件，结束后恢复；期间暂停语音唤醒。", true,
                 SettingsPageIds.Notifications, controlName: "NotificationGameQuietToggle"));
             list.Add(ExtraText("NotificationGameProcesses", "补充游戏进程", "未识别的游戏可填程序名（如 game.exe）或完整路径；多项用分号分隔", "",
                 SettingsPageIds.Notifications, controlName: "NotificationGameProcessesBox"));
             list.Add(ExtraBool("NotificationQuietMode", "静默模式", "普通消息仅保留在通知中心", false, SettingsPageIds.Notifications, controlName: "NotificationQuietToggle"));
+            list.Add(ExtraBool("NotificationSoundEnabled", "通知提示音", "新通知播放短提示音；静默及游戏免打扰时不播放", true,
+                SettingsPageIds.Notifications, controlName: "NotificationSoundToggle"));
+            list.Add(ExtraInt("NotificationSoundVolume", "通知音量", "独立调整通知提示音，不改变系统音量或欢迎音效", 25, 0, 100, "%",
+                SettingsPageIds.Notifications, controlName: "NotificationSoundVolumeSlider", valueTextName: "NotificationSoundVolumeValue", enabledBy: "NotificationSoundEnabled"));
+            list.Add(ExtraText("NotificationSoundPath", "通知音效文件", "支持导入 10 秒内的本地音效；留空使用内置轻柔提示音", "", SettingsPageIds.Notifications));
             list.Add(ExtraBool("NotificationQuietAllowPriority", "静默时允许高优先级", "手动静默时工具审批始终提示；游戏免打扰期间暂停自动弹出", true, SettingsPageIds.Notifications, controlName: "NotificationQuietPriorityToggle"));
             list.Add(ExtraBool("NotificationPriorityOnly", "只弹出高优先级通知", "", false, SettingsPageIds.Notifications, controlName: "NotificationPriorityOnlyToggle"));
             list.Add(ExtraInt("NotificationDisplaySeconds", "消息展示时长", "", 8, 3, 30, "秒", SettingsPageIds.Notifications, controlName: "NotificationDurationSlider", valueTextName: "NotificationDurationValue"));

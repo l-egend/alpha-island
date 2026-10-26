@@ -12,7 +12,7 @@ public partial class SettingsWindow
     private void AddWorkspaceSettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "快速启动与统计", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "快速启动与统计", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var rows = new StackPanel();
         foreach (var descriptor in SettingsRegistry.All.Where(item => item.Key.StartsWith("Launcher", StringComparison.Ordinal) || item.Key == "ProductivityEnabled"))
         {

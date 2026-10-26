@@ -10,6 +10,8 @@ namespace alpha_island.Controls;
 /// <summary>A vector badge with unclipped ears and a finite welcome gesture.</summary>
 public partial class WelcomeRabbitIcon : System.Windows.Controls.UserControl
 {
+    internal bool AnimationEnabled { get; set; } = true;
+
     public WelcomeRabbitIcon()
     {
         InitializeComponent();
@@ -21,7 +23,7 @@ public partial class WelcomeRabbitIcon : System.Windows.Controls.UserControl
     private void PlayWelcome()
     {
         StopWelcome();
-        if (!IsVisible || MotionPolicy.InstantMorph || MotionPolicy.PowerSave) return;
+        if (!AnimationEnabled || !IsVisible || MotionPolicy.InstantMorph || MotionPolicy.PowerSave) return;
         AnimateEar(LeftEarRotation, 5, -6);
         AnimateEar(LeftInnerRotation, 5, -6);
         AnimateEar(RightEarRotation, -5, 6);

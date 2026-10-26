@@ -11,7 +11,7 @@ using Color = System.Windows.Media.Color;
 
 namespace alpha_island.Controls;
 
-/// <summary>Independent non-activating translation-only island. Main-island state never controls its lifetime.</summary>
+/// <summary>Independent non-activating output for speech recognition or region translation.</summary>
 internal sealed class SubtitleIslandWindow : Window
 {
     [DllImport("user32.dll")] private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
@@ -22,19 +22,30 @@ internal sealed class SubtitleIslandWindow : Window
     private readonly bool _belowSelection;
     private bool _positioned, _positioning;
     internal string Translation => _text.Text;
-    internal SubtitleIslandWindow(Rectangle? anchor, bool belowSelection, Action stop, Action<string> copy)
+    internal SubtitleIslandWindow(Rectangle? anchor, bool belowSelection, Action stop, Action<string> copy,
+        string caption = "区域翻译", bool translation = true)
     {
         _anchor = anchor; _belowSelection = belowSelection;
-        Title = "Alpha Island · 翻译字幕"; ShowInTaskbar = false; ShowActivated = false; Topmost = true;
+        Title = "Alpha Island · " + caption; ShowInTaskbar = false; ShowActivated = false; Topmost = true;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true;
         Background = Brushes.Transparent; Width = 960; SizeToContent = SizeToContent.Height;
         FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI, Microsoft YaHei");
         _scroll = new ScrollViewer { Content = _text, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, MaxHeight = 210 };
+        var header = new Grid { Margin = new Thickness(0, 0, 0, 5) };
+        header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        header.Children.Add(new TextBlock { Text = caption, Foreground = Brushes.White, Opacity = .7, FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
+        string stopLabel = translation ? "停止区域翻译" : "停止语音识别";
+        var stopButton = new System.Windows.Controls.Button { Content = "×", Width = 28, Height = 26, Padding = new Thickness(0),
+            Foreground = Brushes.White, Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)), ToolTip = stopLabel };
+        System.Windows.Automation.AutomationProperties.SetName(stopButton, stopLabel);
+        stopButton.Click += (_, _) => stop(); Grid.SetColumn(stopButton, 1); header.Children.Add(stopButton);
+        var body = new StackPanel(); body.Children.Add(header); body.Children.Add(_scroll);
         Content = new Border { Background = new SolidColorBrush(Color.FromArgb(225, 20, 24, 32)), CornerRadius = new CornerRadius(20),
-            Padding = new Thickness(22, 12, 22, 12), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromArgb(65, 255, 255, 255)), Child = _scroll };
+            Padding = new Thickness(22, 10, 22, 12), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromArgb(65, 255, 255, 255)), Child = body };
         var menu = new ContextMenu();
-        var copyItem = new MenuItem { Header = "复制译文" }; copyItem.Click += (_, _) => { try { copy(_text.Text); } catch (ExternalException) { } };
-        var stopItem = new MenuItem { Header = "停止字幕" }; stopItem.Click += (_, _) => stop();
+        var copyItem = new MenuItem { Header = translation ? "复制译文" : "复制识别文字" }; copyItem.Click += (_, _) => { try { copy(_text.Text); } catch (ExternalException) { } };
+        var stopItem = new MenuItem { Header = stopLabel }; stopItem.Click += (_, _) => stop();
         menu.Items.Add(copyItem); menu.Items.Add(stopItem); ContextMenu = menu;
         MouseLeftButtonDown += (_, _) => { try { DragMove(); _positioned = true; } catch (InvalidOperationException) { } };
         SourceInitialized += (_, _) => SetWindowDisplayAffinity(new WindowInteropHelper(this).Handle, 0x11);

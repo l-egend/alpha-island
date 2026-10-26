@@ -17,8 +17,11 @@ internal static partial class Program
         internal string? Command;
         internal int Writes;
         internal bool Fail;
+        internal bool IgnoreWrites;
+        internal bool Disabled;
+        public bool IsDisabledByWindows => Disabled;
         public string? Read() => Command;
-        public void Write(string? command) { if (Fail) throw new UnauthorizedAccessException("模拟写入拒绝"); Writes++; Command = command; }
+        public void Write(string? command) { if (Fail) throw new UnauthorizedAccessException("模拟写入拒绝"); Writes++; if (!IgnoreWrites) Command = command; }
     }
 
     private static void LaunchAndLinksPolicyChecks(string root)
@@ -42,6 +45,7 @@ internal static partial class Program
         SettingsRegistry.Write(options, "StartupEnabled", true); SettingsRegistry.Write(options, "ClipboardLinkDetectionEnabled", false);
         var imported = JsonSerializer.Deserialize<IslandOptions>(JsonSerializer.Serialize(options))!.Normalized();
         Check(SettingsRegistry.GetBool(imported, "StartupEnabled", false) && !SettingsRegistry.GetBool(imported, "ClipboardLinkDetectionEnabled", true), "新偏好随统一配置往返");
+        StartupRegistrationRecoveryChecks(root);
 
         var boot = DateTimeOffset.UtcNow.AddMinutes(-2);
         string Performance(string start, string main, string total = "60000") => $"<Event><EventData><Data Name='BootStartTime'>{start}</Data><Data Name='MainPathBootTime'>{main}</Data><Data Name='BootTime'>{total}</Data></EventData></Event>";
@@ -62,6 +66,32 @@ internal static partial class Program
         var actual = BootTimingService.Read();
         Console.WriteLine("Boot timing live: " + actual.DisplayText + " | " + actual.Reason);
         Check(actual.DesktopDuration == null || actual.DesktopDuration > TimeSpan.Zero, "本机读取保留明确的精确或参考结果，无有效时间时不伪造耗时");
+    }
+
+    private static void StartupRegistrationRecoveryChecks(string root)
+    {
+        string executable = Path.Combine(root, "startup-fixture.exe"); File.WriteAllBytes(executable, [0]);
+        var store = new StartupStoreFixture(); var registration = new StartupRegistrationService(store, executable);
+        Check(!registration.RestoreIfRequested(false) && store.Writes == 0, "没有开启偏好时不创建启动项");
+        Check(registration.RestoreIfRequested(true) && store.Command == registration.Command && store.Writes == 1, "启动流程按已保存的开启偏好恢复登记");
+        Check(registration.RestoreIfRequested(true) && store.Writes == 1, "登记有效时重复启动不重复写入");
+        store.Command = "\"E:\\old-location\\alpha-island.exe\" --startup";
+        Check(registration.RestoreIfRequested(true) && store.Command == registration.Command && store.Writes == 2, "程序路径变化时恢复为当前可执行文件");
+        store.Disabled = true;
+        Check(!registration.RestoreIfRequested(true) && store.Writes == 2, "Windows 禁用的启动项不会被自动恢复逻辑重新启用");
+        bool blocked = false; try { registration.SetEnabled(true); } catch (InvalidOperationException) { blocked = true; }
+        Check(blocked && store.Writes == 2, "Windows 禁用时明确报告，避免显示虚假已开启");
+        registration.SetEnabled(false);
+        Check(store.Command == null, "系统禁用时仍可移除本程序启动登记");
+        store.Disabled = false; store.IgnoreWrites = true;
+        bool unsaved = false; try { registration.SetEnabled(true); } catch (IOException) { unsaved = true; }
+        Check(unsaved && !registration.IsEnabled, "启动项写入被拦截时读回核验失败，不声称保存成功");
+        Check(!StartupRegistrationService.IsWindowsStartupDisabled(null)
+            && !StartupRegistrationService.IsWindowsStartupDisabled(new byte[] { 2 })
+            && !StartupRegistrationService.IsWindowsStartupDisabled(new byte[] { 6 })
+            && StartupRegistrationService.IsWindowsStartupDisabled(new byte[] { 3 })
+            && StartupRegistrationService.IsWindowsStartupDisabled(new byte[] { 7 })
+            && StartupRegistrationService.IsWindowsStartupDisabled(new byte[] { 255 }), "系统启动审批区分启用、禁用，未知状态不主动绕过");
     }
 
     private static void LaunchAndLinksUiChecks(alpha_island.MainWindow window, Grid root, string testRoot)
@@ -141,6 +171,33 @@ internal static partial class Program
             gate.SetResult(); PumpAnimations(200);
             Check(store.Command == $"\"{executable}\" --startup" && registration.IsEnabled && SettingsRegistry.GetBool(snapshot, "StartupEnabled", false),
                 "授权完成后登记带引号路径和自启动标记并保存偏好");
+            var saved = JsonSerializer.Deserialize<IslandOptions>(JsonSerializer.Serialize(snapshot))!;
+            int writes = store.Writes;
+            settings.LoadFrom(saved);
+            Check(toggle.IsChecked == true && store.Writes == writes, "重开设置保留已开启状态且不重复登记");
+            store.Command = null;
+            var restarted = new alpha_island.Settings.SettingsWindow(false, startupRegistration: registration, authorizeBootLog: () => Task.CompletedTask);
+            try
+            {
+                restarted.LoadFrom(saved);
+                var restored = AgentField<IslandOptions>(restarted, "_options");
+                Check(((CheckBox)restarted.FindName("StartupEnabledToggle")).IsChecked == true
+                    && SettingsRegistry.GetBool(restored, "StartupEnabled", false) && registration.IsEnabled,
+                    "重启遇到启动登记缺失时恢复已开启的偏好，不静默改回关闭");
+                store.Command = null; store.Fail = true;
+                restarted.LoadFrom(saved);
+                Check(((CheckBox)restarted.FindName("StartupEnabledToggle")).IsChecked == false
+                    && SettingsRegistry.GetBool(restored, "StartupEnabled", false), "恢复失败显示实际关闭，但不覆盖已保存的开启偏好");
+                store.Fail = false; store.Disabled = true;
+                restarted.LoadFrom(saved);
+                Check(((CheckBox)restarted.FindName("StartupEnabledToggle")).IsChecked == false
+                    && SettingsRegistry.GetBool(restored, "StartupEnabled", false) && store.Command == null,
+                    "Windows 禁用时设置保留用户偏好，不偷偷创建启动登记");
+                store.Disabled = false; restarted.LoadFrom(saved);
+                Check(((CheckBox)restarted.FindName("StartupEnabledToggle")).IsChecked == true && registration.IsEnabled,
+                    "临时阻挡解除后可再次恢复，无需重新配置");
+            }
+            finally { restarted.ForceClose = true; restarted.Close(); }
             PrivateCall(settings, "SelectPageByTag", "behavior"); panel.UpdateLayout();
             SaveThemePreview(panel, "bin/launch-previews/settings-launch.png");
             Toggle(false);

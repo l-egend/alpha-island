@@ -102,6 +102,9 @@ namespace alpha_island
                 return;
             }
 
+            if (GameDoNotDisturbActive)
+            { _gameDeferredMedia = info; _gameHasDeferredMedia = true; return; }
+
             ApplyPowerSavePacing();
             if (_runtimeEnabled && info?.HasMedia == true) StartAudioSpectrum();
 
@@ -323,6 +326,10 @@ namespace alpha_island
             // SpectrumVisualizer 内部由 UI 线程的 IsActive 控制渲染循环，未激活时不消耗任何 CPU
             PillSpectrum.PushFrame(bands);
             CardWave.PushFrame(bands);
+            double strength = 0;
+            for (int i = 0; i < Math.Min(8, bands.Length); i++)
+                if (float.IsFinite(bands[i])) strength = Math.Max(strength, bands[i]);
+            System.Threading.Volatile.Write(ref _lyricBeatEnergy, (float)Math.Clamp(strength, 0, 1));
         }
 
         // ================= 进度 =================
@@ -444,7 +451,7 @@ namespace alpha_island
 
             // 暂停拖动进度、恢复播放或未挂逐帧钩子时，同样同步当前句与逐字高亮。
             if (!_karaokeHooked && (_state == IslandState.Pill || _state == IslandState.Card))
-                OnKaraokeTick(this, EventArgs.Empty);
+                RefreshLyricPosition();
         }
 
         private static string FormatTime(TimeSpan t)

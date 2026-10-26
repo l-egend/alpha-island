@@ -33,6 +33,48 @@ internal static partial class Program
     private static async Task RunChecks(string[] args)
     {
         IslandLog.FileSinkEnabled = false;
+        if (args.Contains("--media-lyrics-controls-only"))
+        {
+            string mediaRoot = Path.Combine(Path.GetTempPath(), "alpha-media-lyrics-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(mediaRoot); IslandUi(mediaRoot, iconEntryProbe: "media-lyrics-controls"); Console.WriteLine($"All {_checks} media lyrics controls checks passed."); }
+            finally { if (Directory.Exists(mediaRoot)) Directory.Delete(mediaRoot, true); }
+            return;
+        }
+        if (args.Contains("--lyric-rest-only"))
+        {
+            string restRoot = Path.Combine(Path.GetTempPath(), "alpha-lyric-rest-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(restRoot); LyricRestPolicyChecks(); IslandUi(restRoot, iconEntryProbe: "lyric-rest"); Console.WriteLine($"All {_checks} lyric rest checks passed."); }
+            finally { if (Directory.Exists(restRoot)) Directory.Delete(restRoot, true); }
+            return;
+        }
+        if (args.Contains("--settings-lyrics-only"))
+        {
+            string settingsRoot = Path.Combine(Path.GetTempPath(), "alpha-settings-lyrics-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(settingsRoot); await LyricsSourcesBehaviorChecks(settingsRoot); IslandUi(settingsRoot, iconEntryProbe: "settings-lyrics"); Console.WriteLine($"All {_checks} settings and lyrics checks passed."); }
+            finally { if (Directory.Exists(settingsRoot)) Directory.Delete(settingsRoot, true); }
+            return;
+        }
+        if (args.Contains("--weather-content-layout-only"))
+        {
+            string layoutRoot = Path.Combine(Path.GetTempPath(), "alpha-weather-content-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(layoutRoot); IslandUi(layoutRoot, iconEntryProbe: "weather-content-layout"); }
+            finally { if (Directory.Exists(layoutRoot)) Directory.Delete(layoutRoot, true); }
+            return;
+        }
+        if (args.Contains("--notification-weather-layout-only"))
+        {
+            string layoutRoot = Path.Combine(Path.GetTempPath(), "alpha-notification-weather-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(layoutRoot); IslandUi(layoutRoot, iconEntryProbe: "notification-weather-layout"); }
+            finally { if (Directory.Exists(layoutRoot)) Directory.Delete(layoutRoot, true); }
+            return;
+        }
+        if (args.Contains("--ui-refinement-only"))
+        {
+            string layoutRoot = Path.Combine(Path.GetTempPath(), "alpha-ui-refinement-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(layoutRoot); IslandUi(layoutRoot, iconEntryProbe: "ui-refinement"); }
+            finally { if (Directory.Exists(layoutRoot)) Directory.Delete(layoutRoot, true); }
+            return;
+        }
         if (args.Contains("--voice-dictation-fixture"))
         {
             string dictationRoot = Path.Combine(Path.GetTempPath(), "alpha-voice-dictation-" + Guid.NewGuid().ToString("N"));
@@ -322,6 +364,7 @@ internal static partial class Program
             if (args.Contains("--resident-memory-only")) { IslandUi(root, iconEntryProbe: "resident-memory"); Console.WriteLine($"All {_checks} resident memory checks passed."); return; }
             if (args.Contains("--settings-icon-media-pin-only")) { IslandUi(root, iconEntryProbe: "settings-icon-media-pin"); Console.WriteLine($"All {_checks} settings icons and media pin checks passed."); return; }
             if (args.Contains("--media-peripheral-lifecycle-only")) { IslandUi(root, iconEntryProbe: "media-peripheral-lifecycle"); Console.WriteLine($"All {_checks} media and peripheral lifecycle checks passed."); return; }
+            if (args.Contains("--game-resource-budget-only")) { IslandUi(root, iconEntryProbe: "game-resource-budget"); Console.WriteLine($"All {_checks} game resource budget checks passed."); return; }
             if (args.Contains("--gaming-memory-only")) { IslandUi(root, iconEntryProbe: "gaming-memory"); Console.WriteLine($"All {_checks} game memory checks passed."); return; }
             if (args.Contains("--speech-setup-only")) { await SpeechSetupProtocolChecks(); IslandUi(root, iconEntryProbe: "speech-setup"); Console.WriteLine($"All {_checks} speech setup checks passed."); return; }
             if (args.Contains("--boot-timing-only")) { BootTimingPolicyChecks(); Console.WriteLine($"All {_checks} boot timing checks passed."); return; }
@@ -334,6 +377,14 @@ internal static partial class Program
             if (args.Contains("--agent-avatar-only")) { IslandUi(root, iconEntryProbe: "agent-avatar"); Console.WriteLine($"All {_checks} agent avatar checks passed."); return; }
             if (args.Contains("--agent-avatar-routing-only")) { IslandUi(root, iconEntryProbe: "agent-avatar-routing"); Console.WriteLine($"All {_checks} agent avatar routing checks passed."); return; }
             if (args.Contains("--agent-avatar-loop-only")) { IslandUi(root, iconEntryProbe: "agent-avatar-loop"); Console.WriteLine($"All {_checks} agent avatar loop checks passed."); return; }
+            if (args.Contains("--plugin-button-stability-only")) { IslandUi(root, iconEntryProbe: "plugin-button-stability"); Console.WriteLine($"All {_checks} plugin button stability checks passed."); return; }
+            if (args.Contains("--theme-cohesion-only")) { IslandUi(root, iconEntryProbe: "theme-cohesion"); Console.WriteLine($"All {_checks} theme cohesion checks passed."); return; }
+            if (args.Contains("--satellite-material-only")) { IslandUi(root, iconEntryProbe: "satellite-material"); Console.WriteLine($"All {_checks} satellite material checks passed."); return; }
+            if (args.Contains("--greeting-notification-sound-only")) { IslandUi(root, iconEntryProbe: "greeting-notification-sound"); Console.WriteLine($"All {_checks} greeting portrait and notification sound checks passed."); return; }
+            if (args.Contains("--spectrum-visibility-only")) { IslandUi(root, iconEntryProbe: "spectrum-visibility"); Console.WriteLine($"All {_checks} spectrum visibility checks passed."); return; }
+            if (args.Contains("--amiya-handle-only")) { IslandUi(root, iconEntryProbe: "amiya-handle"); Console.WriteLine($"All {_checks} Amiya and adaptive handle checks passed."); return; }
+            if (args.Contains("--greeting-once-only")) { IslandUi(root, iconEntryProbe: "greeting-once"); Console.WriteLine($"All {_checks} single-play greeting checks passed."); return; }
+            if (args.Contains("--caption-modes-only")) { IslandUi(root, iconEntryProbe: "caption-modes"); Console.WriteLine($"All {_checks} independent caption mode checks passed."); return; }
             if (args.Contains("--agent-completion-visual-only")) { IslandUi(root, iconEntryProbe: "agent-completion-visual"); Console.WriteLine($"All {_checks} completion and satellite checks passed."); return; }
             if (args.Contains("--agent-multi-session-only")) { IslandUi(root, iconEntryProbe: "agent-multi-session"); Console.WriteLine($"All {_checks} multi-session agent checks passed."); return; }
             if (args.Contains("--agent-background-resume-only")) { IslandUi(root, iconEntryProbe: "agent-background-resume"); Console.WriteLine($"All {_checks} agent background resume checks passed."); return; }
@@ -1003,6 +1054,9 @@ internal static partial class Program
                     return;
                 }
                 if (aiConfigOnly) { AiSettingsConfigurationUiChecks(testRoot); AiModelPickerUiChecks(testRoot); return; }
+                if (iconEntryProbe == "theme-cohesion") { ThemeCohesionChecks(testRoot); return; }
+                if (iconEntryProbe == "settings-lyrics") { SettingsLyricsLayoutChecks(testRoot); return; }
+                if (iconEntryProbe == "plugin-button-stability") { PluginButtonStabilityChecks(testRoot); return; }
                 if (iconEntryProbe == "settings-consolidation") { SettingsConsolidationChecks(testRoot); return; }
                 var options = new IslandOptions { LyricsEnabled = true, GlassOpacity = 0.08, GreetingEnabled = false, FileTransferEnabled = true };
                 window = new alpha_island.MainWindow(options);
@@ -1036,6 +1090,11 @@ internal static partial class Program
                 if (iconEntryProbe == "small-screen-compatibility") { SmallScreenCompatibilityChecks(root); return; }
                 if (iconEntryProbe == "api-model-avatar") { ApiModelAvatarChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "interaction-feedback") { InteractionFeedbackChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "media-lyrics-controls") { V41MediaLyricChecks(window, root); return; }
+                if (iconEntryProbe == "lyric-rest") { LyricRestUiChecks(window, root); return; }
+                if (iconEntryProbe == "ui-refinement") { UiRefinementChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "notification-weather-layout") { NotificationWeatherLayoutChecks(window, root); return; }
+                if (iconEntryProbe == "weather-content-layout") { WeatherContentLayoutChecks(window, root); return; }
                 if (iconEntryProbe == "greeting-handoff") { GreetingHandoffChecks(window, root); return; }
                 if (iconEntryProbe == "greeting-media") { GreetingMediaChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "speech-setup") { SpeechSetupUiChecks(testRoot); return; }
@@ -1054,6 +1113,7 @@ internal static partial class Program
                 if (iconEntryProbe == "resident-memory") { ResidentMemoryChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "settings-icon-media-pin") { SettingsIconMediaPinChecks(window, root); return; }
                 if (iconEntryProbe == "media-peripheral-lifecycle") { MediaPeripheralLifecycleChecks(window, root); return; }
+                if (iconEntryProbe == "game-resource-budget") { GameResourceBudgetChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "gaming-memory") { GamingMemoryChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "gaming-notifications") { GamingNotificationChecks(window, root); return; }
                 if (iconEntryProbe == "peripheral-interactions") { PeripheralInteractionChecks(window, root); return; }
@@ -1128,6 +1188,12 @@ internal static partial class Program
                 if (iconEntryProbe == "agent-avatar") { AgentAvatarChecks(window, root); return; }
                 if (iconEntryProbe == "agent-avatar-routing") { AgentAvatarRoutingChecks(window, root); return; }
                 if (iconEntryProbe == "agent-avatar-loop") { AgentAvatarLoopChecks(window, root); return; }
+                if (iconEntryProbe == "greeting-notification-sound") { GreetingNotificationSoundChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "spectrum-visibility") { SpectrumVisibilityChecks(window, root); return; }
+                if (iconEntryProbe == "amiya-handle") { AmiyaHandleChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "greeting-once") { GreetingSinglePlaybackChecks(window, testRoot); return; }
+                if (iconEntryProbe == "caption-modes") { CaptionModesChecks(window, testRoot); return; }
+                if (iconEntryProbe == "satellite-material") { SatelliteMaterialChecks(window, root); return; }
                 if (iconEntryProbe == "agent-completion-visual") { AgentCompletionVisualChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "agent-multi-session") { AgentMultiSessionChecks(window, root); return; }
                 if (iconEntryProbe == "agent-background-resume") { AgentBackgroundResumeChecks(window, root); return; }
@@ -2138,20 +2204,20 @@ internal static partial class Program
     private static void Storage(string root)
     {
         string path = Path.Combine(root, "options.json");
-        AtomicJsonFile.Write(path, "{\"GreetingText\":\"第一次\"}");
-        AtomicJsonFile.Write(path, "{\"GreetingText\":\"第二次\"}");
-        Check(File.ReadAllText(path + ".bak").Contains("第一次"), "原子保存保留前一版备份");
+        AtomicJsonFile.Write(path, "{\"GreetingSeconds\":3}");
+        AtomicJsonFile.Write(path, "{\"GreetingSeconds\":4}");
+        Check(File.ReadAllText(path + ".bak").Contains("\"GreetingSeconds\":3"), "原子保存保留前一版备份");
         File.WriteAllText(path, "{broken");
-        Check(IslandOptions.Load(path).GreetingText == "第一次", "损坏设置从有效备份恢复");
+        Check(IslandOptions.Load(path).GreetingSeconds == 3, "损坏设置从有效备份恢复");
         Check(JsonDocument.Parse(File.ReadAllText(path)).RootElement.ValueKind == JsonValueKind.Object, "恢复文件保持有效 JSON");
         File.Delete(path + ".bak");
         File.WriteAllText(path, "{broken");
         var defaults = IslandOptions.Load(path);
         defaults.Save(path);
         Check(File.ReadAllText(path) == "{broken", "未修改设置时保护损坏原文件");
-        defaults.GreetingText = "用户修改";
+        defaults.GreetingSeconds = 6;
         defaults.Save(path, allowRecovery: true);
-        Check(IslandOptions.Load(path).GreetingText == "用户修改", "明确修改后允许恢复保存");
+        Check(IslandOptions.Load(path).GreetingSeconds == 6, "明确修改后允许恢复保存");
         string before = File.ReadAllText(path);
         try { AtomicJsonFile.Write(path, "{"); } catch (JsonException) { }
         Check(File.ReadAllText(path) == before, "无效 JSON 写入不破坏旧文件");

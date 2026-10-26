@@ -51,7 +51,7 @@
         </ResourceDictionary>
     </UserControl.Resources>
     <StackPanel x:Name="AiSettingsRoot">
-        <TextBlock Margin="2,26,0,8" Style="{StaticResource W11CardTitle}" Text="AI 对话"/>
+        <TextBlock Margin="0,26,0,16" Style="{StaticResource W11CardTitle}" Text="AI 对话"/>
         <Border Style="{StaticResource W11Card}">
             <StackPanel>
                 <Grid Style="{StaticResource W11Row}">

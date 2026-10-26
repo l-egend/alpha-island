@@ -155,6 +155,16 @@ namespace alpha_island.Controls
             set => SetValue(UniformColorProperty, value);
         }
 
+        public static readonly DependencyProperty ColorsAdaptedToBackgroundProperty =
+            DependencyProperty.Register(nameof(ColorsAdaptedToBackground), typeof(bool), typeof(SpectrumVisualizer),
+                new FrameworkPropertyMetadata(false, OnBrushChanged));
+
+        public bool ColorsAdaptedToBackground
+        {
+            get => (bool)GetValue(ColorsAdaptedToBackgroundProperty);
+            set => SetValue(ColorsAdaptedToBackgroundProperty, value);
+        }
+
         public double CenterEmphasis
         {
             get => (double)GetValue(CenterEmphasisProperty);
@@ -399,8 +409,8 @@ namespace alpha_island.Controls
 
             if (UniformColor)
             {
-                var color = ReadableAlbumColor(ColorLow);
-                var solid = new SolidColorBrush(Color.FromArgb(0xEE, color.R, color.G, color.B));
+                var color = ColorsAdaptedToBackground ? ColorLow : ReadableAlbumColor(ColorLow);
+                var solid = new SolidColorBrush(Color.FromArgb(ColorsAdaptedToBackground ? (byte)255 : (byte)0xEE, color.R, color.G, color.B));
                 solid.Freeze();
                 var glow = new SolidColorBrush(Color.FromArgb(0x35, color.R, color.G, color.B));
                 glow.Freeze();
@@ -412,8 +422,8 @@ namespace alpha_island.Controls
                 return;
             }
 
-            var ramp = new[] { ReadableAlbumColor(ColorLow), ReadableAlbumColor(ColorMid),
-                ReadableAlbumColor(ColorHigh), ReadableAlbumColor(ColorExtra) };
+            Color Resolve(Color value) => ColorsAdaptedToBackground ? value : ReadableAlbumColor(value);
+            var ramp = new[] { Resolve(ColorLow), Resolve(ColorMid), Resolve(ColorHigh), Resolve(ColorExtra) };
 
             for (int i = 0; i < n; i++)
             {
@@ -429,7 +439,7 @@ namespace alpha_island.Controls
         // Keep ordinary album colours unchanged. Lift only very dark tones and
         // lower near-white tones into a readable range; a neutral blend preserves
         // the source hue. This runs when cached brushes change, never per frame.
-        private static Color ReadableAlbumColor(Color color)
+        internal static Color ReadableAlbumColor(Color color)
         {
             double luma = (.2126 * color.R + .7152 * color.G + .0722 * color.B) / 255.0;
             double target = Math.Clamp(luma, .38, .74);

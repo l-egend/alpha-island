@@ -283,6 +283,7 @@ namespace alpha_island
             SetActive(PillSpectrum, pillActive);
             SetActive(CardWave, on && _state == IslandState.Card && _pages.ActiveId == IslandPageIds.Music && _options.ShowWaveLayer);
             SyncSpectrumWork();
+            SyncLyricRestIndicators();
         }
 
         private void SyncSpectrumWork()

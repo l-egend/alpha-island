@@ -27,17 +27,17 @@ internal static class ClipboardTextReader
 
     internal static string? ReadText(IReadApi api)
     {
-        if (!api.Open()) throw ReadFailure("打开剪切板失败");
+        if (!api.Open()) throw ReadFailure("打开剪贴板失败");
         try
         {
             // 文件载荷可能附带文件名文本，不能把它作为可右键代粘贴的文本记录。
             if (api.HasFiles() || !api.HasText()) return null;
             IntPtr handle = api.GetTextHandle();
-            if (handle == IntPtr.Zero) throw ReadFailure("获取剪切板文本失败");
+            if (handle == IntPtr.Zero) throw ReadFailure("获取剪贴板文本失败");
             ulong size = api.Size(handle);
             if (size < 2 || size > MaxTextBytes || (size & 1) != 0) return null;
             IntPtr pointer = api.Lock(handle);
-            if (pointer == IntPtr.Zero) throw ReadFailure("锁定剪切板文本失败");
+            if (pointer == IntPtr.Zero) throw ReadFailure("锁定剪贴板文本失败");
             try
             {
                 var bytes = new byte[(int)size];

@@ -6,8 +6,9 @@ using alpha_island.Services;
 
 namespace AlphaIsland.Plugins.ApiChat;
 
-public sealed class ApiChatPlugin : IIslandPlugin
+public sealed class ApiChatPlugin : IIslandPlugin, IPluginSuspendGuard
 {
+    public bool CanSuspend => _view?.CanSuspendForGame ?? true;
     private IPluginContext _context = null!;
     private PluginChatSettings _options = null!;
     private ApiChatView? _view;
@@ -77,6 +78,8 @@ public partial class ApiChatView : IDisposable
     private readonly Activity _activity;
     private bool _disposed;
     internal bool Ready => !_disposed && _context.ReadConfiguration("AiEnabled", false);
+    internal bool CanSuspendForGame => !_aiStreaming && _textInputRequest == null && AiInputBox.Text.Length == 0
+        && _chatHistoryWindow?.IsVisible != true && (!_aiLoaded || SaveAiHistory());
     public string Summary => _aiStreaming ? "正在回复" : "AI 对话";
     public ApiChatView(IPluginContext context)
     {

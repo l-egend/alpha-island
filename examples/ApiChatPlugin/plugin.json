@@ -1,1 +1,1 @@
-{"id":"ai.api-chat","name":"API 对话","version":"0.1.38","apiVersion":5,"wpfResources":true,"assembly":"AlphaIsland.Plugins.ApiChat.dll","entryType":"AlphaIsland.Plugins.ApiChat.ApiChatPlugin","description":"模型连接、流式对话、语音指令、桌面工具、本地自然语言提醒和按需系统状态；敏感检测与加密密钥仓。"}
+{"id":"ai.api-chat","name":"API 对话","version":"0.1.39","apiVersion":6,"wpfResources":true,"assembly":"AlphaIsland.Plugins.ApiChat.dll","entryType":"AlphaIsland.Plugins.ApiChat.ApiChatPlugin","description":"模型连接、流式对话、语音指令、桌面工具、本地自然语言提醒和按需系统状态；敏感检测与加密密钥仓。"}

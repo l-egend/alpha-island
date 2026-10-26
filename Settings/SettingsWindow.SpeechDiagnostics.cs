@@ -40,7 +40,7 @@ public partial class SettingsWindow
         content.Children.Add(new TextBlock { Text = "连接与模型测试", FontWeight = FontWeights.SemiBold });
         content.Children.Add(new TextBlock
         {
-            Text = "获取列表后选择支持语音识别的模型，也可手动输入。测试会发送 1 秒静音样本，验证当前接口、密钥和模型，不采集麦克风。",
+            Text = "测试发送 1 秒静音，不采集麦克风。",
             TextWrapping = TextWrapping.Wrap, Opacity = .75, Margin = new Thickness(0, 6, 0, 10)
         });
         var actions = new WrapPanel();

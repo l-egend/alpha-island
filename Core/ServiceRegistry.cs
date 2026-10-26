@@ -54,7 +54,7 @@ namespace alpha_island.Core
             Smtc => "系统媒体（SMTC）",
             Spectrum => "WASAPI 频谱采集",
             Lyrics => "歌词服务",
-            Clipboard => "剪切板与热键",
+            Clipboard => "剪贴板与热键",
             FileTransfer => "文件中转站",
             Volume => "系统音量监听",
             Battery => "电池状态监听",

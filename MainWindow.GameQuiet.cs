@@ -133,11 +133,13 @@ public partial class MainWindow
         if (_gameQuietActive == active) { RefreshDesktopAccess(); _assistantReminders?.TickNow(); return; }
         _gameQuietActive = active;
         SyncVolumeFlyoutTakeover();
+        SyncGameResourceBudget(active);
         alpha_island.Animation.AgentAvatarMotion.SetSuspended(active);
         _desktopInbox.DropPending(); // Never burst out with messages collected while gaming.
         FinishDesktopPopup();
         if (active)
         {
+            _notificationAudio?.Stop();
             if (_voiceAssistant?.Visible == true) _ = _voiceAssistant.CancelAsync();
             CancelMediaHandoff(); CancelAgentHandoff();
             CloseComponentSwitcher(); EndVolumeDrag(); EndIncomingFileDrag(restore: false);

@@ -47,6 +47,11 @@ public partial class MainWindow
         RegisterLiquidChrome(MusicOrbBubble); RegisterLiquidChrome(PinBubble); RegisterLiquidChrome(SideBubble);
         _glassLightTimer = new IslandTimer(Dispatcher, "glass-light") { Interval = TimeSpan.FromMilliseconds(700) };
         _glassLightTimer.Tick += async (_, _) => await SampleGlassLightAsync();
+        ComponentHandle.IsVisibleChanged += (_, _) =>
+        {
+            SyncGlassLightPacing();
+            if (ComponentHandle.IsVisible) _ = SampleGlassLightAsync();
+        };
         Loaded += (_, _) => { AttachLiquidAdorners(); ApplyLiquidGlassAppearance(); QueueLiquidRefresh(); };
         IsVisibleChanged += (_, _) => { if (!_glassDisposed) { SyncGlassLightPacing(); QueueLiquidRefresh(); } };
         LocationChanged += (_, _) => { _liquidHostBounds = Rect.Empty; QueueLiquidRefresh(); };
@@ -59,16 +64,30 @@ public partial class MainWindow
     {
         if (border == null || !_glassBorders.Add(border)) return;
         var contour = ReferenceEquals(border, IslandBody) ? _liquidShape : new LiquidIslandShape();
-        _liquidContours[border] = contour; border.Clip = contour.Geometry;
-        border.Loaded += (_, _) => { AttachLiquidAdorners(); QueueLiquidRefresh(); };
+        _liquidContours[border] = contour;
+        if (ReferenceEquals(border, IslandBody)) border.Clip = contour.Geometry;
+        else UpdateLiquidContour(border);
+        border.Loaded += (_, _) => { UpdateLiquidContour(border); AttachLiquidAdorners(); QueueLiquidRefresh(); };
         border.Unloaded += (_, _) =>
         {
             if (_glassChrome.Remove(border, out var chrome)) AdornerLayer.GetAdornerLayer(border)?.Remove(chrome);
             _liquidOrbMotions.Remove(border); RestoreLiquidEdge(border); LiquidMaterialOverlap.Apply(border, null);
             if (_liquidContours.TryGetValue(border, out var unloadedContour)) unloadedContour.SetContact();
         };
-        border.SizeChanged += (_, _) => { if (!_liquidFrameSubscribed) QueueLiquidRefresh(); };
-        border.IsVisibleChanged += (_, _) => QueueLiquidRefresh();
+        border.SizeChanged += (_, _) => { UpdateLiquidContour(border); if (!_liquidFrameSubscribed) QueueLiquidRefresh(); };
+        border.IsVisibleChanged += (_, _) => { if (border.IsVisible) UpdateLiquidContour(border); QueueLiquidRefresh(); };
+    }
+
+    private void UpdateLiquidContour(Border border)
+    {
+        // The main animator owns its contour. Secondary islands need a usable
+        // clip before the deferred backdrop pass, including their first frame.
+        if (ReferenceEquals(border, IslandBody) || !_liquidContours.TryGetValue(border, out var contour)) return;
+        double width = border.ActualWidth > 0 ? border.ActualWidth : border.Width;
+        double height = border.ActualHeight > 0 ? border.ActualHeight : border.Height;
+        if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0) return;
+        contour.Update(new(width, height, 0, border.CornerRadius));
+        if (!ReferenceEquals(border.Clip, contour.Geometry)) border.Clip = contour.Geometry;
     }
 
     private void AttachLiquidAdorners()
@@ -138,6 +157,7 @@ public partial class MainWindow
         // A cancelled or reused animation may not receive another composition
         // frame. Restore its material synchronously before it appears separately.
         _liquidOrbMotions.Remove(border);
+        UpdateLiquidContour(border);
         RestoreLiquidEdge(border); LiquidMaterialOverlap.Apply(border, null);
         if (_liquidContours.TryGetValue(border, out var contour)) contour.SetContact();
         if (_glassChrome.TryGetValue(border, out var chrome)) { chrome.JoinMask = null; chrome.InvalidateVisual(); }
@@ -201,9 +221,8 @@ public partial class MainWindow
         foreach (var pair in _liquidContours)
         {
             var border = pair.Key;
-            // The main animator owns its frame geometry; ActualWidth/Height can still be from the previous layout.
             if (!ReferenceEquals(border, IslandBody) && rects.ContainsKey(border))
-                pair.Value.Update(new(Math.Max(1, border.ActualWidth), Math.Max(1, border.ActualHeight), 0, border.CornerRadius));
+                UpdateLiquidContour(border);
         }
         void Contact(Border border, LiquidContact value, bool onLeft)
         {
@@ -368,7 +387,7 @@ public partial class MainWindow
     {
         if (_glassLightTimer == null) return;
         bool active = !_glassDisposed && _runtimeEnabled && IsVisible && !_sessionLocked
-            && (SpectrumBackdropNeeded || _backdrop is { IsAvailable: true } && NativeGlassAllowed && !MotionPolicy.InstantMorph)
+            && (HandleBackdropNeeded || SpectrumBackdropNeeded || _backdrop is { IsAvailable: true } && NativeGlassAllowed && !MotionPolicy.InstantMorph)
             && WindowState != System.Windows.WindowState.Minimized
             && _state != IslandState.Bar && !GameDoNotDisturbActive && !System.Windows.Forms.SystemInformation.TerminalServerSession;
         if (active) _glassLightTimer.Start(); else { _glassLightTimer.Stop(); _glassGeneration++; }
@@ -380,14 +399,18 @@ public partial class MainWindow
         var island = GlassRect(IslandBody, true); if (island.IsEmpty) return;
         var exclusions = _glassBorders.Select(border => GlassRect(border, true)).Where(rect => !rect.IsEmpty).ToArray();
         var area = DesktopLightSampler.DesktopBounds();
+        var surfaceProbe = SpectrumBackdropNeeded ? SpectrumSurfaceProbe(island) : null;
+        var handleProbe = ComponentHandleProbe();
         int generation = _glassGeneration;
         _glassSampling = true;
         try
         {
-            var result = await Task.Run(() => DesktopLightSampler.Capture(island, area, exclusions));
+            var result = await Task.Run(() => DesktopLightSampler.Capture(island, area, exclusions, surfaceProbe, handleProbe));
             if (_glassDisposed || generation != _glassGeneration || result == null) return;
             GlassLightSamples++; _glassLight = GlassLight.Blend(_glassLight, result.Value.Light, .68);
-            if (SpectrumBackdropNeeded) ApplySpectrumBackdrop(result.Value.Light.Brightness);
+            if (SpectrumBackdropNeeded) ApplySpectrumSample(result.Value);
+            if (HandleBackdropNeeded && result.Value.HandleBrightness is double handleBrightness)
+                ComponentHandle.AdaptToBackdrop(handleBrightness);
             foreach (var chrome in _glassChrome.Values) chrome.SetLight(_glassLight, true);
             _glassLightTimer!.Interval = TimeSpan.FromMilliseconds(result.Value.Milliseconds > 25 ? 3000 : result.Value.Milliseconds > 10 ? 1500 : 700);
         }

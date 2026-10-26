@@ -4,8 +4,10 @@
              Width="32" Height="32" ClipToBounds="False" IsHitTestVisible="False">
     <!-- The badge stays 32px; the ears extend 7px above it, inside the 48px island. -->
     <Canvas ClipToBounds="False">
-        <Border Width="32" Height="32" CornerRadius="16" Background="#2200E5FF"
-                BorderBrush="#4400E5FF" BorderThickness="1"/>
+        <Border Width="32" Height="32" CornerRadius="16" BorderThickness="1">
+            <Border.Background><SolidColorBrush Color="{Binding Color, Source={StaticResource AccentCyan}}" Opacity="0.133"/></Border.Background>
+            <Border.BorderBrush><SolidColorBrush Color="{Binding Color, Source={StaticResource AccentCyan}}" Opacity="0.267"/></Border.BorderBrush>
+        </Border>
         <Path Fill="#F5F8FF" Stroke="#B9CBDD" StrokeThickness="0.65"
               Data="M 9,17 C 6,12 5,-5 9,-7 C 13,-8 16,9 15,16 Z">
             <Path.RenderTransform><RotateTransform x:Name="LeftEarRotation" CenterX="12" CenterY="16"/></Path.RenderTransform>

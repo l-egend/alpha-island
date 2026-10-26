@@ -103,7 +103,8 @@ public partial class MainWindow
     private void ConfigureVoiceAssistant()
     {
         if (_voiceAssistant == null) return;
-        bool enabled = SettingsRegistry.GetBool(_options, "VoiceWakeEnabled", true) && SettingsRegistry.GetBool(_options, "AiEnabled", false);
+        bool enabled = !GameDoNotDisturbActive && !_sessionLocked && !_exiting
+            && SettingsRegistry.GetBool(_options, "VoiceWakeEnabled", true) && SettingsRegistry.GetBool(_options, "AiEnabled", false);
         string shortcut = SettingsRegistry.GetText(_options, "VoiceWakeShortcut", "Ctrl+Alt+V");
         _voiceHoldEnabled = enabled && SettingsRegistry.GetBool(_options, "VoiceWakeHoldEnabled", false);
         string signature = $"{enabled}|{shortcut}|{_voiceHoldEnabled}";
@@ -112,7 +113,11 @@ public partial class MainWindow
             _voiceConfiguration = signature; _voiceShortcut?.Dispose(); _voiceShortcut = null;
             _voiceGesture.Configure(_voiceHoldKey = Key.RightCtrl);
             _voiceHoldTimer?.Stop();
-            if (!enabled) { if (_voiceAssistant.Visible) _ = _voiceAssistant.CancelAsync(); _voiceHotkeyStatus = "配置并启用 API 对话后，可使用语音唤醒。"; }
+            if (!enabled)
+            {
+                if (_voiceAssistant.Visible) _ = _voiceAssistant.CancelAsync();
+                _voiceHotkeyStatus = GameDoNotDisturbActive ? "游戏期间暂停语音唤醒，结束后自动恢复。" : "配置并启用 API 对话后，可使用语音唤醒。";
+            }
             else if (_runtimeEnabled)
             {
                 try
@@ -131,7 +136,7 @@ public partial class MainWindow
     }
     private void SyncVoiceKeyHook()
     {
-        bool required = _runtimeEnabled && !_exiting && (_voiceHoldEnabled || VoiceIslandVisible);
+        bool required = _runtimeEnabled && !_exiting && !_sessionLocked && !GameDoNotDisturbActive && (_voiceHoldEnabled || VoiceIslandVisible);
         if (required == _voiceKeysRunning) return;
         if (required)
         {

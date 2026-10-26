@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using alpha_island.Animation;
 using alpha_island.Core;
 using alpha_island.Services;
 using NAudio.Wave;
@@ -80,6 +81,30 @@ internal static partial class Program
             && Math.Abs(main.GreetingCustomImage.ActualWidth / main.GreetingCustomImage.ActualHeight - 2) < .001,
             "自选图片保持原有欢迎图标与胶囊布局尺寸");
         Directory.CreateDirectory("bin/WelcomeMedia150/previews"); SaveThemePreview(main.GreetingLayer, "bin/WelcomeMedia150/previews/welcome-custom-image.png");
+        string gifSource = Path.Combine(folder, "animated.gif");
+        var gifEncoder = new GifBitmapEncoder();
+        gifEncoder.Frames.Add(BitmapFrame.Create(bitmap));
+        var pixels2 = new byte[1024 * 512 * 4];
+        for (int i = 0; i < pixels2.Length; i += 4) { pixels2[i] = 30; pixels2[i + 1] = 220; pixels2[i + 2] = 245; pixels2[i + 3] = 255; }
+        gifEncoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(1024, 512, 96, 96, PixelFormats.Bgra32, null, pixels2, 4096)));
+        using (var file = File.Create(gifSource)) gifEncoder.Save(file);
+        string importedGif = store.ImportImage(gifSource);
+        var gifFrames = GreetingMediaStore.LoadFrames(importedGif);
+        Check(Path.GetExtension(importedGif) == ".gif" && gifFrames.Length == 2 && gifFrames.All(f => f.Image.IsFrozen && f.Image.PixelWidth == 128 && f.Image.PixelHeight == 64),
+            "欢迎动图导入保留 GIF 副本并解码为冻结的缩略帧序列");
+        Check(GreetingPresetCatalog.LoadFrames(importedGif, firstFrameOnly: true).Length == 1,
+            "自定义 GIF 静态预览只解码一帧，完整播放仍保留全部帧");
+        bool reduced = MotionPolicy.ReduceMotion, saving = MotionPolicy.PowerSave; int tier = MotionPolicy.RenderTier;
+        try
+        {
+            MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
+            SettingsRegistry.Write(options, "GreetingImagePath", importedGif); PrivateCall(main, "ApplyGreetingMedia");
+            var firstFrame = main.GreetingCustomImage.Source;
+            PrivateCall(main, "OnGreetingImageTick", null, EventArgs.Empty);
+            Check(MotionPolicy.InstantMorph || !ReferenceEquals(firstFrame, main.GreetingCustomImage.Source),
+                "欢迎展示且允许动画时，自定义 GIF 按帧切换左侧图片");
+        }
+        finally { MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduced, saving); }
         SettingsRegistry.Write(options, "GreetingImagePath", Path.Combine(folder, "missing.png")); PrivateCall(main, "ApplyGreetingMedia");
         Check(main.GreetingCustomImage.Source == null && main.GreetingIcon.Visibility == Visibility.Visible, "欢迎图片缺失时回退默认兔子，不影响提示启动");
         Check(AgentField<GreetingAudioPlayer?>(main, "_greetingAudio") == null, "隔离 UI 检查不会播放真实声音或访问系统音频设备");
@@ -117,6 +142,7 @@ internal static partial class Program
                 && !File.Exists(selected) && !File.Exists(selectedSound) && File.Exists(moved), "恢复默认在成功保存后只清理旧导入副本，保留用户原始文件");
         }
         finally { host.RootVisual = null; settings.ForceClose = true; settings.Close(); }
+        GreetingPresetChecks(main, testRoot);
     }
 
     private sealed class GreetingWaveOutput : IWavePlayer

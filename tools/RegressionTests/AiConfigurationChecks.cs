@@ -13,7 +13,7 @@ internal static partial class Program
     private static void AiConfigurationChecks(string testRoot)
     {
         string root = Path.Combine(testRoot, "configuration"); Directory.CreateDirectory(root);
-        var options = new IslandOptions { GreetingText = "原有问候语", GlassOpacity = .23 };
+        var options = new IslandOptions { GreetingSeconds = 6, GlassOpacity = .23 };
         SettingsRegistry.SetExtra(options, "AiModel", "test-model");
         SettingsRegistry.SetExtra(options, "PomodoroFocusMinutes", 57);
         SettingsRegistry.SetExtra(options, "plugin/vivo.office/enabled", true);
@@ -32,7 +32,7 @@ internal static partial class Program
         Directory.CreateDirectory(Path.Combine(root, "plugins")); File.WriteAllText(Path.Combine(root, "plugins", "fixture.dll"), "plugin");
         ConfigurationLayout.Migrate(root);
         var migrated = IslandOptions.Load(ConfigurationLayout.OptionsFile(root));
-        Check(migrated.GreetingText == options.GreetingText && migrated.GlassOpacity == .23, "集中目录迁移保留全局配置");
+        Check(migrated.GreetingSeconds == options.GreetingSeconds && migrated.GlassOpacity == .23, "集中目录迁移保留全局配置");
         Check(SettingsRegistry.GetText(migrated, "AiModel", "") == "test-model"
             && SettingsRegistry.GetInt(migrated, "PomodoroFocusMinutes", 0) == 57, "AI 与番茄钟配置同在 options.json 并完整迁移");
         Check(SettingsRegistry.GetBool(migrated, "plugin/vivo.office/enabled", false)
@@ -51,7 +51,7 @@ internal static partial class Program
         Check(Directory.GetFiles(root, "*", SearchOption.AllDirectories).Length == files && AiSecretStore.Load(secrets) == TestApiKey, "重复启动迁移幂等");
         File.WriteAllText(Path.Combine(root, "options.json"), "{\"GreetingText\":\"过时版本\"}");
         ConfigurationLayout.Migrate(root);
-        Check(IslandOptions.Load(ConfigurationLayout.OptionsFile(root)).GreetingText == options.GreetingText
+        Check(IslandOptions.Load(ConfigurationLayout.OptionsFile(root)).GreetingSeconds == options.GreetingSeconds
             && Directory.GetFiles(Path.Combine(root, "config", "backups"), "legacy-*-options.json").Length == 1, "新配置优先，旧冲突文件归档而不覆盖");
         options.Extras["AiApiKey"] = JsonSerializer.SerializeToElement(TestApiKey);
         string unsafePath = Path.Combine(testRoot, "no-plaintext-options.json"); options.Save(unsafePath);
@@ -78,9 +78,9 @@ internal static partial class Program
         Check(failed && File.ReadAllText(failedOptions) == original, "旧密钥加密失败时保留原配置以便恢复");
         string corruptRoot = Path.Combine(testRoot, "corrupt-migration"); Directory.CreateDirectory(corruptRoot);
         File.WriteAllText(Path.Combine(corruptRoot, "options.json"), "{broken");
-        File.WriteAllText(Path.Combine(corruptRoot, "options.json.bak"), "{\"GreetingText\":\"恢复的配置\"}");
+        File.WriteAllText(Path.Combine(corruptRoot, "options.json.bak"), "{\"GreetingSeconds\":8}");
         ConfigurationLayout.Migrate(corruptRoot);
-        Check(IslandOptions.Load(ConfigurationLayout.OptionsFile(corruptRoot)).GreetingText == "恢复的配置", "损坏设置迁移后仍可从备份恢复");
+        Check(IslandOptions.Load(ConfigurationLayout.OptionsFile(corruptRoot)).GreetingSeconds == 8, "损坏设置迁移后仍可从备份恢复");
         Check(!IslandLog.DumpText().Contains(TestApiKey), "加密、迁移和失败日志不包含测试密钥");
         string codexOld = Path.Combine(testRoot, "codex-config.json");
         const string codexJson = "{\"endpoint\":\"http://127.0.0.1:8765/\",\"approvalMode\":\"native\",\"projectRoot\":\"test-project\",\"runtimeDir\":\"test-runtime\"}";

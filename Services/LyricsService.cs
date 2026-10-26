@@ -6,31 +6,14 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using alpha_island.Core;
 
 namespace alpha_island.Services
 {
     /// <summary>
-    /// 歌词获取：用 SMTC 给的「曲名 + 艺术家 + 时长」按顺序尝试多个歌词源。
-    ///
-    /// 源优先级（网易云 > LRCLIB > 酷狗）：
-    ///   1. 网易云  —— 中文曲库最全，还带翻译(tlyric)与逐字(yrc)。
-    ///   2. LRCLIB  —— 社区歌词库，条目自带规范的 trackName/artistName/albumName/duration，
-    ///                 元数据可交叉核验，专门用来纠正同名翻唱、现场版、伴奏被错配的问题。
-    ///   3. 酷狗    —— 兜底，覆盖网易云无版权而酷狗有的曲目。
-    ///
-    /// 三者**并发竞速**而不是串行等待：网易云有 1.2s 优先窗口（它信息最全），
-    /// 超出窗口后谁先拿到合格结果就用谁，整轮 15s 封顶。
-    /// 串行版本实测最坏能拖到一两分钟（网易云 7 条 query + LRCLIB 3 条 + 酷狗 3 条，
-    /// 每条 HTTP 上限 12s），而且任一源超时都会把整条链中止 —— 表现就是"歌都唱一半了还没歌词"。
-    ///
-    /// 为什么走网络而不是读本地缓存：
-    ///  * 网易云 3.x 的歌词不再落地成 .lrc 文件（%LOCALAPPDATA%\Netease\CloudMusic 下翻不到），
-    ///    只存在它的私有 webdb.dat 里，格式随版本变，解析不值当。
-    ///  * 官方/非官方公开的 web API 稳定且无需登录即可取歌词，还能顺带拿到翻译。
-    ///
-    /// 只在换曲时请求一次，结果按「曲名|艺术家」缓存，不轮询。
+    /// 根据歌曲元数据查询内置、外部接口或本地歌词，并缓存已匹配结果。
     /// </summary>
-    public sealed class LyricsService : IDisposable
+    public sealed partial class LyricsService : IDisposable
     {
         private const string SearchUrl = "https://music.163.com/api/cloudsearch/pc?s={0}&type=1&limit=10";
         // 注意：lv/kv/tv/rv/yv 都是"只要出现就返回对应段落"，取值本身被忽略。
@@ -39,6 +22,10 @@ namespace alpha_island.Services
 
         private readonly HttpClient _http;
         private readonly ConcurrentDictionary<string, LyricsDocument?> _cache = new();
+        private readonly LocalLyricsStore _local;
+        private LyricsSourceDefinition[] _sources = LyricsSourceSettings.Defaults().ToArray();
+        private string _sourceSignature = "";
+        private int _configurationVersion;
 
         /// <summary>低于这个匹配分就不显示歌词，避免张冠李戴。</summary>
         public double MinScore { get; set; } = 80.0;
@@ -48,8 +35,9 @@ namespace alpha_island.Services
         public LyricsService() : this(new HttpClientHandler
         { AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate }) { }
 
-        internal LyricsService(HttpMessageHandler handler)
+        internal LyricsService(HttpMessageHandler handler, LocalLyricsStore? local = null)
         {
+            _local = local ?? new LocalLyricsStore();
             _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(12) };
             // 网易云对空 UA 会返回 403/HTML
             _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
@@ -58,8 +46,20 @@ namespace alpha_island.Services
             _http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
         }
 
+        public bool Configure(IslandOptions options)
+        {
+            var sources = LyricsSourceSettings.Read(options).ToArray();
+            string signature = JsonSerializer.Serialize(sources) + SettingsRegistry.GetText(options, "LyricsLibraryRevision", "");
+            if (_sourceSignature == signature) return false;
+            _sourceSignature = signature;
+            System.Threading.Volatile.Write(ref _sources, sources);
+            Interlocked.Increment(ref _configurationVersion);
+            _cache.Clear(); _local.Reload();
+            return true;
+        }
+
         public bool TryGetCached(string title, string artist, TimeSpan duration, out LyricsDocument? doc, string album = "")
-            => _cache.TryGetValue(CacheKey(title, artist, duration, album), out doc);
+            => _cache.TryGetValue(Volatile.Read(ref _configurationVersion) + "|" + CacheKey(title, artist, duration, album), out doc);
 
         internal static string CacheKey(string title, string artist, TimeSpan duration, string album = "")
             => title.Trim().ToUpperInvariant() + "|" + artist.Trim().ToUpperInvariant() + "|" +
@@ -73,57 +73,36 @@ namespace alpha_island.Services
             if (!Enabled) return null;
             if (string.IsNullOrWhiteSpace(title)) return null;
 
-            string key = CacheKey(title, artist, duration, album);
+            int configurationVersion = Volatile.Read(ref _configurationVersion);
+            string key = configurationVersion + "|" + CacheKey(title, artist, duration, album);
             if (_cache.TryGetValue(key, out var cached)) return cached;
 
+            var sources = Volatile.Read(ref _sources).Where(s => s.Enabled).ToArray();
+            if (sources.Length == 0) return null;
+            ct.ThrowIfCancellationRequested();
             LyricsDocument? doc = null;
-
-            // —— 三源并发竞速 ——
-            // 旧实现是「网易云(7 条 query 串行) → LRCLIB(3 条) → 酷狗(3 条)」全串行，每次 HTTP 上限 12s，
-            // 最坏能拖到一两分钟；而且任一源超时抛出的 OperationCanceledException 会把整条链中止
-            //（HttpClient 超时和"切歌取消"在异常上无法区分），表现就是"歌都唱一半了还没歌词"。
-            // 现在三个源同时开跑：网易云信息最全（带翻译/逐字），给它 1.2s 优先窗口，
-            // 超过窗口后谁先拿到合格结果就用谁；整轮由闸门 20s 封顶，绝不无限等。
             using var gate = CancellationTokenSource.CreateLinkedTokenSource(ct);
             gate.CancelAfter(TimeSpan.FromSeconds(20));
-
-            var neteaseTask = FetchNetEaseAsync(title, artist, duration, gate.Token, album);
-            var lrclibTask = FetchLrclibLyricsAsync(title, artist, duration, gate.Token, album);
-            var kugouTask = FetchKugouLyricsAsync(title, artist, duration, gate.Token, album);
-
-            var neteaseFirst = await Task.WhenAny(neteaseTask, Task.Delay(1200, gate.Token)).ConfigureAwait(false);
-            if (neteaseFirst == neteaseTask)
+            if (sources[0].Kind == "local")
             {
-                try { doc = await neteaseTask.ConfigureAwait(false); }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                catch (Exception ex) { Debug.WriteLine("[Lyrics] 网易云源失败: " + ex.Message); }
+                doc = _local.Find(title, artist, album, duration);
+                sources = sources.Skip(1).ToArray();
             }
-
-            if (doc == null || !doc.HasLyrics)
+            if (doc == null && sources.Length > 0)
             {
-                var pending = new List<Task<LyricsDocument?>> { neteaseTask, lrclibTask, kugouTask };
-                while (pending.Count > 0)
+                var pending = sources.Select(s => FetchSourceSafelyAsync(s, title, artist, duration, album, gate.Token)).ToList();
+                var first = pending[0];
+                await Task.WhenAny(first, Task.Delay(1200, gate.Token)).ConfigureAwait(false);
+                if (first.IsCompletedSuccessfully && first.Result is { HasLyrics: true } preferred) doc = preferred;
+                while (doc == null && pending.Count > 0 && !gate.IsCancellationRequested)
                 {
-                    var done = await Task.WhenAny(pending).ConfigureAwait(false);
-                    pending.Remove(done);
-                    try
-                    {
-                        var got = await done.ConfigureAwait(false);
-                        if (got != null && got.HasLyrics)
-                        {
-                            doc = got;
-                            break;
-                        }
-                    }
-                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                    catch (Exception ex) { Debug.WriteLine("[Lyrics] 某个源失败，继续等其它源: " + ex.Message); }
+                    await Task.WhenAny(pending).ConfigureAwait(false);
+                    foreach (var task in pending.Where(t => t.IsCompleted).ToArray())
+                    { pending.Remove(task); if (await task.ConfigureAwait(false) is { HasLyrics: true } found) { doc = found; break; } }
                 }
             }
-
-            // 已经有合格结果：撤掉还在跑的源，别白烧流量
-            if (doc != null && doc.HasLyrics) gate.Cancel();
-
-            // 仅对成功拿到歌词的结果持久缓存；网络抖动或偶发未匹配不缓存 null，保留后续重试能力
+            gate.Cancel(); ct.ThrowIfCancellationRequested();
+            if (configurationVersion != Volatile.Read(ref _configurationVersion)) return null;
             if (doc != null && doc.HasLyrics)
             {
                 _cache[key] = doc;

@@ -29,7 +29,14 @@ try {
     $executable = Join-Path $projectRoot "tools\RegressionTests\bin\$Configuration\net8.0-windows10.0.19041.0\AlphaIsland.RegressionTests.exe"
     if ($runtimeOutput) { $executable = Join-Path $runtimeOutput 'AlphaIsland.RegressionTests.exe' }
     $flags = @(
-        '--agent-completion-visual-only','--cross-machine-compatibility-only','--volume-flyout-only','--api-model-avatar-only','--runtime-reliability-only','--interaction-feedback-only','--greeting-handoff-only','--startup-morph-only','--greeting-media-only','--weather-only','--settings-icon-media-pin-only','--boot-timing-only','--notification-logo-fit-only','--short-hints-only','--speech-setup-only','--hint-bounds-only','--bluetooth-identity-only','--speech-protocol-only','--speech-caption-only','--notification-refinement-only','--semantic-icons-only','--redesigned-icons-only','--api-persona-only','--island-information-only','--api-chat-input-only','--voice-assistant-only','--receiver-latency-only',
+        '--media-lyrics-controls-only',
+        '--lyric-rest-only',
+        '--settings-lyrics-only',
+        '--game-resource-budget-only',
+        '--weather-content-layout-only',
+        '--notification-weather-layout-only',
+        '--ui-refinement-only',
+        '--caption-modes-only','--greeting-once-only','--amiya-handle-only','--spectrum-visibility-only','--greeting-notification-sound-only','--satellite-material-only','--plugin-button-stability-only','--theme-controls-only','--theme-cohesion-only','--agent-completion-visual-only','--cross-machine-compatibility-only','--volume-flyout-only','--api-model-avatar-only','--runtime-reliability-only','--interaction-feedback-only','--greeting-handoff-only','--startup-morph-only','--greeting-media-only','--weather-only','--settings-icon-media-pin-only','--boot-timing-only','--notification-logo-fit-only','--short-hints-only','--speech-setup-only','--hint-bounds-only','--bluetooth-identity-only','--speech-protocol-only','--speech-caption-only','--notification-refinement-only','--semantic-icons-only','--redesigned-icons-only','--api-persona-only','--island-information-only','--api-chat-input-only','--voice-assistant-only','--receiver-latency-only',
         '--media-peripheral-lifecycle-only','--resident-memory-only','--keyboard-spectrum-only','--gaming-notifications-only','--gaming-memory-only',
         '--peripheral-interactions-only','--earbuds-plugin-only',
         '--screen-tools-open-only','--personal-reminders-only','--desktop-insights-only',

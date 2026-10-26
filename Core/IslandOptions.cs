@@ -54,8 +54,11 @@ namespace alpha_island.Core
         // ---------- 启动问候 ----------
         /// <summary>启动时是否弹出一级胶囊展示欢迎问候语。</summary>
         public bool GreetingEnabled { get; set; } = true;
-        /// <summary>欢迎问候语文本，默认“欢迎回来”。</summary>
-        public string GreetingText { get; set; } = "欢迎回来";
+        private bool _retiredGreetingText;
+        [System.Text.Json.Serialization.JsonInclude]
+        [System.Text.Json.Serialization.JsonPropertyName("GreetingText")]
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        internal string? LegacyGreetingText { get => null; set => _retiredGreetingText = true; }
         /// <summary>问候语停留秒数，1.5~10（下限即程序启动到服务就绪的平均耗时）。</summary>
         public double GreetingSeconds { get; set; } = 4;
 
@@ -107,7 +110,6 @@ namespace alpha_island.Core
             VolumeNotifyEnabled = other.VolumeNotifyEnabled;
             VolumeNotifySeconds = other.VolumeNotifySeconds;
             GreetingEnabled = other.GreetingEnabled;
-            GreetingText = other.GreetingText;
             GreetingSeconds = other.GreetingSeconds;
             BluetoothNotifyEnabled = other.BluetoothNotifyEnabled;
             BluetoothNotifySeconds = other.BluetoothNotifySeconds;
@@ -151,7 +153,7 @@ namespace alpha_island.Core
                 {
                     if (!File.Exists(candidate)) continue;
                     var loaded = AtomicJsonFile.Read<IslandOptions>(candidate, JsonOptions);
-                    bool retiredPreference = loaded != null && SettingsMigration.Required(loaded)
+                    bool retiredPreference = loaded != null && (SettingsMigration.Required(loaded) || loaded._retiredGreetingText)
                         || loaded?.Extras?.ContainsKey("HardwarePowerElevatedReader") == true
                         || loaded?.Extras?.ContainsKey("MemoryTrimEnabled") == true;
                     loaded = loaded?.Normalized();
@@ -222,8 +224,6 @@ namespace alpha_island.Core
             BluetoothNotifySeconds = Math.Clamp(BluetoothNotifySeconds, 2, 30);
             BatteryNotifySeconds = Math.Clamp(BatteryNotifySeconds, 2, 10);
 
-            if (LooksCorrupted(GreetingText)) GreetingText = "欢迎回来";
-
             // 注册表里的设置项（含 Extras 里新功能的项）统一夹取 + 补齐缺的键。
             // 上面那些逐项夹取保持原样：它们是历史行为，改动风险大于收益。
             Extras ??= new Dictionary<string, JsonElement>();
@@ -241,25 +241,5 @@ namespace alpha_island.Core
         private static double ClampDouble(double value, double fallback, double min, double max)
             => double.IsNaN(value) ? fallback : Math.Clamp(value, min, max);
 
-        /// <summary>
-        /// 判断字符串是不是"编码事故"的产物。
-        /// 历史 bug：options.json 被 GBK 编辑器改写后，GreetingText 变成 "娆㈣繋鍥炴潵" 这种
-        /// UTF-8-被当成-GBK 读出来的乱码，界面上显示成一堆怪字。
-        /// 这里不枚举具体乱码字（枚举不全且必然会漏），只挡三类特征：
-        ///   替换字符 U+FFFD、私用区 U+E000~U+F8FF（乱码高发区）、除 \t 以外的控制字符。
-        /// </summary>
-        private static bool LooksCorrupted(string? text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return true;
-
-            foreach (char ch in text)
-            {
-                if (ch == '\uFFFD') return true;
-                if (ch >= '\uE000' && ch <= '\uF8FF') return true;
-                if (ch < '\u0020' && ch != '\t') return true;
-            }
-
-            return false;
-        }
     }
 }

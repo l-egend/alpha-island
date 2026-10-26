@@ -6,7 +6,7 @@ using NAudio.Wave;
 namespace alpha_island.Services;
 
 /// <summary>A single bounded playback, with no device, stream or timer retained after stopping.</summary>
-internal sealed class GreetingAudioPlayer(Dispatcher dispatcher, Func<IWavePlayer>? outputFactory = null) : IDisposable
+internal sealed class GreetingAudioPlayer(Dispatcher dispatcher, Func<IWavePlayer>? outputFactory = null, Func<Stream>? defaultSoundFactory = null) : IDisposable
 {
     private IWavePlayer? _output;
     private WaveStream? _stream;
@@ -23,7 +23,8 @@ internal sealed class GreetingAudioPlayer(Dispatcher dispatcher, Func<IWavePlaye
         if (volume <= 0) return;
         try
         {
-            _stream = string.IsNullOrWhiteSpace(path) ? new WaveFileReader(OpenDefaultSound()) : new AudioFileReader(path);
+            _stream = GreetingPresetCatalog.IsBuiltInSound(path) ? new WaveFileReader(GreetingPresetCatalog.OpenBuiltInSound(path))
+                : string.IsNullOrWhiteSpace(path) ? new WaveFileReader(defaultSoundFactory?.Invoke() ?? OpenDefaultSound()) : new AudioFileReader(path);
             if (_stream.TotalTime <= TimeSpan.Zero || _stream.TotalTime.TotalSeconds > GreetingMediaStore.MaxSoundSeconds)
                 throw new InvalidDataException("欢迎音效长度不能超过 10 秒。");
             var output = outputFactory?.Invoke() ?? new WaveOutEvent(); _output = output;

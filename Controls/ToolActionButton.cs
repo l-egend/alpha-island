@@ -23,7 +23,8 @@ internal sealed class ToolActionButton : Button
 
     internal ToolActionButton(string title, string glyph, string? detail, Action action)
     {
-        Margin = new Thickness(3); Padding = new Thickness(10, 7, 10, 7);
+        Margin = new Thickness(3); Padding = new Thickness(10, detail == null ? 4 : 7, 10, detail == null ? 4 : 7);
+        UseLayoutRounding = true; SnapsToDevicePixels = true;
         HorizontalContentAlignment = HorizontalAlignment.Stretch; VerticalContentAlignment = VerticalAlignment.Center;
         Foreground = Brushes.White; Cursor = System.Windows.Input.Cursors.Hand;
         ToolTip = detail == null ? title : title + " · " + detail;
@@ -35,7 +36,8 @@ internal sealed class ToolActionButton : Button
             Foreground = new SolidColorBrush(Color.FromRgb(110, 230, 245)), VerticalAlignment = VerticalAlignment.Center };
         panel.Children.Add(icon);
         var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        labels.Children.Add(new TextBlock { Text = title, FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White });
+        labels.Children.Add(new TextBlock { Text = title, FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White,
+            TextTrimming = TextTrimming.CharacterEllipsis });
         if (detail != null) labels.Children.Add(new TextBlock { Text = detail, FontSize = 9.5, Foreground = Ink(175), Margin = new Thickness(0, 3, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis });
         Grid.SetColumn(labels, 1); panel.Children.Add(labels);
         _surface = new Border { CornerRadius = new CornerRadius(10), Background = Ink(20), BorderBrush = Ink(30), BorderThickness = new Thickness(1), Child = panel, Padding = Padding };

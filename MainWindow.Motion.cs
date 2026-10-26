@@ -70,7 +70,7 @@ namespace alpha_island
 
             if (_runtimeEnabled && !_exiting)
             {
-                if (hasMedia)
+                if (hasMedia && !GameDoNotDisturbActive)
                 {
                     if (!_progressTimer.IsEnabled) _progressTimer.Start();
                     if (_ticker != null && !_ticker.IsRegistered(MediaEvidenceTickerKey))
@@ -91,6 +91,8 @@ namespace alpha_island
         private void SyncHoverPacing()
         {
             if (!_runtimeEnabled || !IsLoaded || _exiting || _hoverTimer == null || _ticker == null) return;
+            if (GameDoNotDisturbActive)
+            { _hoverTimer.Stop(); _ticker.Unregister(IdleHoverTickerKey); return; }
             bool idle = _state == IslandState.Bar && !HasActiveNotification && !_fileDragActive
                 && !ComponentSwitchGestureActive && _animator?.IsRunning != true && !_widthOnlyMorph;
             if (idle)

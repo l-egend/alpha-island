@@ -18,7 +18,7 @@ public partial class SettingsWindow
     private FrameworkElement _pomodoroSettingsPanel = null!;
     private void AddPomodoroSettings()
     {
-        var panel = new StackPanel();
+        var panel = new StackPanel { Margin = new Thickness(0, 18, 0, 0) };
 
         var group = new StackPanel();
         foreach (var descriptor in SettingsRegistry.All.Where(x => x.Key.StartsWith("Pomodoro", StringComparison.Ordinal)))

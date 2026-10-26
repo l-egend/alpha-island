@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -42,6 +44,8 @@ internal sealed class MediaWindowService : IDisposable
     private IntPtr _window;
     private IntPtr _explicitWindow;
     private uint _explicitProcess;
+    // Retain three inactive frames plus the current one; no extra capture timers.
+    private readonly Dictionary<IntPtr, (uint Process, BitmapSource Frame, long LastUsed)> _trackedSnapshots = new();
     private Rect _bounds;
     private DwmTransitionLease? _transitions;
     private IntPtr _transitionFailure;
@@ -88,6 +92,7 @@ internal sealed class MediaWindowService : IDisposable
     {
         var profile = MediaHandoffPolicy.Source(source ?? "");
         if (_kind == profile.Kind && _process == profile.Process && _explicitWindow == IntPtr.Zero) return;
+        _trackedSnapshots.Clear();
         _explicitWindow = IntPtr.Zero; _explicitProcess = 0;
         ReleaseTransitions();
         _kind = profile.Kind; _process = profile.Process; _epoch++;
@@ -103,12 +108,29 @@ internal sealed class MediaWindowService : IDisposable
         NativeMethods.GetWindowThreadProcessId(target.Handle, out uint process);
         if (target.ProcessId != 0 && target.ProcessId != process) return;
         if (_explicitWindow == target.Handle && _explicitProcess == process) return;
+        var snapshot = SwitchTrackedSnapshot(target.Handle, process);
         ReleaseTransitions(); _epoch++; _captureEpoch++;
         _explicitWindow = target.Handle; _explicitProcess = process;
         _process = target.Process; _kind = MediaWindowKind.DesktopPlayer;
         _window = target.Handle; _bounds = ReadBounds(target.Handle);
-        Snapshot = null; _minimizeSignaled = false; _nextResolve = 0; _nextCapture = 0;
+        Snapshot = snapshot; _minimizeSignaled = false; _nextResolve = 0; _nextCapture = 0;
         SuppressTransitions(); Publish(); Refresh();
+    }
+
+    private BitmapSource? SwitchTrackedSnapshot(IntPtr window, uint process)
+    {
+        var next = _trackedSnapshots.Remove(window, out var cached) && cached.Process == process ? cached.Frame : null;
+        if (Snapshot != null && _explicitWindow != IntPtr.Zero && MatchesTrackedWindow(_explicitWindow))
+            _trackedSnapshots[_explicitWindow] = (_explicitProcess, Snapshot, Environment.TickCount64);
+        foreach (var entry in _trackedSnapshots.ToArray())
+        {
+            NativeMethods.GetWindowThreadProcessId(entry.Key, out uint currentProcess);
+            if (!NativeMethods.IsWindow(entry.Key) || currentProcess != entry.Value.Process)
+                _trackedSnapshots.Remove(entry.Key);
+        }
+        while (_trackedSnapshots.Count > 3)
+            _trackedSnapshots.Remove(_trackedSnapshots.MinBy(entry => entry.Value.LastUsed).Key);
+        return next;
     }
 
     private bool MatchesTrackedWindow(IntPtr window)
@@ -330,6 +352,6 @@ internal sealed class MediaWindowService : IDisposable
         if (_foregroundHook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_foregroundHook);
         if (_minimizeHook != IntPtr.Zero) NativeMethods.UnhookWinEvent(_minimizeHook);
         if (_callbackRoot.IsAllocated) _callbackRoot.Free();
-        Snapshot = null; Changed = null; Minimizing = null; WindowActivityChanged = null;
+        Snapshot = null; _trackedSnapshots.Clear(); Changed = null; Minimizing = null; WindowActivityChanged = null;
     }
 }

@@ -164,6 +164,7 @@ namespace alpha_island
             }
             // 续期只更新内容与有效期；新事件才自动接管主岛。
             bool promoteToMain = _layers.Hub.ShouldPromoteToMain(notification);
+            bool alreadyActive = _layers.IsActive(notification.Key);
             // 先登记生命周期，再更新形态和主岛；中途同步必须已经能看见新通知。
             if (!_layers.Request(notification, requestSync: false)) return false;
             // Keep an automatic desktop/boot popup visible for its promised display time.
@@ -200,6 +201,7 @@ namespace alpha_island
             if (notification.OpensIsland && _state != IslandState.Pill
                 && (_state == IslandState.Bar || !notification.DeferredInCard)) SetState(IslandState.Pill);
             SyncNotificationLayers();
+            PlayNotificationSound(notification, alreadyActive);
             return true;
         }
 
@@ -303,7 +305,7 @@ namespace alpha_island
         private string SideBubbleLabel(string key) => IsAgentIslandKey(key) ? AgentLabel(key) : key switch
         {
             "music" => "媒体播放器",
-            "clipboard" => "剪切板",
+            "clipboard" => "剪贴板",
             "download" => "下载任务",
             "volume" => "音量",
             "battery" => "电量提醒",
@@ -311,7 +313,7 @@ namespace alpha_island
             "netspeed" => "实时网速",
             "status" => "系统状态",
             "charging" => "电池电量",
-            ChargingPreviewIslandKey => "充电小岛测试",
+            ChargingPreviewIslandKey => "充电提示测试",
             "system" => "系统状态",
             DesktopToastKey => _notificationSummary.Title.Text,
             "agentstatus" => "助手忙碌",

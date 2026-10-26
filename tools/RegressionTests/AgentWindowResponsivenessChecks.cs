@@ -77,15 +77,15 @@ internal static partial class Program
             typeof(MediaWindowService).GetProperty("Snapshot", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(tracker, null);
             fixture.Activated = null;
             var open = (Task)PrivateCall(window, "OpenAgentWindowAsync", fixture.Windows[1])!;
-            Check(!open.IsCompleted && AgentField<alpha_island.Animation.MediaHandoffOverlay?>(window, "_agentHandoff") != null,
-                "窗口截图尚未缓存时，点击助手也立即进入出岛放大动画");
+            Check(!open.IsCompleted && (AgentField<bool>(window, "_agentHandoffPreparing") || AgentField<alpha_island.Animation.MediaHandoffOverlay?>(window, "_agentHandoff") != null),
+                "窗口截图尚未缓存时，点击助手立即异步准备真实画面且不阻塞界面");
             Until(()=>open.IsCompleted,1500);
             Check(open.IsCompletedSuccessfully && fixture.Activated?.Handle==ag.Handle,
                 "未缓存窗口的放大动画完成后正常打开助手，并回收动画代理");
             NativeMethods.ShowWindowAsync(ag.Handle,6);Until(()=>NativeMethods.IsIconic(ag.Handle),400);
             PumpAnimations(40);PrivateCall(window,"CancelAgentHandoff");fixture.Foreground=ag.Handle;
             var minimizedOpen=(Task)PrivateCall(window,"OpenAgentWindowAsync",fixture.Windows[1])!;
-            Check(!minimizedOpen.IsCompleted && AgentField<alpha_island.Animation.MediaHandoffOverlay?>(window,"_agentHandoff")!=null,
+            Check(!minimizedOpen.IsCompleted && (AgentField<bool>(window,"_agentHandoffPreparing") || AgentField<alpha_island.Animation.MediaHandoffOverlay?>(window,"_agentHandoff")!=null),
                 "真实最小化后即使旧前台句柄未更新，点击仍进入放大而非被当作前台忽略");
             Until(()=>minimizedOpen.IsCompleted,1500);
             Check(minimizedOpen.IsCompletedSuccessfully && !NativeMethods.IsIconic(ag.Handle),"快速点击最小化助手最终恢复真实窗口并完成交接");

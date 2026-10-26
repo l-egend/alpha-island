@@ -27,6 +27,7 @@ internal sealed partial class PluginHost : IDisposable
         internal List<PluginService> Started { get; } = new();
         internal Task Teardown { get; set; } = Task.CompletedTask;
         internal bool Active { get; set; }
+        internal bool GameSuspended { get; set; }
         internal bool Running => Active && Instance != null && Error.Length == 0;
     }
 
@@ -278,8 +279,10 @@ internal sealed partial class PluginHost : IDisposable
         {
             if (entry.Manifest == null || entry.UninstallPending) continue;
             bool enabled = IsEnabled(options, entry.Manifest.Id);
+            if (!enabled && entry.GameSuspended) { entry.GameSuspended = false; changed = true; }
             if (!enabled && entry.Attempted)
             { Stop(entry); entry.Attempted = false; entry.Error = ""; changed = true; }
+            else if (enabled && !entry.Attempted && _gameSuspended) { entry.GameSuspended = true; }
             else if (enabled && !entry.Attempted) { Start(entry); changed = true; }
             else if (entry.Running)
             {
@@ -318,6 +321,7 @@ internal sealed partial class PluginHost : IDisposable
                 context.Sealed = true;
                 foreach (var page in context.Pages) entry.Pages.Add(new PluginIslandPage(entry.Manifest!.Id, page, ex => QueueFailure(entry, ex)));
                 foreach (var page in entry.Pages) _attach(page);
+                entry.GameSuspended = false;
                 entry.Active = true; proxy.OnSettingsChanged();
                 IslandLog.Info("Plugins", $"已在独立进程启用 {entry.Manifest!.Id} pid={proxy.ProcessId}");
                 Changed?.Invoke();
@@ -337,6 +341,7 @@ internal sealed partial class PluginHost : IDisposable
     }
     private void Fail(Entry entry, Exception ex)
     {
+        entry.GameSuspended = false;
         entry.Error = ex.GetBaseException().Message;
         IslandLog.Error($"Plugins:{entry.Manifest?.Id} 已停止", ex);
         Stop(entry); Changed?.Invoke();
@@ -411,6 +416,7 @@ internal sealed partial class PluginHost : IDisposable
         _dispatcher.VerifyAccess();
         if (_disposed) return;
         _disposed = true;
+        _gameBudgetPoll?.Dispose(); _gameBudgetPoll = null;
         foreach (var entry in _entries) Stop(entry);
         Changed = null;
     }

@@ -3,8 +3,9 @@ using AlphaIsland.PluginSdk;
 
 namespace AlphaIsland.PluginFixture;
 
-public sealed class TextInputProbePlugin : IIslandPlugin
+public sealed class TextInputProbePlugin : IIslandPlugin, IPluginSuspendGuard
 {
+    public bool CanSuspend => true;
     public void Initialize(IPluginContext context)
     {
         context.RegisterPage(new("chat", "Text input probe", () => new InputView()));

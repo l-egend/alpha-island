@@ -117,9 +117,33 @@ internal static partial class Program
             host.Background = new LinearGradientBrush(Colors.Black, Colors.White, 0); PumpAnimations(80); NativeMethods.DwmFlush();
             var lightRight = DesktopLightSampler.Capture(screenBody, screenArea, new[] { screenBody });
             Check(lightRight is { } rightResult && rightResult.Light.Direction.X > .5, "真实右侧亮背景得到右向光源");
+            host.Background = new SolidColorBrush(Color.FromRgb(146, 196, 248));
+            var panel = new System.Windows.Controls.Canvas();
+            var material = new System.Windows.Controls.Border { Width = 300, Height = 48, CornerRadius = new CornerRadius(24),
+                Background = new SolidColorBrush(Color.FromRgb(75, 104, 135)) };
+            System.Windows.Controls.Canvas.SetLeft(material, 180); System.Windows.Controls.Canvas.SetTop(material, 170);
+            panel.Children.Add(material); host.Content = panel; PumpAnimations(100); NativeMethods.DwmFlush();
+            var surfaceProbe = new Rect(host.PointToScreen(new Point(297, 176)), host.PointToScreen(new Point(303, 180)));
+            var materialSample = DesktopLightSampler.Capture(screenBody, screenArea, new[] { screenBody }, surfaceProbe);
+            double expectedSurface = SpectrumLuminance(Color.FromRgb(75, 104, 135));
+            Check(materialSample is { SurfaceBrightness: double surface } && Math.Abs(surface - expectedSurface) < .01
+                && materialSample.Value.Light.Brightness > surface + .15,
+                "真实第五块采样分离较暗的玻璃与明亮桌面，五列缓冲区步幅正确");
+            var handleBackground = new System.Windows.Controls.Border { Width = 48, Height = 48, Background = Brushes.White };
+            System.Windows.Controls.Canvas.SetLeft(handleBackground, 485); System.Windows.Controls.Canvas.SetTop(handleBackground, 170);
+            panel.Children.Add(handleBackground); PumpAnimations(80); NativeMethods.DwmFlush();
+            var handleProbe = new Rect(host.PointToScreen(new Point(498, 188)), host.PointToScreen(new Point(502, 194)));
+            var combined = DesktopLightSampler.Capture(screenBody, screenArea, new[] { screenBody }, surfaceProbe, handleProbe);
+            Check(combined is { SurfaceBrightness: double materialLight, HandleBrightness: double handleLight }
+                && Math.Abs(materialLight - expectedSurface) < .01 && handleLight > .97,
+                "六列缓冲区同时读取玻璃和切换条旁的局部背景，亮度互不混淆");
+            var handleOnly = DesktopLightSampler.Capture(screenBody, screenArea, new[] { screenBody }, null, handleProbe);
+            Check(handleOnly is { SurfaceBrightness: null, HandleBrightness: > .97 }, "未显示频谱时切换条仍可独立采样，第五列留空不影响步幅");
+            var excludedHandle = DesktopLightSampler.Capture(screenBody, screenArea, new[] { screenBody, handleProbe }, null, handleProbe);
+            Check(excludedHandle is { HandleBrightness: null }, "切换条采样与其他岛重叠时跳过，避免读取岛内图标");
             sampleTimes.Sort();
-            Console.WriteLine($"Desktop light sample ms: median={sampleTimes[6]:F3}, p95={sampleTimes[^1]:F3}, maxPixels=256, cadenceMs=700+");
-            var report = new { ContourMedianMs = times[50], ContourP95Ms = times[95], SampleMedianMs = sampleTimes[6], SampleP95Ms = sampleTimes[^1], MaxReadbackPixels = 256, MinimumSampleIntervalMs = 700, NativeBoundsChangesFor100Frames = backdrop.BoundsUpdates };
+            Console.WriteLine($"Desktop light sample ms: median={sampleTimes[6]:F3}, p95={sampleTimes[^1]:F3}, maxPixels=384, cadenceMs=700+");
+            var report = new { ContourMedianMs = times[50], ContourP95Ms = times[95], SampleMedianMs = sampleTimes[6], SampleP95Ms = sampleTimes[^1], MaxReadbackPixels = 384, MinimumSampleIntervalMs = 700, NativeBoundsChangesFor100Frames = backdrop.BoundsUpdates };
             File.WriteAllText(Path.Combine(folder, "v103-performance.json"), System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }
         finally { backdrop?.Dispose(); host.Close(); }

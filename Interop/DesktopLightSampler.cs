@@ -8,7 +8,7 @@ using Point = System.Windows.Point;
 
 namespace alpha_island.Interop;
 
-/// <summary>Four 8x8 desktop patches; no full-screen texture, persistent bitmap or UI-thread readback.</summary>
+/// <summary>Small desktop patches and an optional blank material patch; no persistent bitmap or UI-thread readback.</summary>
 internal static class DesktopLightSampler
 {
     private const int Patch = 8;
@@ -28,7 +28,8 @@ internal static class DesktopLightSampler
     [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] private static extern bool StretchBlt(IntPtr dest, int x, int y, int w, int h, IntPtr source, int sx, int sy, int sw, int sh, uint op);
     [DllImport("gdi32.dll")] private static extern bool GdiFlush();
-    public readonly record struct Result(GlassLight Light, double Milliseconds, int Patches);
+    public readonly record struct Result(GlassLight Light, double Milliseconds, int Patches,
+        double? SurfaceBrightness = null, double? HandleBrightness = null);
 
     public static Rect DesktopBounds()
     {
@@ -49,7 +50,7 @@ internal static class DesktopLightSampler
         return null;
     }
 
-    public static Result? Capture(Rect island, Rect desktop, Rect[] exclusions)
+    public static Result? Capture(Rect island, Rect desktop, Rect[] exclusions, Rect? surfaceProbe = null, Rect? handleProbe = null)
     {
         if (island.IsEmpty || desktop.IsEmpty || island.Width < 2 || island.Height < 2) return null;
         var started = Stopwatch.GetTimestamp();
@@ -59,7 +60,8 @@ internal static class DesktopLightSampler
         {
             screen = GetDC(IntPtr.Zero); if (screen == IntPtr.Zero) return null;
             memory = CreateCompatibleDC(screen); if (memory == IntPtr.Zero) return null;
-            var info = new BitmapInfo { Size = (uint)Marshal.SizeOf<BitmapInfo>(), Width = Patch * 4, Height = -Patch, Planes = 1, Bits = 32 };
+            int slots = handleProbe.HasValue ? 6 : surfaceProbe.HasValue ? 5 : 4;
+            var info = new BitmapInfo { Size = (uint)Marshal.SizeOf<BitmapInfo>(), Width = Patch * slots, Height = -Patch, Planes = 1, Bits = 32 };
             bitmap = CreateDIBSection(screen, ref info, 0, out IntPtr bits, IntPtr.Zero, 0);
             if (bitmap == IntPtr.Zero || bits == IntPtr.Zero) return null;
             old = SelectObject(memory, bitmap);
@@ -73,18 +75,31 @@ internal static class DesktopLightSampler
                     (int)Math.Round(region.X), (int)Math.Round(region.Y), 20, 20, 0x00CC0020)) continue;
                 captured.Add((i, directions[i]));
             }
+            bool surfaceCaptured = surfaceProbe is Rect surface && !surface.IsEmpty && surface.Width >= 1 && surface.Height >= 1
+                && island.Contains(surface) && desktop.Contains(surface)
+                && StretchBlt(memory, 4 * Patch, 0, Patch, Patch, screen, (int)Math.Round(surface.X), (int)Math.Round(surface.Y),
+                    Math.Max(1, (int)Math.Round(surface.Width)), Math.Max(1, (int)Math.Round(surface.Height)), 0x00CC0020);
+            bool handleCaptured = handleProbe is Rect handle && !handle.IsEmpty && handle.Width >= 1 && handle.Height >= 1
+                && desktop.Contains(handle) && !exclusions.Any(r => r.IntersectsWith(handle))
+                && StretchBlt(memory, 5 * Patch, 0, Patch, Patch, screen, (int)Math.Round(handle.X), (int)Math.Round(handle.Y),
+                    Math.Max(1, (int)Math.Round(handle.Width)), Math.Max(1, (int)Math.Round(handle.Height)), 0x00CC0020);
             GdiFlush(); // Finish this thread's GDI batch before reading DIB memory.
-            foreach (var item in captured)
+            Color ReadPatch(int slot)
             {
                 int red = 0, green = 0, blue = 0;
                 for (int y = 0; y < Patch; y++) for (int x = 0; x < Patch; x++)
                 {
-                    uint pixel = unchecked((uint)Marshal.ReadInt32(bits, (y * Patch * 4 + item.Slot * Patch + x) * 4));
+                    uint pixel = unchecked((uint)Marshal.ReadInt32(bits, (y * Patch * slots + slot * Patch + x) * 4));
                     blue += (int)(pixel & 255); green += (int)((pixel >> 8) & 255); red += (int)((pixel >> 16) & 255);
                 }
-                samples.Add(new(item.Direction, Color.FromRgb((byte)(red / 64), (byte)(green / 64), (byte)(blue / 64))));
+                return Color.FromRgb((byte)(red / 64), (byte)(green / 64), (byte)(blue / 64));
             }
-            return samples.Count == 0 ? null : new(GlassLighting.Estimate(samples), Stopwatch.GetElapsedTime(started).TotalMilliseconds, samples.Count);
+            foreach (var item in captured) samples.Add(new(item.Direction, ReadPatch(item.Slot)));
+            double? surfaceBrightness = surfaceCaptured ? GlassLighting.Estimate([new(default, ReadPatch(4))]).Brightness : null;
+            double? handleBrightness = handleCaptured ? GlassLighting.Estimate([new(default, ReadPatch(5))]).Brightness : null;
+            return samples.Count == 0 && !surfaceBrightness.HasValue && !handleBrightness.HasValue ? null
+                : new(samples.Count > 0 ? GlassLighting.Estimate(samples) : GlassLight.Default,
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds, samples.Count, surfaceBrightness, handleBrightness);
         }
         finally
         {

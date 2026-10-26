@@ -197,6 +197,7 @@ namespace alpha_island
             if (_lyrics != null) return;
 
             _lyrics = new LyricsService { Enabled = _options.LyricsEnabled };
+            _lyrics.Configure(_options);
             IslandLog.Debug("Service:lyrics", "歌词服务已装配");
         }
 
@@ -300,8 +301,11 @@ namespace alpha_island
 
         private void StopSpectrumService()
         {
-            _audio?.Dispose();
+            var audio = _audio;
             _audio = null;
+            if (audio == null) return;
+            audio.FrameReady -= OnSpectrumUpdated;
+            _ = Task.Run(audio.Dispose);
         }
 
         // ================= 系统音量 =================

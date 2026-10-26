@@ -120,7 +120,7 @@ try {
     foreach ($guide in @('开箱即用与跨设备.md','DeepSeekHarness接入.md','Antigravity审批接入调研.md','本机Agent对话插件.md','QQ与微信消息提醒.md','智能充电状态读取.md','充电器类型接口调研.md','USB耳机播放状态同步修复.md','多品牌耳机插件更新.md','音乐与智能充电状态稳定修复.md','音量卡片滚轮与主题进度条.md','后台助手与音乐岛恢复修复.md','系统音量浮层接管.md','游戏自动免打扰.md')) {
         Copy-Item -LiteralPath (Join-Path $installerRepo ('docs\' + $guide)) -Destination (Join-Path $stage $guide)
     }
-    foreach ($guide in @('启动欢迎图片与音效.md','设置语义图标与媒体侧岛置顶.md','开机时间兼容与屏幕工具.md','默认提示长度与通知图标.md','提示边界与语音接口测试.md','耳机电量重复与蓝牙身份修复.md','MiMo语音识别与下方翻译岛.md','通知图标与会话人格发送.md','API人格与按需读取.md','API助手岛内信息读取.md')) {
+    foreach ($guide in @('奶龙放大与通知提示音.md','启动欢迎图片与音效.md','设置语义图标与媒体侧岛置顶.md','开机时间兼容与屏幕工具.md','默认提示长度与通知图标.md','提示边界与语音接口测试.md','耳机电量重复与蓝牙身份修复.md','MiMo语音识别与下方翻译岛.md','通知图标与会话人格发送.md','API人格与按需读取.md','API助手岛内信息读取.md')) {
         Copy-Item -LiteralPath (Join-Path $installerRepo ('docs\' + $guide)) -Destination (Join-Path $stage $guide)
     }
     $agentAdapters = Join-Path $stage 'agent-integrations'
@@ -143,7 +143,13 @@ try {
     $retired = Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object Name -Match 'LibreHardware|PawnIO|HardwareWorker|RegressionTests'
     if ($retired) { throw 'A retired hardware backend or test executable entered the package.' }
     Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\跨电脑兼容性检查与加固.md') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\音频频谱对比度增强.md') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\阿米娅启动动画与切换条取色.md') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\星野欢迎图片与随机组合.md') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\Codex结束状态与助手小岛背景修复.md') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\界面主题与交互优化.md') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\API对话按钮闪烁修复.md') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $installerRepo 'docs\歌词前奏与间奏圆点.md') -Destination $stage
     $compatibilityReport = Join-Path $output ('AlphaIsland-' + $version + '-compatibility.json')
     & (Join-Path $PSScriptRoot 'Test-PackageCompatibility.ps1') -Stage $stage -ReportPath $compatibilityReport
     & $Compiler ('/DAppVersion=' + $version) ('/DPublishDir=' + $stage) ('/DOutputDir=' + $output) (Join-Path $installerRepo 'packaging\AlphaIsland.iss')

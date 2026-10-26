@@ -46,9 +46,11 @@ internal static partial class Program
             Check(qq.CountText.Text == "26 个通知" && qq.ToggleButton.IsVisible && qq.TimestampText.Text.StartsWith("今天"),
                 "堆叠正面显示应用通知总数、日期与展开入口");
             var face = (Border)qq.ToggleButton.Parent;
-            var front = face.TranslatePoint(new Point(), qq); var middle = qq.MiddleCard.TranslatePoint(new Point(), qq); var rear = qq.RearCard.TranslatePoint(new Point(), qq);
+            var front = face.TransformToAncestor(qq).TransformBounds(new Rect(face.RenderSize));
+            var middle = qq.MiddleCard.TransformToAncestor(qq).TransformBounds(new Rect(qq.MiddleCard.RenderSize));
+            var rear = qq.RearCard.TransformToAncestor(qq).TransformBounds(new Rect(qq.RearCard.RenderSize));
             Check(qq.MiddleCard.IsVisible && qq.RearCard.IsVisible && front.Y < middle.Y && middle.Y < rear.Y
-                && face.ActualWidth > qq.MiddleCard.ActualWidth && qq.MiddleCard.ActualWidth > qq.RearCard.ActualWidth,
+                && front.Width > middle.Width && middle.Width > rear.Width,
                 "真实布局中有两层向下错位且逐层缩窄的圆角卡片");
             Check(!qq.MiddleCard.IsHitTestVisible && !qq.RearCard.IsHitTestVisible, "后层卡片不遮挡正面点击");
             NotificationStackInteractionChecks(qq, wechat[0], root);
@@ -76,9 +78,13 @@ internal static partial class Program
             Check(list.Children.OfType<DesktopNotificationStackCard>().Single().Group.Latest.AppName == "微信", "搜索继续筛选对应堆叠中的实际消息");
             search.Text = ""; root.UpdateLayout();
             qq = list.Children.OfType<DesktopNotificationStackCard>().Single(stack => stack.Group.Latest.AppName == "QQ");
-            Check(qq.MiddleCard.Clip is RectangleGeometry middleClip && middleClip.Bounds.Height <= 7
-                && qq.RearCard.Clip is RectangleGeometry rearClip && rearClip.Bounds.Height <= 14,
-                "透明前卡内不会透出后卡轮廓，后层只露出底部边缘");
+            var currentFace = (Border)qq.ToggleButton.Parent;
+            bool ClearFace(Border plate) => plate.Clip is { } clip && !clip.Bounds.IsEmpty && clip.Bounds.Height > 0
+                && new[] { new Point(20, 20), new Point(currentFace.ActualWidth / 2, currentFace.ActualHeight / 2),
+                    new Point(currentFace.ActualWidth - 20, currentFace.ActualHeight - 20) }
+                .All(point => !clip.FillContains(currentFace.TranslatePoint(point, plate)));
+            Check(ClearFace(qq.MiddleCard) && ClearFace(qq.RearCard),
+                "后层保留可见的圆角边缘，同时不会透进前卡正文区域");
             var theme = new SolidColorBrush(System.Windows.Media.Color.FromRgb(31, 47, 63));
             list.Resources["TextPrimary"] = theme; root.UpdateLayout();
             Check(ReferenceEquals(qq.CountText.Foreground, theme), "数量和文字随主题资源即时更新");

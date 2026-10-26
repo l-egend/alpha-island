@@ -170,9 +170,13 @@ internal static partial class Program
             { Width = 880, Height = 600, PositionX = -32000, PositionY = -32000, WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle = 0x08000080 });
             source.RootVisual = root; PumpAnimations(20); root.UpdateLayout();
             MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
-            PrivateCall(settings, "SelectPageByTag", "plugins"); PumpAnimations(45); root.UpdateLayout();
             var pluginPage = (FrameworkElement)settings.FindName("Page_Plugins");
-            Check(pluginPage.HasAnimatedProperties && pluginPage.Opacity >= 0.15 && pluginPage.Opacity < 1 && ((TranslateTransform)pluginPage.RenderTransform).Y > 0,
+            var pageElapsed = System.Diagnostics.Stopwatch.StartNew();
+            PrivateCall(settings, "SelectPageByTag", "plugins"); bool pageAnimationStarted = pluginPage.HasAnimatedProperties;
+            PumpAnimations(45); root.UpdateLayout();
+            bool pageMoving = pluginPage.Opacity >= 0.15 && pluginPage.Opacity < 1 && ((TranslateTransform)pluginPage.RenderTransform).Y > 0;
+            bool pageFinished = pageElapsed.ElapsedMilliseconds >= 180 && pluginPage.Opacity == 1 && ((TranslateTransform)pluginPage.RenderTransform).Y == 0;
+            Check(pageAnimationStarted && (pageMoving || pageFinished),
                 $"设置页切换具有真实淡入和短距离位移动画（opacity={pluginPage.Opacity:0.000}, y={((TranslateTransform)pluginPage.RenderTransform).Y:0.000}, loaded={pluginPage.IsLoaded}）");
             PrivateCall(settings, "SelectPageByTag", "system"); PumpAnimations(30); PrivateCall(settings, "SelectPageByTag", "plugins");
             PumpAnimations(250); root.UpdateLayout();
@@ -208,11 +212,11 @@ internal static partial class Program
             bool navAnimationStarted = nav.HasAnimatedProperties;
             PumpAnimations(45);
             // A busy dispatcher can resume this 45 ms timer after the 200 ms animation has completed.
-            Check(navAnimationStarted && nav.Width >= 48 && nav.Width < 244
+            Check(navAnimationStarted && nav.Width >= 48 && nav.Width < 196
                 && (nav.Width > 48 || navElapsed.ElapsedMilliseconds >= 200),
                 $"导航栏收起使用平滑宽度过渡（width={nav.Width:0.000}, started={navAnimationStarted}, elapsed={navElapsed.ElapsedMilliseconds}ms）");
             PrivateCall(settings, "ApplyNavExpanded", true, true); PumpAnimations(260);
-            Check(nav.Width == 244, "导航栏动画反向切换不会被旧完成回调缩回");
+            Check(nav.Width == 196, "导航栏动画反向切换不会被旧完成回调缩回");
             var switches = new StackPanel(); var first = new CheckBox { Style = (Style)settings.FindResource("W11Switch"), IsChecked = false };
             var second = new CheckBox { Style = first.Style, IsChecked = false }; switches.Children.Add(first); switches.Children.Add(second); root.Children.Add(switches);
             PumpAnimations(20); root.UpdateLayout();

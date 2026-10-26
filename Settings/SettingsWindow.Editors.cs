@@ -89,13 +89,15 @@ public partial class SettingsWindow
     private void MarkSettingsPendingSave()
     {
         _savePending = true;
+        SettingsSaveStatus.Tag = null;
         SettingsSaveStatusText.Text = "正在保存…"; SettingsSaveStatus.Visibility = Visibility.Visible;
         _saveStatusTimer?.Stop();
     }
     internal void ReportSettingsSaved(bool success)
     {
+        SettingsSaveStatus.Tag = success ? "saved" : null;
         SettingsSaveStatusText.Text = success ? "已保存" : "保存失败，请重试";
-        if (success) CleanupRetiredGreetingAssets();
+        if (success) { CleanupRetiredGreetingAssets(); CleanupRetiredNotificationSounds(); }
         SettingsSaveStatus.Visibility = Visibility.Visible;
         _saveStatusTimer ??= new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromSeconds(2) };
         _saveStatusTimer.Tick -= HideSaveStatus; _saveStatusTimer.Tick += HideSaveStatus;

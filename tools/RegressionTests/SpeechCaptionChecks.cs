@@ -22,10 +22,10 @@ internal static partial class Program
         try
         {
             tools.Show();
-            var button = Descendants<Button>((FrameworkElement)tools.Content).Single(b => b.Content as string == "开始字幕");
+            var button = Descendants<Button>((FrameworkElement)tools.Content).Single(b => b.Content as string == "开始区域翻译");
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpAnimations(300);
-            Check(picks == 1, "首次点击实时字幕直接进入区域框选，无需先执行一次 OCR");
+            Check(picks == 1, "首次点击区域翻译直接进入框选，无需先执行一次 OCR");
         }
         finally { tools.Close(); }
         SpeechCaptionFlowChecks(main, root); SpeechSettingsUiChecks(root); ScreenRegionGestureChecks();
@@ -34,6 +34,7 @@ internal static partial class Program
     }
     private static void SpeechCaptionFlowChecks(alpha_island.MainWindow main, string root)
     {
+        Directory.CreateDirectory("bin/CaptionModes166/previews");
         var source = new FakeSpeechAudioSource(); int captures = 0, translations = 0, transitions = 0; bool loopback = false;
         var config = new ChatConfig("https://example.invalid/v1", "", "test", "", .1, 1024);
         var speech = new SpeechRecognitionOptions("mimo", SpeechSettings.DefaultUrl, SpeechSettings.DefaultModel, TestApiKey);
@@ -42,13 +43,14 @@ internal static partial class Program
             subtitleStateChanged: active => { transitions++; if (active) PrivateCall(main, "CollapseToBar", true); },
             createSpeechCapture: (_, system) => { captures++; loopback = system; return new ProviderVoiceCapture(new EchoSpeechRecognizer("原始英文字幕"), source, continuous: true); },
             translateCaption: (text, _, token, language) =>
-            { token.ThrowIfCancellationRequested(); translations++; Check(language == "zh-CN" && text == "原始英文字幕", "音频字幕将识别文字发送给指定目标语言的翻译流程"); return Task.FromResult("这是翻译后的字幕，主岛收起后也可以继续显示更多内容。"); });
+            { token.ThrowIfCancellationRequested(); translations++; Check(language == "zh-CN" && text == "原始英文字幕", "区域 OCR 文字发送给指定目标语言的翻译流程"); return Task.FromResult("这是翻译后的字幕，主岛收起后也可以继续显示更多内容。"); },
+            readCaptionRegion: (_, token) => { token.ThrowIfCancellationRequested(); return Task.FromResult("原始英文字幕"); });
         void Complete(Task task) { AwaitPlugin(task.ContinueWith(_ => true)); task.GetAwaiter().GetResult(); }
         try
         {
-            tools.Show(); Complete(tools.StartOrStopSubtitlesAsync());
-            Check(tools.SubtitlesRunning && source.Started && captures == 1 && loopback && !tools.IsVisible,
-                "首次字幕框选完成后只启动一个系统声音采集，并隐藏工具窗口");
+            tools.Show(); Complete(tools.StartOrStopRegionTranslationAsync());
+            Check(tools.RegionTranslationRunning && !source.Started && captures == 0 && !tools.IsVisible,
+                "区域翻译只识别选区文字，不启动任何声音采集，并隐藏工具窗口");
             Check(AgentField<IslandState>(main, "_state") == IslandState.Bar, "启用字幕会收起上方主岛，字幕不占用主岛常驻图层");
             var pcm = Enumerable.Range(0, 16000).Select(i => (short)(Math.Sin(i * 2 * Math.PI * 400 / 16000) * 10000)).ToArray();
             source.Push(pcm); source.Push(new short[8000]);
@@ -64,11 +66,11 @@ internal static partial class Program
             subtitle.UpdateText("这是第一行翻译字幕，保留完整句子和标点。\n这是第二行翻译字幕，原文不会占用翻译岛的显示空间。\n第三行也可以正常显示，字幕与上方主岛独立。");
             subtitle.UpdateLayout(); PumpAnimations(200);
             Check(subtitle.ActualHeight > 100, "多行译文会增加字幕岛高度，不会挤在固定的一行里");
-            SaveConversationPreview((FrameworkElement)subtitle.Content, "docs/screens/mimo-subtitle-island.png", (int)subtitle.ActualWidth, (int)subtitle.ActualHeight);
-            var stop = subtitle.ContextMenu!.Items.OfType<MenuItem>().Single(item => item.Header as string == "停止字幕");
+            SaveConversationPreview((FrameworkElement)subtitle.Content, "bin/CaptionModes166/previews/region-layout.png", (int)subtitle.ActualWidth, (int)subtitle.ActualHeight);
+            var stop = subtitle.ContextMenu!.Items.OfType<MenuItem>().Single(item => item.Header as string == "停止区域翻译");
             stop.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); PumpAnimations(30);
-            Check(!tools.SubtitlesRunning && source.Disposed && !subtitle.IsVisible && transitions == 2,
-                "翻译岛右键停止释放音频源并关闭字幕，没有隐藏后台录音");
+            Check(!tools.SubtitlesRunning && captures == 0 && !subtitle.IsVisible && transitions == 2,
+                "翻译岛右键停止屏幕读取并关闭字幕，全程不采集音频");
         }
         finally { tools.Close(); }
 
@@ -76,13 +78,14 @@ internal static partial class Program
         var waiting = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         tools = new ScreenToolsWindow(() => config, pickRegion: _ => new System.Drawing.Rectangle(200, 350, 800, 140), speechConfiguration: () => speech,
             createSpeechCapture: (_, _) => new ProviderVoiceCapture(new EchoSpeechRecognizer("第二条"), source, continuous: true),
-            translateCaption: async (_, _, token, _) => await waiting.Task.WaitAsync(token));
+            translateCaption: async (_, _, token, _) => await waiting.Task.WaitAsync(token),
+            readCaptionRegion: (_, _) => Task.FromResult("第二条"));
         try
         {
-            Complete(tools.StartOrStopSubtitlesAsync()); source.Push(Enumerable.Repeat((short)5000, 16000).ToArray()); source.Push(new short[8000]);
+            var starting = tools.StartOrStopRegionTranslationAsync();
             PumpUntilState(() => AgentField<bool>(tools, "_translatingCaption"));
-            tools.StopSubtitles(); waiting.SetResult("迟到的译文"); PumpAnimations(100);
-            Check(source.Disposed && AgentField<SubtitleIslandWindow?>(tools, "_subtitle") == null && !tools.SubtitlesRunning,
+            tools.StopSubtitles(); waiting.SetResult("迟到的译文"); Complete(starting); PumpAnimations(100);
+            Check(!source.Started && AgentField<SubtitleIslandWindow?>(tools, "_subtitle") == null && !tools.SubtitlesRunning,
                 "停止时取消正在等待的翻译，迟到结果不能重新弹出字幕岛");
         }
         finally { tools.Close(); }

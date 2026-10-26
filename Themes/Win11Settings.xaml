@@ -7,7 +7,7 @@
          Windows 11 深色主题（设置界面专用）
          页面与导航使用 #202020，卡片使用 #2A2A2A，强调色为 #4DB1FF。
            Win11 深色主题下开关打开 = 强调色轨道 + 黑色圆钮
-         与 Themes/LiquidGlass.xaml（灵动岛本体主题）完全独立。
+         与主岛共用基础控件、字体与圆角尺寸。
          ============================================================ -->
 
     <Color x:Key="W11AccentColor">#FF4DB1FF</Color>
@@ -55,7 +55,7 @@
         <Setter Property="FontSize" Value="13.5"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{StaticResource W11TextPrimary}"/>
-        <Setter Property="Margin" Value="2,0,0,8"/>
+        <Setter Property="Margin" Value="0,0,0,12"/>
     </Style>
 
     <Style x:Key="W11RowLabel" TargetType="TextBlock">
@@ -75,7 +75,7 @@
     <Style x:Key="W11Value" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="Foreground" Value="{StaticResource W11TextSecondary}"/>
-        <Setter Property="Width" Value="46"/>
+        <Setter Property="MinWidth" Value="46"/>
         <Setter Property="TextAlignment" Value="Right"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
@@ -88,12 +88,12 @@
         <Setter Property="Background" Value="{StaticResource W11CardBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource W11CardBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource CardCornerRadius}"/>
     </Style>
 
     <Style x:Key="W11SettingCard" TargetType="Border" BasedOn="{StaticResource W11Card}">
         <Setter Property="Margin" Value="0,0,0,8"/>
-        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}"/>
     </Style>
 
     <!-- 同一张卡片内的行分隔线：左侧从图标之后起，Win11 就是这么缩进的 -->
@@ -108,7 +108,7 @@
         <Setter Property="MinHeight" Value="40"/>
     </Style>
 
-    <!-- 行首的图标槽：32x32 圆角方块，用户后续把图标填进 Content -->
+    <!-- 行首的 32 DIP 图标槽。 -->
     <Style x:Key="W11IconTile" TargetType="Border">
         <Setter Property="Width" Value="32"/>
         <Setter Property="Height" Value="32"/>
@@ -139,16 +139,16 @@
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Grid>
-                        <Border Background="Transparent" CornerRadius="6" x:Name="Bg"/>
+                        <Border motion:ControlBrushTransition.Background="Transparent" CornerRadius="{DynamicResource ControlCornerRadius}" x:Name="Bg"/>
                         <ContentPresenter Margin="16,0,10,0" VerticalAlignment="Center" x:Name="Presenter"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource W11ControlFill}"/>
+                            <Setter TargetName="Bg" Property="motion:ControlBrushTransition.Background" Value="{StaticResource W11ControlFill}"/>
                             <Setter Property="Foreground" Value="{StaticResource W11TextPrimary}"/>
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource W11ControlFill}"/>
+                            <Setter TargetName="Bg" Property="motion:ControlBrushTransition.Background" Value="{StaticResource W11ControlFill}"/>
                             <Setter Property="Foreground" Value="{StaticResource W11TextPrimary}"/>
                             <Setter Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
@@ -280,6 +280,8 @@
          ============================================================ -->
 
     <Style x:Key="W11Button" TargetType="Button" BasedOn="{StaticResource ThemedButton}">
+        <Setter Property="Background" Value="{StaticResource W11ControlFill}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource W11ControlBorder}"/>
         <Setter Property="Height" Value="32"/>
         <Setter Property="Padding" Value="14,0"/>
         <Setter Property="FontSize" Value="12.5"/>
@@ -288,18 +290,18 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="{StaticResource W11ControlFill}"
-                            BorderBrush="{StaticResource W11ControlBorder}" BorderThickness="1"
-                            CornerRadius="6" x:Name="Bg">
+                    <Border motion:ControlBrushTransition.Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                            CornerRadius="{DynamicResource ControlCornerRadius}" x:Name="Bg">
                         <ContentPresenter Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GlyphContentConverter}}" HorizontalAlignment="Center" Margin="{TemplateBinding Padding}"
                                           VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource W11ControlHover}"/>
+                            <Setter TargetName="Bg" Property="motion:ControlBrushTransition.Background" Value="{StaticResource W11ControlHover}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource W11ControlPressed}"/>
+                            <Setter TargetName="Bg" Property="motion:ControlBrushTransition.Background" Value="{StaticResource W11ControlPressed}"/>
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource W11AccentBrush}"/>

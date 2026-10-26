@@ -29,6 +29,7 @@ internal sealed class PluginWorkerServer : IDisposable
     private int _disposed;
     private int _eventWrites;
     private string? _active;
+    private bool _gameSuspensionPrepared;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _textCalls = new();
     [DllImport("kernel32.dll")] private static extern uint SetErrorMode(uint mode);
     internal PluginWorkerServer(System.Windows.Application application, string pipe, string nonce)
@@ -97,8 +98,13 @@ internal sealed class PluginWorkerServer : IDisposable
             catch (Exception writeError) when (writeError is IOException or OperationCanceledException or ObjectDisposedException) { }
         }
     }
-    private object Dispatch(PluginPacket packet) => packet.Kind switch
+    private object Dispatch(PluginPacket packet)
     {
+        if (_gameSuspensionPrepared && packet.Kind is "input" or "prefill" or "action") return false;
+        return packet.Kind switch
+    {
+        "prepare-game-suspension" => PrepareGameSuspension(),
+        "resume-game-preparation" => ResumeGamePreparation(),
         "initialize" => Initialize(PluginWire.Read<PluginStart>(packet.Data)),
         "status" => Status(),
         "frame" => Frame(PluginWire.Read<RemoteViewRequest>(packet.Data)),
@@ -111,6 +117,16 @@ internal sealed class PluginWorkerServer : IDisposable
         "tool-cancel" => CancelTool(PluginWire.Read<string>(packet.Data)),
         _ => throw new InvalidDataException("未知插件操作")
     };
+    }
+    private bool PrepareGameSuspension()
+    {
+        if (_active == "$settings" || _plugin is not IPluginSuspendGuard { CanSuspend: true } || !_toolCalls.IsEmpty || !_textCalls.IsEmpty
+            || _application.Windows.Cast<Window>().Any(window => !ReferenceEquals(window, _owner) && window.IsVisible)) return false;
+        _gameSuspensionPrepared = true;
+        Deactivate(); _owner.Content = null;
+        return true;
+    }
+    private bool ResumeGamePreparation() { _gameSuspensionPrepared = false; return true; }
     private RemoteRegistry Initialize(PluginStart start)
     {
         if (_plugin != null) throw new InvalidOperationException("插件已经启动");
@@ -128,11 +144,12 @@ internal sealed class PluginWorkerServer : IDisposable
         return new(_context.Pages.Select(page => new RemotePage(page.Key, page.Title, page.Glyph, page.Height, page.Order)).ToArray(),
             _context.Settings.ToArray(), Actions(), _context.SettingsView != null,
             _context.Networks.Select(source => new RemoteNetwork(source.Key, source.Title, source.Priority)).ToArray(),
-            _context.ToolHandlers.Select(t => t.Definition).ToArray());
+            _context.ToolHandlers.Select(t => t.Definition).ToArray(), _plugin is IPluginSuspendGuard);
     }
     private bool CancelTool(string id) { if (_toolCalls.TryGetValue(id, out var cancel)) cancel.Cancel(); return true; }
     private async Task<ToolResult> RunToolAsync(ToolRequest request)
     {
+        if (_gameSuspensionPrepared) return ToolResult.Fail("插件正在进入游戏休眠。");
         var tool = Context.ToolHandlers.FirstOrDefault(t => t.Definition.Name == request.Name);
         if (tool == null) return ToolResult.Fail("插件工具不存在");
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -204,6 +221,7 @@ internal sealed class PluginWorkerServer : IDisposable
     private bool Prefill(RemoteCommand command) => Surface(command.View).Prefill(command.Text ?? "");
     private async Task<PluginTextInputResult> SubmitTextAsync(RemoteTextInput request)
     {
+        if (_gameSuspensionPrepared) return new(false, "游戏期间暂停接收新的语音指令。");
         if (!Guid.TryParseExact(request.RequestId, "N", out _) || request.Text.Length is 0 or > 12000
             || Context.Pages.FirstOrDefault(page => page.Key == request.View)?.Available?.Invoke() == false)
             return new(false, "输入不可用。");

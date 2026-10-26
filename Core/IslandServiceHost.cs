@@ -142,6 +142,8 @@ namespace alpha_island.Core
         private readonly List<Entry> _order = new();
         private readonly Dictionary<string, Entry> _byId = new(StringComparer.OrdinalIgnoreCase);
         private IslandOptions? _lastOptions;
+        private readonly HashSet<string> _suspended = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _resumeRequested = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>状态发生变化（启动/停止/降级）时触发，供设置页刷新。</summary>
         public event Action? Changed;
@@ -174,6 +176,15 @@ namespace alpha_island.Core
             foreach (Entry entry in _order)
             {
                 bool want = entry.Service.Required || entry.Service.IsEnabled(options);
+
+                if (_suspended.Contains(entry.Service.Id))
+                {
+                    if (want && (entry.Service.AutoStart || entry.State == IslandServiceState.Running))
+                        _resumeRequested.Add(entry.Service.Id);
+                    if (!want && !entry.Pinned) _resumeRequested.Remove(entry.Service.Id);
+                    changed |= StopCore(entry);
+                    continue;
+                }
 
                 if (!want)
                 {
@@ -217,6 +228,7 @@ namespace alpha_island.Core
             }
 
             if (force) entry.Pinned = true;
+            if (_suspended.Contains(id)) { _resumeRequested.Add(entry.Service.Id); return false; }
 
             bool changed = EnsureStartedCore(entry, options);
             if (changed) Changed?.Invoke();
@@ -256,6 +268,28 @@ namespace alpha_island.Core
 
         public bool IsRegistered(string id) => _byId.ContainsKey(id);
 
+        internal void SetSuspended(IEnumerable<string> ids, bool suspended)
+        {
+            bool changed = false;
+            foreach (string id in ids)
+            {
+                if (!_byId.TryGetValue(id, out var entry))
+                { if (suspended) _suspended.Add(id); else _suspended.Remove(id); continue; }
+                if (suspended)
+                {
+                    if (!_suspended.Add(id)) continue;
+                    if (entry.State is IslandServiceState.Running or IslandServiceState.Starting) _resumeRequested.Add(id);
+                    changed |= StopCore(entry);
+                }
+                else if (_suspended.Remove(id) && _resumeRequested.Remove(id))
+                {
+                    bool wanted = entry.Service.Required || entry.Pinned || _lastOptions == null || entry.Service.IsEnabled(_lastOptions);
+                    if (wanted) changed |= EnsureStartedCore(entry, _lastOptions);
+                }
+            }
+            if (changed) Changed?.Invoke();
+        }
+
         public bool IsRunning(string id) => _byId.TryGetValue(id, out Entry? entry) && entry.State == IslandServiceState.Running;
 
         public bool IsDegraded(string id) => _byId.TryGetValue(id, out Entry? entry) && entry.State == IslandServiceState.Degraded;
@@ -271,6 +305,7 @@ namespace alpha_island.Core
         /// <summary>全部停掉（退出流程）。逐个 try/catch：一个服务释放失败不能连累其余。</summary>
         public void StopAll()
         {
+            _resumeRequested.Clear();
             foreach (Entry entry in _order)
             {
                 if (entry.State == IslandServiceState.Stopped ||

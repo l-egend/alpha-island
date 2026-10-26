@@ -15,7 +15,7 @@ internal sealed class DesktopInsightsService : IDisposable
     private readonly Func<DesktopInsightFrame> _read;
     private readonly LocalStateFile<DesktopInsightsState>? _file;
     private readonly IslandTicker.Subscription? _tick;
-    private bool _learning=true,_healthEnabled=true,_disposed,_busy;
+    private bool _learning=true,_healthEnabled=true,_disposed,_busy,_suspended;
     private int _focusMinutes=25,_breakMinutes=75;
     private DateTimeOffset _lastProcess,_lastSave;
     private DesktopInsightFrame? _frame;
@@ -46,7 +46,13 @@ internal sealed class DesktopInsightsService : IDisposable
         if(_learning&&!learning)_habits.Pause();
         if(_healthEnabled&&!health){_health.Pause();_processes=[];}
         _learning=learning;_healthEnabled=health;_focusMinutes=focusMinutes;_breakMinutes=breakMinutes;
-        _tick?.SetPaused(!learning&&!health);Changed?.Invoke();
+        _tick?.SetPaused(_suspended||!learning&&!health);Changed?.Invoke();
+    }
+    internal void SetSuspended(bool suspended)
+    {
+        if(_disposed||_suspended==suspended)return;
+        _suspended=suspended;_habits.Pause();_health.Pause();_processes=[];_lastProcess=default;
+        _tick?.SetPaused(suspended||!_learning&&!_healthEnabled);
     }
     internal void FocusCompleted(int minutes)
     {if(!_learning||_disposed)return;_habits.FocusCompleted(minutes,DateTimeOffset.Now);Save();Changed?.Invoke();}
@@ -56,7 +62,7 @@ internal sealed class DesktopInsightsService : IDisposable
     {_habits.Respond(id,accepted,DateTimeOffset.Now);Save();Changed?.Invoke();}
     internal async void TickNow()
     {
-        if(_disposed||_busy||!_learning&&!_healthEnabled)return;
+        if(_disposed||_suspended||_busy||!_learning&&!_healthEnabled)return;
         _busy=true;
         try
         {
@@ -71,7 +77,7 @@ internal sealed class DesktopInsightsService : IDisposable
                 {
                     _lastProcess=frame.Now;
                     var samples=await Task.Run(()=>_processReader.Read(frame.Now));
-                    if(_disposed||!_healthEnabled||_read().Locked)return;
+                    if(_disposed||_suspended||!_healthEnabled||_read().Locked)return;
                     _processes=samples;
                     foreach(var warning in _health.ObserveProcesses(samples,frame.Now,false))Publish(warning);
                 }

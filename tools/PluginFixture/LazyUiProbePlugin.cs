@@ -4,8 +4,9 @@ using AlphaIsland.PluginSdk;
 
 namespace AlphaIsland.PluginFixture;
 
-public sealed class LazyUiProbePlugin : IIslandPlugin
+public sealed class LazyUiProbePlugin : IIslandPlugin, IPluginSuspendGuard
 {
+    public bool CanSuspend => _input == null || _input.Text.Length == 0;
     private IPluginContext _context = null!;
     private TextBox? _input;
     public void Initialize(IPluginContext context)

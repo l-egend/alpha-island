@@ -13,7 +13,7 @@ public partial class SettingsWindow
     internal void SetScreenToolsStatus(string text) { if (_screenToolsStatus != null) _screenToolsStatus.Text = text; }
     private void AddAssistantSettings()
     {
-        var rows = new StackPanel();
+        var rows = new StackPanel { Margin = new Thickness(0, 18, 0, 0) };
         var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
         foreach (var (id, title) in new[] { ("voice", "语音指令"), ("speech-settings", "Windows 语音设置"), ("reminders", "管理提醒"), ("habits", "学习记录与建议"), ("health", "健康详情") })
         {
@@ -31,7 +31,7 @@ public partial class SettingsWindow
         rows.Children.Add(_screenToolsStatus);
         _voiceHotkeyStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 4, 12, 8), Opacity = .7 };
         rows.Children.Add(_voiceHotkeyStatus);
-        rows.Children.Add(new TextBlock { Text = "语音唤醒使用上方所选识别引擎；需要允许桌面应用访问麦克风。云端识别会发送音频，Windows 本机语音只把识别文字提交给对话模型。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 12, 12), Opacity = .7 });
+        rows.Children.Add(new TextBlock { Text = "请允许麦克风访问。云端识别会上传音频。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 12, 12), Opacity = .7 });
         Page_Assistant.Children.Add(rows);
     }
 }

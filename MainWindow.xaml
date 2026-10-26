@@ -244,6 +244,9 @@
                             </StackPanel>
                         </Grid>
 
+                        <controls:LyricBeatDots x:Name="PillBeatDots" Width="48" Height="20"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Foreground="{StaticResource TextPrimary}" Visibility="Collapsed"/>
                         <!-- 上一句歌词：换行时留在原处继续上移并淡出。单独一层，
                              所以淡出过程中新歌词已经可以同时从下方上移淡入（交叉过场）。 -->
                         <TextBlock x:Name="PillLyricGhost"
@@ -311,8 +314,8 @@
 
 
                     <!-- 中间：欢迎文字 -->
-                    <TextBlock x:Name="GreetingText" Grid.Column="1" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                               Margin="12,0" VerticalAlignment="Center"
+                    <TextBlock x:Name="GreetingText" Grid.Column="0" Grid.ColumnSpan="3" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                               HorizontalAlignment="Center" TextAlignment="Center" VerticalAlignment="Center"
                                FontSize="13" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimary}"
                                Text="欢迎回来"/>
@@ -890,6 +893,9 @@
                                                Foreground="#FAFFFFFF"
                                                TextTrimming="CharacterEllipsis" TextAlignment="Center"
                                                HorizontalAlignment="Center"/>
+                                    <controls:LyricBeatDots x:Name="CardBeatDots" Width="64" Height="26"
+                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                            Foreground="{StaticResource TextPrimary}" Visibility="Collapsed"/>
                                 </Grid>
 
                                 <TextBlock x:Name="LyricTranslation" Grid.Row="2"
@@ -941,7 +947,7 @@
                         </Grid>
 
                         <!-- 第二层 (Page 1)：剪切板及历史 -->
-                        <Grid x:Name="ClipboardCardLayer" VerticalAlignment="Center" Height="194"
+                        <Grid x:Name="ClipboardCardLayer" VerticalAlignment="Center" Height="194" Margin="4,0"
                               Opacity="0" IsHitTestVisible="False">
                             <Grid.RenderTransform>
                                 <TranslateTransform x:Name="CardPage1Translate" Y="194"/>
@@ -957,7 +963,7 @@
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <icons:GlyphIcon Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="14"
                                                Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center"/>
-                                    <TextBlock Text="剪切板历史" FontSize="13.5" FontWeight="SemiBold"
+                                    <TextBlock Text="剪贴板历史" FontSize="13.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}" Margin="8,0,6,0"
                                                VerticalAlignment="Center"/>
                                     <Border CornerRadius="8" Background="#2600F0FF" Padding="6,1" VerticalAlignment="Center">
@@ -971,7 +977,7 @@
                                     <Button x:Name="ClearClipboardButton"
                                             Width="28" Height="28" Cursor="Hand"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
-                                            ToolTip="清空剪切板历史" Click="ClearClipboardButton_Click">
+                                            ToolTip="清空剪贴板历史" Click="ClearClipboardButton_Click">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <Border x:Name="Bg" Width="28" Height="28" CornerRadius="14" Background="#18FFFFFF">
@@ -1001,7 +1007,7 @@
                                     <ItemsControl x:Name="ClipboardHistoryList">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Margin="0,2.5" Padding="8,5" CornerRadius="8"
+                                                <Border Margin="2,3,4,3" Padding="10,6" CornerRadius="8"
                                                         Background="#18FFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1"
                                                         Cursor="Hand" ToolTip="点击复制"
                                                         MouseLeftButtonDown="ClipboardHistoryItem_MouseLeftButtonDown">
@@ -1097,7 +1103,7 @@
                                             VerticalAlignment="Center" Visibility="Collapsed">
                                     <icons:GlyphIcon Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="26"
                                                Foreground="#3DFFFFFF" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="暂无剪切板历史" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                    <TextBlock Text="暂无剪贴板历史" FontSize="12" Foreground="{StaticResource TextSecondary}"
                                                Margin="0,6,0,0" HorizontalAlignment="Center"/>
                                 </StackPanel>
                             </Grid>

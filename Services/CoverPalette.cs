@@ -238,16 +238,16 @@ namespace alpha_island.Services
                 return (Math.Max(light, background) + .05) / (Math.Min(light, background) + .05);
             }
             var best = album; double score = Contrast(album);
-            if (score >= 3) return album;
-            int direction = background > .2 ? -1 : 1;
-            for (int step = 1; step <= 22; step++)
+            if (score >= 4.5) return album;
+            int direction = background > .18 ? -1 : 1;
+            for (int step = 1; step <= 90; step++)
             {
                 foreach (int sign in new[] { direction, -direction })
                 {
                     var candidate = Adjust(album, 1, sign * step * .01);
                     candidate.A = album.A;
                     double contrast = Contrast(candidate);
-                    if (contrast >= 3) return candidate;
+                    if (contrast >= 4.5) return candidate;
                     if (contrast > score) { score = contrast; best = candidate; }
                 }
             }

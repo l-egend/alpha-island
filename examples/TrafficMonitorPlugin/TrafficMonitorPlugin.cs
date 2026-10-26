@@ -2,8 +2,9 @@ using AlphaIsland.PluginSdk;
 
 namespace AlphaIsland.Plugins.TrafficMonitor;
 
-public sealed class TrafficMonitorPlugin : IIslandPlugin
+public sealed class TrafficMonitorPlugin : IIslandPlugin, IPluginSuspendGuard
 {
+    public bool CanSuspend => true;
     private BridgeReader? _reader;
     private IPluginContext? _context;
     private string _mapping = "";

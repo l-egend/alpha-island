@@ -38,7 +38,7 @@ namespace alpha_island.Settings
         private DispatcherTimer? _aboutRetryTimer;
         private int _aboutRetryTicks;
 
-        private const double NavWidthExpanded = 244.0;
+        private const double NavWidthExpanded = 196.0;
         private const double NavWidthCollapsed = 48.0;
 
         /// <summary>
@@ -61,6 +61,7 @@ namespace alpha_island.Settings
             _startupRegistration = startupRegistration ?? (persistSettings ? new StartupRegistrationService() : null);
             _authorizeBootLog = authorizeBootLog ?? (persistSettings ? BootLogAccess.EnsureReadAccessAsync : () => Task.CompletedTask);
             InitializeComponent();
+            AboutVersionText.Text = "版本 " + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "未知");
             PreviewKeyDown += (_, e) =>
             {
                 if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && !_recordingShortcut)
@@ -75,6 +76,7 @@ namespace alpha_island.Settings
             AddNotificationSettings();
             AddStatusDisplaySettings();
             AddPomodoroSettings();
+            AddLyricsSourceSettings();
             AddWeatherSettings();
             AddLaunchSettings();
             AddGreetingMediaSettings();
@@ -319,10 +321,6 @@ namespace alpha_island.Settings
             {
                 GreetingToggle.IsChecked = _options.GreetingEnabled;
             }
-            if (GreetingTextBox != null)
-            {
-                GreetingTextBox.Text = _options.GreetingText;
-            }
             if (GreetingSecondsSlider != null)
             {
                 GreetingSecondsSlider.Value = _options.GreetingSeconds;
@@ -370,6 +368,8 @@ namespace alpha_island.Settings
             // 否则回填过程会触发 Setting_Changed/Slider_Changed 把值又写回去。
             LoadRegistryControls();
             RefreshGreetingMediaSettings();
+            RefreshNotificationSoundSettings();
+            RefreshLyricsSourceSettings();
             LoadStartupRegistrationState();
             LoadStatusDisplayRows();
 
@@ -393,7 +393,8 @@ namespace alpha_island.Settings
         {
             if (LyricsSourceText != null)
             {
-                LyricsSourceText.Text = source;
+                _lyricsSourceRuntime = source;
+                RefreshLyricsSourceSummary();
             }
         }
 
@@ -515,10 +516,6 @@ namespace alpha_island.Settings
             {
                 _options.GreetingEnabled = GreetingToggle.IsChecked == true;
             }
-            if (GreetingTextBox != null)
-            {
-                _options.GreetingText = string.IsNullOrWhiteSpace(GreetingTextBox.Text) ? "欢迎回来" : GreetingTextBox.Text;
-            }
             if (GreetingSecondsSlider != null)
             {
                 _options.GreetingSeconds = Math.Clamp(GreetingSecondsSlider.Value, 1.5, 10.0);
@@ -575,6 +572,7 @@ namespace alpha_island.Settings
 
         private void UpdateEnabledStates()
         {
+            RefreshNotificationSoundSettings();
             if (TranslationToggle != null)
             {
                 TranslationToggle.IsEnabled = LyricsToggle?.IsChecked == true;
@@ -582,10 +580,6 @@ namespace alpha_island.Settings
             if (LyricsOffsetSlider != null)
             {
                 LyricsOffsetSlider.IsEnabled = LyricsToggle?.IsChecked == true;
-            }
-            if (GreetingTextBox != null)
-            {
-                GreetingTextBox.IsEnabled = GreetingToggle?.IsChecked == true;
             }
             if (GreetingSecondsSlider != null)
             {
@@ -849,6 +843,11 @@ namespace alpha_island.Settings
         }
 
         /// <summary>顶部三横线按钮：展开 / 收起左侧导航栏。</summary>
+        private void NavPane_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            TitleNavigationColumn.Width = new GridLength(e.NewSize.Width);
+        }
+
         private void NavCollapse_Click(object sender, RoutedEventArgs e) => ApplyNavExpanded(!_navExpanded, true);
 
         /// <summary>
@@ -859,6 +858,7 @@ namespace alpha_island.Settings
         {
             _navExpanded = expanded;
             var textVis = expanded ? Visibility.Visible : Visibility.Collapsed;
+            if (SettingsBrandLabel != null) SettingsBrandLabel.Visibility = textVis;
 
             if (NavPanel != null)
             {

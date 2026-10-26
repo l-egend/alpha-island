@@ -69,7 +69,7 @@ internal static partial class Program
         Check(changed==1,"离开已经生效的输入框不重复应用设置");
         box.Text="";typeof(alpha_island.Settings.SettingsWindow).GetMethod("CommitClipboardHistoryLimit",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(settings,null);
         Check(box.Text=="100","无效或空输入保留上次条数，不意外回退到 10 条");
-        Check(SettingsRegistry.SearchWordsForPage(SettingsPageIds.Behavior).Contains("剪切板历史保存条数"),"设置搜索可以找到历史条数选项");
+        Check(SettingsRegistry.SearchWordsForPage(SettingsPageIds.Behavior).Contains("剪贴板历史保存条数"),"设置搜索可以找到历史条数选项");
         PrivateCall(window,"SetState",IslandState.Bar,true,null);SetAgentField(window,"_clipboard",null);
     }
     private sealed class ClipboardSettingsLifetime:IDisposable

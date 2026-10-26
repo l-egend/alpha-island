@@ -37,7 +37,7 @@ namespace alpha_island
         private async void StartLyricsFetch(NowPlayingInfo info)
         {
             var service = _lyrics;
-            if (service == null || !_options.LyricsEnabled || !info.SupportsLyrics) return;
+            if (service == null || GameDoNotDisturbActive || !_options.LyricsEnabled || !info.SupportsLyrics) return;
 
             string title = info.Title ?? "";
             string artist = info.Artist ?? "";
@@ -126,6 +126,8 @@ namespace alpha_island
         private void ApplyLyrics(LyricsDocument? doc)
         {
             _lyricsDoc = doc;
+            SetLyricRestVisible(false);
+            _settingsWindow?.UpdateLyricsSource(_options.LyricsEnabled ? doc?.Source ?? "尚未命中" : "未启用");
             _lyricIndex = -2;
             _lyricWipe.Rect = Rect.Empty;
             ResetLyricPresentation();
@@ -190,6 +192,7 @@ namespace alpha_island
                 _karaokeHooked = false;
             }
             ResetLyricPresentation(); ResetPillLyricRoll();
+            SyncLyricRestIndicators();
         }
 
         private void OnKaraokeTick(object? sender, EventArgs e)
@@ -213,12 +216,21 @@ namespace alpha_island
                 position += TimeSpan.FromMilliseconds(_options.LyricsOffsetMs);
                 if (position < TimeSpan.Zero) position = TimeSpan.Zero;
             }
+            var rest = LyricRestTimeline.At(doc, position, media.Current?.Duration ?? TimeSpan.Zero);
+            if (rest is { } restSpan)
+            {
+                ApplyLyricRest(restSpan, position);
+                return;
+            }
+            bool leavingRest = _lyricRestShowing;
+            SetLyricRestVisible(false);
             int index = Math.Clamp(doc.IndexAt(position), 0, lines.Count - 1);
 
-            if (index != _lyricIndex)
+            if (index != _lyricIndex || leavingRest)
             {
                 _lyricIndex = index;
                 ApplyLyricTexts(lines, index);
+                if (leavingRest) AnimateLyricChange(true);
             }
             else SyncLyricTranslation(lines[index]);
 
@@ -278,6 +290,7 @@ namespace alpha_island
 
         private void SyncCurrentLyricTranslation()
         {
+            if (_lyricRestShowing) { LyricTranslation.Text = ""; LyricTranslation.Visibility = Visibility.Collapsed; return; }
             if (_lyricsDoc != null && _lyricIndex >= 0 && _lyricIndex < _lyricsDoc.Lines.Count)
                 SyncLyricTranslation(_lyricsDoc.Lines[_lyricIndex]);
         }

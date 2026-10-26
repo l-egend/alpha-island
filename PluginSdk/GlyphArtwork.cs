@@ -36,6 +36,7 @@ public static class GlyphArtwork
     public const string FileShelfGlyph = "\uEAF2";
     public const string MemoryMonitorGlyph = "\uEAF3";
     public const string ProductivityGlyph = "\uEAF4";
+    public const string NotificationSoundGlyph = "\uEAF5";
     private static readonly Geometry DeletionBasket = FrozenDeletionPath("M8,11 L9.2,25.5 Q9.4,28 12,28 H20 Q22.6,28 22.8,25.5 L24,11 M13,14 L13.5,23 M19,14 L18.5,23");
     private static readonly Geometry DeletionLid = FrozenDeletionPath("M6,8 H26 M12,8 V5 Q12,4 13,4 H19 Q20,4 20,5 V8");
     private static Geometry FrozenDeletionPath(string data) { var path = Geometry.Parse(data); path.Freeze(); return path; }
@@ -94,6 +95,7 @@ public static class GlyphArtwork
         }
         Add("削减动效", "EAF1",
             Path("M4,8 H13 M4,16 H10 M4,24 H7 M18,6 L28,16 L18,26"));
+        Add("通知音效", "EAF5", Path("M14,4 A2,2 0 0 1 18,4 V5 Q25,6 25,14 V19 Q25,22 29,25 H3 Q7,22 7,19 V14 Q7,6 14,5 Z M12,27 H20 A4,4 0 0 1 12,27 Z", true));
         Add("文件拖拽中转站", "EAF2",
             Path("M8,17 V5 Q8,3 10,3 H18 L24,9 V17 M18,3 V9 H24"),
             Path("M16,11 V21 M12,17 L16,21 L20,17 M4,20 V26 Q4,28 6,28 H26 Q28,28 28,26 V20"));

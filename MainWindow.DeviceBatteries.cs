@@ -16,14 +16,14 @@ public partial class MainWindow
         _deviceBatteryViewTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(5) };
         _deviceBatteryViewTimer.Tick += async (_, _) => await RefreshDeviceBatteryCardAsync(false);
         _pages.Register(new DelegateIslandPage(IslandPageIds.DeviceBatteries, "电池", _deviceBatteryCard, 7, 294,
-            activated: () => { SyncDeviceBatteryCard(); _deviceBatteryViewTimer.Start(); _ = RefreshDeviceBatteryCardAsync(true); },
+            activated: () => { if (GameDoNotDisturbActive) return; SyncDeviceBatteryCard(); _deviceBatteryViewTimer.Start(); _ = RefreshDeviceBatteryCardAsync(true); },
             deactivated: () => { if (!_runtimeEnabled) _deviceBatteryViewTimer.Stop(); }));
         if (_runtimeEnabled) _deviceBatteryViewTimer.Start();
         Closed += (_, _) => _deviceBatteryViewTimer.Stop();
     }
     private async Task RefreshDeviceBatteryCardAsync(bool refreshReceiver)
     {
-        if (_exiting) return;
+        if (_exiting || GameDoNotDisturbActive) return;
         if (refreshReceiver) _plugins?.InvokeAction("device-battery-refresh");
         if (_bluetooth != null) await _bluetooth.RefreshConnectionStateAsync();
         if (!_exiting) SyncDeviceBatteryCard();

@@ -22,8 +22,8 @@
 		<Product>Alpha Island</Product>
 		<Company>Alpha Island</Company>
 		<Description>灵动岛风格的桌面状态面板与 AI 助手</Description>
-		<Version>0.1.155</Version>
-		<FileVersion>0.1.155.0</FileVersion>
+		<Version>0.1.177</Version>
+		<FileVersion>0.1.177.0</FileVersion>
 		<Copyright>© Alpha Island</Copyright>
 	</PropertyGroup>
 
@@ -54,6 +54,15 @@
 	  <Resource Include="Assets\alpha-island.ico" />
 	  <Resource Include="Assets\alpha-island-source.png" />
       <EmbeddedResource Include="Assets\Sounds\StartupGentle.wav" LogicalName="AlphaIsland.StartupGentle.wav" />
+      <EmbeddedResource Include="Assets\Lyrics\*" LogicalName="AlphaIsland.Lyrics.%(Filename)%(Extension)" />
+      <EmbeddedResource Include="Assets\Sounds\NotificationGentle.wav" LogicalName="AlphaIsland.NotificationGentle.wav" />
+      <EmbeddedResource Include="Assets\Greetings\Nailong\Frames.zip" LogicalName="AlphaIsland.Greeting.Nailong.Frames.zip" />
+      <EmbeddedResource Include="Assets\Greetings\Nailong\Sound.wav" LogicalName="AlphaIsland.Greeting.Nailong.Sound.wav" />
+      <EmbeddedResource Include="Assets\Greetings\Amiya\Frames.zip" LogicalName="AlphaIsland.Greeting.Amiya.Frames.zip" />
+      <EmbeddedResource Include="Assets\Greetings\Amiya\Sound.wav" LogicalName="AlphaIsland.Greeting.Amiya.Sound.wav" />
+      <EmbeddedResource Include="Assets\Greetings\HoshinoSwimsuit\Frames.zip" LogicalName="AlphaIsland.Greeting.HoshinoSwimsuit.Frames.zip" />
+      <EmbeddedResource Include="Assets\Greetings\HoshinoSwimsuit\Sound.wav" LogicalName="AlphaIsland.Greeting.HoshinoSwimsuit.Sound.wav" />
+      <Content Include="Assets\Greetings\SOURCES.md" CopyToOutputDirectory="PreserveNewest" />
       <Content Include="Assets\Sounds\*.wav;Assets\Sounds\SOURCES.md" CopyToOutputDirectory="PreserveNewest" />
 	  <Resource Include="Assets\Bluetooth\*.svg" />
   <Resource Include="Assets\Messengers\*.png" />

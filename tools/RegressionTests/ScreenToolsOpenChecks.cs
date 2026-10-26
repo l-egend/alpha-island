@@ -7,7 +7,7 @@ internal static partial class Program
 {
     private static void ScreenToolsOpenChecks(alpha_island.MainWindow window, Grid root)
     {
-        var button = Descendants<Button>(root).Single(view => System.Windows.Automation.AutomationProperties.GetName(view) == "翻译与字幕");
+        var button = Descendants<Button>(root).Single(view => System.Windows.Automation.AutomationProperties.GetName(view) == "文字翻译 / 扫码");
         try
         {
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

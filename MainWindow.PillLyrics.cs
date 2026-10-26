@@ -245,6 +245,11 @@ namespace alpha_island
         private void UpdatePillLyricScroll()
         {
             if (PillLyric == null || PillLyricEcho == null || PillLyricHost == null || PillLyricScroll == null) return;
+            if (_lyricRestShowing && !UpNextActive)
+            {
+                SetPillLyricWidth(PillBeatDots.Width + PillLyricChrome());
+                return;
+            }
 
             double available = PillLyricHost.ActualWidth;
             if (available <= 1.0)
@@ -748,14 +753,14 @@ namespace alpha_island
 
         private void ShowStartupGreeting()
         {
-            if (_exiting || !_options.GreetingEnabled) return;
+            if (_exiting || !GreetingPresentationEnabled) return;
 
             _activeMainIslandKey = "music";
             _layers.PreferredWinnerKey = null; // 允许问候语正常独占主岛
             _greetingPending = true;
             _layers.ShowSeconds(IslandLayerHost.GreetingKey, _options.GreetingSeconds);
             SyncVolumeFlyoutTakeover();
-            GreetingText.Text = string.IsNullOrWhiteSpace(_options.GreetingText) ? "欢迎回来" : _options.GreetingText;
+            GreetingText.Text = GreetingPresetCatalog.WelcomeText;
 
             ScheduleGreetingDismiss();
 
@@ -777,7 +782,12 @@ namespace alpha_island
             _greetingPending = false;
             _greetingTimer?.Stop();
             _greetingTimer = null;
-            _greetingFinishedTcs?.TrySetResult(true);
+            if (_greetingPreviewActive)
+            {
+                _greetingPreviewActive = false;
+                _greetingSoundPlayed = _greetingPreviewSoundPlayed;
+            }
+            else if (pending) _greetingFinishedTcs?.TrySetResult(true);
             if (pending) _greetingAudio?.Stop();
             return pending;
         }
@@ -786,6 +796,8 @@ namespace alpha_island
         {
             _greetingTimer?.Stop();
             double seconds = Math.Max(1.0, _options.GreetingSeconds);
+            if (_greetingPreviewActive && _greetingFrames.Length > 1)
+                seconds = Math.Max(seconds, Math.Min(10, _greetingFrames.Sum(frame => frame.Delay.TotalSeconds) + .35));
             var timer = new DispatcherTimer(DispatcherPriority.Normal)
             {
                 Interval = TimeSpan.FromSeconds(seconds)
@@ -801,11 +813,18 @@ namespace alpha_island
 
         private void DismissGreeting()
         {
+            bool preview = _greetingPreviewActive;
             if (!CompleteGreetingLifetime()) return;
 
             _layers.Hide(IslandLayerHost.GreetingKey);
             SyncVolumeFlyoutTakeover();
-            if (TryShowStartupMediaPrompt()) return;
+            if (preview)
+            {
+                _activeMainIslandKey = _greetingPreviewReturnKey ?? "music";
+                _layers.PreferredWinnerKey = _greetingPreviewPreferredKey;
+                _greetingPreviewReturnKey = _greetingPreviewPreferredKey = null;
+            }
+            else if (TryShowStartupMediaPrompt()) return;
             // 欢迎结束不能抢回刚由复制等事件选中的主岛。
             if (!IsIslandActive(_activeMainIslandKey))
             {

@@ -18,7 +18,7 @@ namespace alpha_island
         // 记录实际看过的页面，而不是暂时占据主岛的通知图层或页序号。
         private void RememberOpenCardPage()
         {
-            if (_state != IslandState.Card || _pages.ActivePage == null) return;
+            if (_greetingPreviewActive || _state != IslandState.Card || _pages.ActivePage == null) return;
             string page = _pages.ActiveId;
             if (SettingsRegistry.GetText(_options, LastOpenedCardPageSetting, "") == page) return;
             SettingsRegistry.SetExtra(_options, LastOpenedCardPageSetting, page);
@@ -61,7 +61,7 @@ namespace alpha_island
             // 剪切板页 / 音量页：无论有没有歌词都要 214（老代码写的是 `_currentCardPage >= 1`）。
             _pages.Register(new DelegateIslandPage(
                 id: IslandPageIds.Clipboard,
-                title: "剪切板及历史",
+                title: "剪贴板历史",
                 view: ClipboardCardLayer,
                 order: 1,
                 preferredHeight: IslandMetrics.CardHeightLyrics,

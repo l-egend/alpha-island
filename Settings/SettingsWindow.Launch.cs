@@ -37,7 +37,7 @@ public partial class SettingsWindow
     private void AddLaunchSettings()
     {
         var startup = new StackPanel();
-        startup.Children.Add(new TextBlock { Text = "启动", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 26, 0, 8) });
+        startup.Children.Add(new TextBlock { Text = "启动", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         _startupToggle = new CheckBox { Name = "StartupEnabledToggle", IsEnabled = _startupRegistration != null };
         var row = LaunchSettingRow("\uE7E8", "开机自启动", StartupHint, _startupToggle, out _startupHint);
         _startupToggle.Checked += Startup_Changed; _startupToggle.Unchecked += Startup_Changed;
@@ -62,18 +62,26 @@ public partial class SettingsWindow
         if (_startupRegistration == null) return;
         try
         {
-            _startupActual = _startupRegistration.IsEnabled;
-            SettingsRegistry.Write(_options, "StartupEnabled", _startupActual);
+            _startupActual = _startupRegistration.RestoreIfRequested(SettingsRegistry.GetBool(_options, "StartupEnabled", false));
+            if (_startupActual) SettingsRegistry.Write(_options, "StartupEnabled", true);
             _startupToggle.IsChecked = _startupActual;
-            _startupToggle.IsEnabled = true; _startupHint.Text = StartupHint;
+            _startupToggle.IsEnabled = true;
+            _startupHint.Text = _startupRegistration.IsDisabledByWindows
+                ? "已在 Windows 启动应用中禁用，请到 Windows 设置 → 应用 → 启动中重新开启" : StartupHint;
         }
-        catch (Exception ex) { _startupToggle.IsEnabled = false; _startupHint.Text = "无法读取自启动状态：" + ex.Message; }
+        catch (Exception ex)
+        {
+            _startupActual = false; _startupToggle.IsChecked = false;
+            _startupToggle.IsEnabled = true; _startupHint.Text = "自启动尚未恢复：" + ex.Message;
+            IslandLog.Warn("Startup", "恢复自启动失败：" + ex.Message);
+        }
     }
 
     private async void Startup_Changed(object sender, RoutedEventArgs e)
     {
         if (_suppress || _startupUpdating || _startupRegistration == null) return;
         bool enabled = _startupToggle.IsChecked == true;
+        bool previousPreference = SettingsRegistry.GetBool(_options, "StartupEnabled", false);
         _startupUpdating = true;
         _startupToggle.IsEnabled = false;
         try
@@ -92,7 +100,7 @@ public partial class SettingsWindow
         catch (Exception ex)
         {
             _startupToggle.IsChecked = _startupActual;
-            SettingsRegistry.Write(_options, "StartupEnabled", _startupActual);
+            SettingsRegistry.Write(_options, "StartupEnabled", previousPreference);
             _startupHint.Text = ex is System.ComponentModel.Win32Exception { NativeErrorCode: 1223 }
                 ? "已取消 Windows 授权，自启动未启用" : "修改自启动失败：" + ex.Message;
             IslandLog.Warn("Startup", "修改自启动失败：" + ex.Message);

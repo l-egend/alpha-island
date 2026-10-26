@@ -26,14 +26,14 @@ public partial class SettingsWindow
     private void AddSpeechSettings(StackPanel rows)
     {
         var panel = new StackPanel(); _speechSettingsPanel = panel;
-        panel.Children.Add(new TextBlock { Text = "语音识别与字幕", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 6, 0, 10) });
+        panel.Children.Add(new TextBlock { Text = "语音识别与区域翻译", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 12, 0, 12) });
         foreach (var descriptor in SettingsRegistry.ByPage(SettingsPageIds.Assistant).Where(d => d.Key.StartsWith("Speech") || d.Key == "SubtitleTargetLanguage"))
             panel.Children.Add(CreateRegisteredSettingRow(descriptor));
         var key = new PasswordBox { Name = "SpeechApiKeyBox", MinHeight = 32, Margin = new Thickness(0, 0, 0, 8), MaxLength = 1024 };
         RegisterName(key.Name, key);
         System.Windows.Automation.AutomationProperties.SetName(key, "语音识别 API Key");
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = .75, Margin = new Thickness(0, 6, 0, 0) };
-        void RefreshKeyStatus() => status.Text = File.Exists(SpeechSettings.SecretPath(SpeechSecretRoot)) ? "已保存独立语音密钥，按当前 Windows 用户加密。" : "尚未保存语音识别 API Key。本地服务可不填。";
+        var status = new TextBlock { Style = (Style)FindResource("W11RowHint"), Margin = new Thickness(0, 6, 0, 0) };
+        void RefreshKeyStatus() => status.Text = File.Exists(SpeechSettings.SecretPath(SpeechSecretRoot)) ? "语音密钥已加密保存。" : "未保存密钥；本地服务可留空。";
         RefreshKeyStatus();
         var actions = new WrapPanel();
         foreach (var (label, clear) in new[] { ("保存语音密钥", false), ("清除密钥", true) })
@@ -51,13 +51,13 @@ public partial class SettingsWindow
             actions.Children.Add(button);
         }
         var keyPanel = new StackPanel { Margin = new Thickness(12) };
-        keyPanel.Children.Add(new TextBlock { Text = "语音识别 API Key", Margin = new Thickness(0, 0, 0, 8) });
+        keyPanel.Children.Add(new TextBlock { Text = "语音识别 API Key", Style = (Style)FindResource("W11RowLabel"), Margin = new Thickness(0, 0, 0, 8) });
         keyPanel.Children.Add(key); keyPanel.Children.Add(actions); keyPanel.Children.Add(status);
         panel.Children.Add(SettingCard(keyPanel));
         panel.Children.Add(CreateSpeechSetupActions());
         panel.Children.Add(new TextBlock
         {
-            Text = "MiMo 按短音频分段识别，有分段与网络延迟；声音字幕另使用对话接口翻译。仅启用期间采集音频，不保存录音。本地语音服务使用 /audio/transcriptions 协议；未内置或常驻加载额外模型。Windows 本机语音用于麦克风指令，系统声音字幕请选择云端或本地服务。",
+            Text = "语音识别显示原文；区域翻译需框选。关闭工具窗口后继续运行，点 × 停止。",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 2, 12, 18), Opacity = .7
         });
         rows.Children.Add(panel);

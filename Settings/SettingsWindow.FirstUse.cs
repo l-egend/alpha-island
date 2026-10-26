@@ -12,7 +12,7 @@ public partial class SettingsWindow
     private void AddFirstUseSettings()
     {
         var panel = new StackPanel { Tag = "首次使用 开箱即用 权限 授权 自动检测 联动" };
-        panel.Children.Add(new TextBlock { Text = "本机联动与首次使用", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(2, 20, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "本机联动与首次使用", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 20, 0, 12) });
         var body = new StackPanel { Margin = new Thickness(16) };
         var software = new TextBlock { Text = "打开此页时检测本机联动应用。", Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap };
         body.Children.Add(software);

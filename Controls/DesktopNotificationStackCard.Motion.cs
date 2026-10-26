@@ -23,7 +23,8 @@ internal sealed partial class DesktopNotificationStackCard
         bool wasHidden = _expansion.Visibility != Visibility.Visible;
         double height = _expansion.ActualHeight, opacity = wasHidden ? 0 : _expansion.Opacity;
         double translation = wasHidden ? 10 : _contentMotion.Y;
-        double rearOpacity = MiddleCard.IsVisible ? MiddleCard.Opacity : 0;
+        double middleOpacity = MiddleCard.IsVisible ? MiddleCard.Opacity : 0;
+        double rearOpacity = RearCard.IsVisible ? RearCard.Opacity : 0;
         IsExpanded = expanded;
         if (expanded && !_built)
         { _built = true; foreach (var message in Group.Items) _messages.Children.Add(_createCard(message)); }
@@ -49,8 +50,8 @@ internal sealed partial class DesktopNotificationStackCard
             Animate(_contentMotion, TranslateTransform.YProperty, translation, expanded ? 0 : 8, duration);
             MiddleCard.Visibility = Visibility.Visible;
             RearCard.Visibility = Group.Items.Length > 2 ? Visibility.Visible : Visibility.Collapsed;
-            Animate(MiddleCard, OpacityProperty, rearOpacity, expanded ? 0 : 1, duration);
-            Animate(RearCard, OpacityProperty, rearOpacity, expanded ? 0 : 1, duration);
+            Animate(MiddleCard, OpacityProperty, middleOpacity, expanded ? 0 : MiddleOpacity, duration);
+            Animate(RearCard, OpacityProperty, rearOpacity, expanded ? 0 : RearOpacity, duration);
             AnimationClockLifetime.Once(this, MarginProperty,
                 new ThicknessAnimation(Margin, new Thickness(2, 0, 2, expanded ? 8 : 22), duration)
                 { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut } },
@@ -96,7 +97,7 @@ internal sealed partial class DesktopNotificationStackCard
         _contentMotion.Y = 0; _expansion.RenderTransform = Transform.Identity;
         MiddleCard.Visibility = IsExpanded ? Visibility.Collapsed : Visibility.Visible;
         RearCard.Visibility = !IsExpanded && Group.Items.Length > 2 ? Visibility.Visible : Visibility.Collapsed;
-        MiddleCard.Opacity = RearCard.Opacity = 1;
+        MiddleCard.Opacity = MiddleOpacity; RearCard.Opacity = RearOpacity;
         Margin = new Thickness(2, 0, 2, IsExpanded ? 8 : 22);
     }
 }
