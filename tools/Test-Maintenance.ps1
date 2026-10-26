@@ -29,6 +29,7 @@ try {
     $executable = Join-Path $projectRoot "tools\RegressionTests\bin\$Configuration\net8.0-windows10.0.19041.0\AlphaIsland.RegressionTests.exe"
     if ($runtimeOutput) { $executable = Join-Path $runtimeOutput 'AlphaIsland.RegressionTests.exe' }
     $flags = @(
+        '--multi-display-only',
         '--media-lyrics-controls-only',
         '--lyric-rest-only',
         '--settings-lyrics-only',

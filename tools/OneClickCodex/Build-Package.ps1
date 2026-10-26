@@ -1,7 +1,16 @@
 ﻿param([string]$RuntimeDirectory='', [string]$OutputDirectory='')
 $ErrorActionPreference='Stop'
 $repo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-if(!$RuntimeDirectory){$RuntimeDirectory=Join-Path $repo 'bin\NodeRuntime\24.21.0\node-v24.21.0-win-x64';if(!(Test-Path -LiteralPath (Join-Path $RuntimeDirectory 'node.exe'))){$RuntimeDirectory='C:\ExampleInstall\Alpha Island\agent-integrations\runtime'}}
+if (!$RuntimeDirectory) {
+    foreach ($relative in @('bin\InstallerTools\node-v24.21.0', 'bin\NodeRuntime\24.21.0\node-v24.21.0-win-x64')) {
+        $candidate = Join-Path $repo $relative
+        if (Test-Path -LiteralPath (Join-Path $candidate 'node.exe')) { $RuntimeDirectory = $candidate; break }
+    }
+    if (!$RuntimeDirectory) { throw 'Pass -RuntimeDirectory pointing to a verified Node.js 24.21.0 distribution.' }
+}
+foreach ($required in @('node.exe', 'LICENSE', 'SHA256.txt')) {
+    if (!(Test-Path -LiteralPath (Join-Path $RuntimeDirectory $required))) { throw ('Runtime distribution is missing ' + $required) }
+}
 if(!$OutputDirectory){$OutputDirectory=Join-Path $repo 'bin\Codex-OneClick-Connect'}
 $node=Join-Path $RuntimeDirectory 'node.exe';if((Get-FileHash -LiteralPath $node).Hash -ne 'BA4E6D110E8C1592A1ECD390F6B05F3DA124B13871A5BE62B341A07A853C6C32'){throw 'Verified Node.js 24.21.0 runtime required.'}
 $payload=Join-Path $OutputDirectory 'payload';$integrations=Join-Path $payload 'agent-integrations'

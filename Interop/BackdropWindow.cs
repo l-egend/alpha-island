@@ -24,7 +24,7 @@ namespace alpha_island.Interop
     ///   3. <c>ICompositorDesktopInterop.CreateDesktopWindowTarget</c> + HostBackdropBrush + 圆角裁剪；
     ///   4. 启用 <c>DWMWA_USE_HOSTBACKDROPBRUSH</c>，让背景取样由圆角精灵提供。
     ///
-    /// 已知限制：多显示器混合 DPI 场景未覆盖（本机 100%，DIP == 像素）。
+    /// 窗口边界及轮廓以物理像素传入，屏幕缩放由调用方换算。
     /// </summary>
     public sealed class BackdropWindow : IDisposable
     {

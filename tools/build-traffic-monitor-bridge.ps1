@@ -1,4 +1,4 @@
-param([string]$Compiler = 'g++')
+﻿param([string]$Compiler = 'g++')
 $ErrorActionPreference = 'Stop'
 $taskProject = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $taskOutput = Join-Path $taskProject 'bin\TrafficMonitorBridge\x64'

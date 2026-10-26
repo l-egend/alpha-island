@@ -11,6 +11,11 @@
 		<DefaultItemExcludes>$(DefaultItemExcludes);**/bin/**;**/obj/**</DefaultItemExcludes>
 		<UseWPF>true</UseWPF>
 		<UseWindowsForms>true</UseWindowsForms>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<!-- WPF owns startup and DPI; WinForms is used for tray/picker surfaces. -->
+		<NoWarn>$(NoWarn);WFAC010</NoWarn>
+		<!-- WPF owns startup and DPI; WinForms is used for tray/picker surfaces. -->
+		<NoWarn>$(NoWarn);WFAC010</NoWarn>
 		<!-- 只在 Windows x64 Release 发布时预编译；开发构建继续使用普通 IL。 -->
 		<PublishReadyToRun Condition="'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' == 'win-x64'">true</PublishReadyToRun>
 		<!-- 项目/程序集名带连字符，C# 命名空间不允许 '-'，必须显式指定根命名空间 -->

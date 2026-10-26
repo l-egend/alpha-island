@@ -50,6 +50,7 @@ namespace alpha_island
             var hwndSource = PresentationSource.FromVisual(this) as HwndSource;
             hwndSource?.AddHook(WndProc);
             StartOverlayZOrderGuard(hwnd);
+            DpiChanged += (_, _) => RequestDisplayReflow();
         }
 
         /// <summary>诊断开关 ALPHA_ISLAND_HITTEST=1：把每次 WM_NCHITTEST 的判定与岛矩形写进日志。
@@ -71,13 +72,8 @@ namespace alpha_island
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             if (msg == 0x0047) _overlayZOrder?.RequestCheck();
-            if (msg == 0x007E || msg == 0x02E0)
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-                {
-                    if (_exiting) return;
-                    PositionWindow();
-                    _privacyIndicator?.Reposition();
-                }));
+            if (msg is 0x007E or 0x02E0 || msg == 0x001A && wParam.ToInt64() is 0 or 0x002F)
+                RequestDisplayReflow();
             if (_debugInput
                 && (msg == WM_MOUSEMOVE || msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP))
             {
@@ -723,14 +719,6 @@ namespace alpha_island
                 IslandLog.Warn("Ai", $"自检失败（{sw.ElapsedMilliseconds}ms）：{ex.Message}");
             }
         }
-        /// <summary>窗口永远水平居中、贴屏幕顶部。</summary>
-        private void PositionWindow()
-        {
-            Rect area = SystemParameters.WorkArea;
-            Left = Math.Round(area.Left + (area.Width - Width) / 2.0);
-            Top = area.Top;
-        }
-
         private void Window_Closed(object sender, EventArgs e) => ExitApplication();
 
     }

@@ -124,6 +124,7 @@ namespace alpha_island.Interop
 
             _window.SourceInitialized += (_, __) => ApplyClickThrough(_window);
             _window.SizeChanged += (_, __) => Reposition();
+            _window.DpiChanged += (_, _) => _window.Dispatcher.BeginInvoke(new Action(Reposition));
         }
 
         /// <summary>当前是否挂在屏幕上（供日志/验收断言使用）。</summary>
@@ -293,12 +294,8 @@ namespace alpha_island.Interop
             if (_disposed) return;
             try
             {
-                Rect wa = SystemParameters.WorkArea;
-                // 宽高都已显式设定（见 UpdateSize），不再依赖 ActualWidth —— 首次 Show 之前它也拿得到。
-                double w = _window.Width > 0 ? _window.Width : DotSize * 2 + DotGap + PillPaddingX * 2;
-                double h = _window.Height > 0 ? _window.Height : DotSize + PillPaddingY * 2;
-                _window.Left = Math.Max(wa.Left, wa.Right - w - CornerMarginX);
-                _window.Top = Math.Max(wa.Top, wa.Top + CornerMarginY);
+                if (new WindowInteropHelper(_window).Handle != IntPtr.Zero)
+                    WindowWorkArea.PlacePrimaryCorner(_window, CornerMarginX, CornerMarginY);
             }
             catch (Exception ex)
             {

@@ -33,6 +33,13 @@ internal static partial class Program
     private static async Task RunChecks(string[] args)
     {
         IslandLog.FileSinkEnabled = false;
+        if (args.Contains("--multi-display-only"))
+        {
+            string displayRoot = Path.Combine(Path.GetTempPath(), "alpha-displays-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(displayRoot); IslandUi(displayRoot, iconEntryProbe: "multi-display"); Console.WriteLine($"All {_checks} multi-display checks passed."); }
+            finally { if (Directory.Exists(displayRoot)) Directory.Delete(displayRoot, true); }
+            return;
+        }
         if (args.Contains("--media-lyrics-controls-only"))
         {
             string mediaRoot = Path.Combine(Path.GetTempPath(), "alpha-media-lyrics-" + Guid.NewGuid().ToString("N"));
@@ -1070,6 +1077,7 @@ internal static partial class Program
                 T Field<T>(string name) => (T)ReadWindowMember(window, name)!;
                 void SetField(string name, object? value) => WriteWindowMember(window, name, value);
                 var root = (System.Windows.Controls.Grid)window.Content;
+                if (iconEntryProbe == "multi-display") { MultiDisplayUiChecks(window); return; }
                 if (iconEntryProbe == "notification-refinement") { NotificationRefinementChecks(window); return; }
                 if (iconEntryProbe == "api-persona") { ApiPersonaUiChecks(testRoot); return; }
                 if (iconEntryProbe == "island-information") { IslandInformationUiChecks(window, testRoot); return; }
