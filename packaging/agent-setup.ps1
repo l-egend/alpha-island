@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('Detect','Auto','Install','Remove')][string]$Mode = 'Detect',
     [ValidateSet('all','codex','antigravity','deepseek-harness','claude-code')][string]$Provider = 'all',
     [string]$InstallDirectory = (Split-Path $PSScriptRoot -Parent),
@@ -73,6 +73,16 @@ function Get-SetupNode {
     }
     return ''
 }
+function Test-CodexApplication {
+    if ($Isolated) { return $false }
+    if ((Get-Command codex.exe -ErrorAction SilentlyContinue) -or (Get-Command codex.cmd -ErrorAction SilentlyContinue)) { return $true }
+    if (@(Get-Process -Name Codex -ErrorAction SilentlyContinue).Count) { return $true }
+    if (Test-Path -LiteralPath (Join-Path $LocalDataDirectory 'OpenAI\Codex')) { return $true }
+    if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
+        try { return @(Get-AppxPackage -Name 'OpenAI.Codex*' -ErrorAction Stop).Count -gt 0 } catch { }
+    }
+    return $false
+}
 function Get-AgentTargets {
     $codex = Get-SetupHome 'CODEX_HOME' $CodexHome (Join-Path $UserProfileDirectory '.codex')
     $harness = Get-SetupHome 'DSH_HOME' $HarnessHome (Join-Path $UserProfileDirectory '.dsh')
@@ -111,7 +121,7 @@ function Get-AgentTargets {
     $codexHooks = Join-Path $codex 'hooks.json'
     $dshPatch = Join-Path $harness "profiles\$profile\cordis.patch.yml"
     @(
-        [pscustomobject]@{id='codex';name='Codex';detected=(Test-Path -LiteralPath $codex -PathType Container);target=$codexHooks;home=$codex;profile='';scope=$scope;allProjects=$globalScope;adapter='CodexHooks';file='hook.mjs';config='codex-hooks.json';owned=$false;approvalMode=$approvalMode},
+        [pscustomobject]@{id='codex';name='Codex';detected=((Test-Path -LiteralPath $codex -PathType Container) -or (Test-CodexApplication));profileMissing=(!(Test-Path -LiteralPath $codex -PathType Container));target=$codexHooks;home=$codex;profile='';scope=$scope;allProjects=$globalScope;adapter='CodexHooks';file='hook.mjs';config='codex-hooks.json';owned=$false;approvalMode=$approvalMode},
         [pscustomobject]@{id='antigravity';name='Antigravity';detected=((Test-Path -LiteralPath (Split-Path $agHook -Parent)) -or (Test-Path -LiteralPath (Join-Path $LocalDataDirectory 'Programs\antigravity\Antigravity.exe')));target=$agHook;home='';profile='';scope='';adapter='AntigravityHooks';file='hook.mjs';config='antigravity-hooks.json';owned=$false;approvalMode=$agApprovalMode},
         [pscustomobject]@{id='deepseek-harness';name='DeepSeek Harness';detected=(Test-Path -LiteralPath $dshPatch -PathType Leaf);target=$dshPatch;home=$harness;profile=$profile;scope='';adapter='DeepSeekHarnessPlugin';file='index.mjs';config='deepseek-harness.json';owned=$false},
         [pscustomobject]@{id='claude-code';name='Claude Code';detected=(Test-Path -LiteralPath $claude -PathType Container);target=(Join-Path $claude 'settings.json');home=$claude;profile='';scope='';allProjects=$true;adapter='ClaudeCodeHooks';file='hook.mjs';config='claude-code-hooks.json';owned=$false;nativeVersion=$claudeVersion}
@@ -172,6 +182,7 @@ function Invoke-AgentSetup {
         $mutate = $selected -and ($Mode -eq 'Install' -or $Mode -eq 'Remove' -or ($Mode -eq 'Auto' -and !$disabled -and $target.detected))
         $targetMoved = $preference -and $preference.Value.target -and $preference.Value.target -ne $target.target
         if ($Mode -eq 'Auto' -and $preference -and !$target.owned -and !$imported -and !$targetMoved) { $mutate = $false; $status = if ($disabled) {'disabled'} else {'removed'} }
+        if ($target.id -eq 'codex' -and $target.detected -and $target.profileMissing -and $Mode -ne 'Remove') { $status='profile-required';$mutate=$false }
         if ($Mode -ne 'Remove' -and $target.id -ne 'deepseek-harness' -and !$node -and $target.detected) { $status='runtime-missing';$mutate=$false }
         if ($Mode -ne 'Remove' -and $target.id -eq 'codex' -and !$target.allProjects -and !$target.scope -and $target.detected) { $status='scope-required';$mutate=$false }
         if ($mutate) {

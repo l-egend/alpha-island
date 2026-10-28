@@ -114,8 +114,8 @@ internal static partial class Program
                 "设置预览放大后保持静态，不随时间切换帧");
             Check(AgentField<GreetingGifFrame[]>(settings, "_greetingPreviewFrames").Length == 1,
                 "设置静态预览只保留一帧，不常驻完整动画");
-            Check(!AgentField<WelcomeRabbitIcon>(settings, "_greetingRabbitPreview").AnimationEnabled,
-                "默认兔子的设置预览也保持静态");
+            Check(!AgentField<WelcomeLogoIcon>(settings, "_greetingLogoPreview").AnimationEnabled,
+                "默认项目 Logo的设置预览也保持静态");
 
             var live = AgentField<IslandOptions>(main, "_options"); live.CopyFrom(options);
             string before = JsonSerializer.Serialize(live);

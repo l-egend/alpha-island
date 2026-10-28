@@ -184,7 +184,7 @@ internal sealed partial class PluginHost : IDisposable
         Action<PluginIslandPage> attach, Action<PluginIslandPage> detach, Action<string> open)
     { _dispatcher = dispatcher; _options = options; _roots = roots.ToArray(); _attach = attach; _detach = detach; _open = open; }
     internal IReadOnlyList<Entry> Entries => _entries;
-    internal Task ShutdownCompletion => Task.WhenAll(_entries.Select(entry => entry.Teardown));
+    internal Task ShutdownCompletion => Task.WhenAll(_entries.Select(entry => entry.Teardown).Concat(_settingsTeardowns));
     internal event Action? Changed;
     internal event Action<PluginBluetoothBattery>? DeviceBatteryReported;
     internal event Action<string, string, string, double>? PageNotificationRequested;
@@ -348,6 +348,7 @@ internal sealed partial class PluginHost : IDisposable
     }
     private void Stop(Entry entry)
     {
+        var settingsTeardown = CloseSettingsSessions(entry);
         if (ToolDispatcher is AlphaIsland.AgentTools.ToolRegistry registry && entry.Manifest != null) registry.RemoveOwner(entry.Manifest.Id);
         entry.Active = false;
         try { entry.Context?.Cancellation.Cancel(); } catch (Exception ex) { IslandLog.Error("Plugins:取消插件任务失败", ex); }
@@ -357,6 +358,7 @@ internal sealed partial class PluginHost : IDisposable
         entry.Started.Clear();
         if (entry.Instance != null) TryCleanup(entry.Instance.Dispose);
         if (entry.Instance is Isolation.IsolatedPlugin stopped) entry.Teardown = stopped.ShutdownCompletion;
+        entry.Teardown = Task.WhenAll(entry.Teardown, settingsTeardown);
         entry.Instance = null;
         if (entry.Manifest != null) AgentStatus.Reset(owner:"plugin:" + entry.Manifest.Id);
         entry.Context?.Cancellation.Dispose(); entry.Context = null;
@@ -417,6 +419,7 @@ internal sealed partial class PluginHost : IDisposable
         if (_disposed) return;
         _disposed = true;
         _gameBudgetPoll?.Dispose(); _gameBudgetPoll = null;
+        foreach (var session in _settingsSessions.ToArray()) session.Dispose();
         foreach (var entry in _entries) Stop(entry);
         Changed = null;
     }

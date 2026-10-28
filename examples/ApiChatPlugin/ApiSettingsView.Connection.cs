@@ -37,6 +37,7 @@ public partial class ApiSettingsView
             bool suppressed = _suppress; _suppress = true;
             AiApiKeyBox.Password = "";
             _suppress = suppressed;
+            _options.SetValue("AiSecretEndpoint", AiBaseUrlBox.Text.Trim());
             RefreshAiKeyState();
         }
         ApplyChanges();
@@ -47,8 +48,8 @@ public partial class ApiSettingsView
 
     private ChatConfig AiConnectionConfig() => new(AiBaseUrlBox.Text.Trim(),
         !string.IsNullOrWhiteSpace(AiApiKeyBox.Password) ? AiApiKeyBox.Password.Trim()
-            : _aiSecretsFile != null ? AiSecretStore.Load(_aiSecretsFile) : "",
-        AiModelBox.SelectedItem as string ?? _options.GetText("AiModel", ""), "", .7, 1024);
+            : _aiSecretsFile != null && SavedKeyMatchesEndpoint ? AiSecretStore.Load(_aiSecretsFile) : "",
+        SelectedAiModel, "", .7, 1024);
 
     private static string AiConnectionIdentity(ChatConfig config) => Convert.ToHexString(
         SHA256.HashData(Encoding.UTF8.GetBytes(config.ModelsEndpoint + "\n" + config.ApiKey)));
@@ -68,17 +69,16 @@ public partial class ApiSettingsView
         AiModelBox.ItemsSource = string.IsNullOrWhiteSpace(current) ? Array.Empty<string>() : new[] { current };
         AiModelBox.SelectedItem = current;
         _suppress = suppressed;
-        AiConnectionStatus.Text = "请先连接接口获取模型列表";
+        AiConnectionStatus.Text = "获取模型，或填写后测试";
         UpdateAiConnectionControls();
     }
 
     private void UpdateAiConnectionControls()
     {
         bool busy = _aiConnectionCts != null;
-        bool connected = _aiModelIdentity.Length != 0;
         ConnectAiModelsButton.Content = busy ? "取消测试" : "连接并获取模型";
-        AiModelBox.IsEnabled = connected && !busy;
-        TestAiModelButton.IsEnabled = connected && !busy && AiModelBox.SelectedItem is string;
+        AiModelBox.IsEnabled = !busy;
+        TestAiModelButton.IsEnabled = !busy && SelectedAiModel.Length > 0;
     }
 
     private void CancelAiConnection()
@@ -105,8 +105,8 @@ public partial class ApiSettingsView
         if (_aiConnectionCts != null) return;
         RefreshAiModelConnection();
         var config = AiConnectionConfig();
-        if (!fetchModels && (_aiModelIdentity.Length == 0 || AiModelBox.SelectedItem is not string))
-        { AiConnectionStatus.Text = "请先连接接口并选择模型"; return; }
+        if (!fetchModels && SelectedAiModel.Length == 0)
+        { AiConnectionStatus.Text = "请填写或选择模型后测试"; return; }
         string identity = AiConnectionIdentity(config);
         int version = ++_aiConnectionVersion;
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -147,7 +147,7 @@ public partial class ApiSettingsView
             AiConnectionState.Invalidate(_options); ApplyChanges();
             string error = string.IsNullOrEmpty(config.ApiKey) ? ex.Message : ex.Message.Replace(config.ApiKey, "[密钥已隐藏]", StringComparison.Ordinal);
             AiConnectionStatus.Text = "测试失败：" + error;
-            if (fetchModels) _aiModelIdentity = "";
+            if (fetchModels) { _aiModelIdentity = ""; AiConnectionStatus.Text += "；可手动填写模型后测试"; }
         }
         finally
         {

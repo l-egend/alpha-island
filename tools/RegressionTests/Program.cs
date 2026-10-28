@@ -33,6 +33,34 @@ internal static partial class Program
     private static async Task RunChecks(string[] args)
     {
         IslandLog.FileSinkEnabled = false;
+        if (args.Contains("--agent-file-transfer-only"))
+        {
+            string filesRoot = Path.Combine(Path.GetTempPath(), "alpha-agent-files-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(filesRoot); await AgentAttachmentProtocolChecks(filesRoot); IslandUi(filesRoot, iconEntryProbe: "agent-file-transfer"); Console.WriteLine($"All {_checks} agent file checks passed."); }
+            finally { if (Directory.Exists(filesRoot)) Directory.Delete(filesRoot, true); }
+            return;
+        }
+        if (args.Contains("--diagnostics-privacy-only") || args.Contains("--agent-discovery-portability-only") || args.Contains("--plugin-enable-state-only"))
+        {
+            string repairRoot = Path.Combine(Path.GetTempPath(), "alpha-agent-repair-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(repairRoot);
+                if (args.Contains("--diagnostics-privacy-only")) DiagnosticPrivacyChecks(repairRoot);
+                else if (args.Contains("--agent-discovery-portability-only")) AgentDiscoveryPortabilityChecks(repairRoot);
+                else IslandUi(repairRoot, iconEntryProbe: "plugin-enable-state");
+                Console.WriteLine($"All {_checks} repair checks passed.");
+            }
+            finally { if (Directory.Exists(repairRoot)) Directory.Delete(repairRoot, true); }
+            return;
+        }
+        if (args.Contains("--main-window-resources-only"))
+        {
+            string windowRoot = Path.Combine(Path.GetTempPath(), "alpha-main-window-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(windowRoot); IslandUi(windowRoot, iconEntryProbe: "main-window-resources"); Console.WriteLine($"All {_checks} main window resource checks passed."); }
+            finally { if (Directory.Exists(windowRoot)) Directory.Delete(windowRoot, true); }
+            return;
+        }
         if (args.Contains("--multi-display-only"))
         {
             string displayRoot = Path.Combine(Path.GetTempPath(), "alpha-displays-" + Guid.NewGuid().ToString("N"));
@@ -348,6 +376,8 @@ internal static partial class Program
             if (args.Contains("--desktop-assistant-only")) { await DesktopToolChecks(root); DesktopLocalChecks(root); IslandUi(root, iconEntryProbe: "desktop-assistant"); Console.WriteLine($"All {_checks} desktop assistant checks passed."); return; }
             if (args.Contains("--clipboard-history-preferences-only")) { IslandUi(root, iconEntryProbe: "clipboard-history-preferences"); Console.WriteLine($"All {_checks} clipboard history preference checks passed."); return; }
             if (args.Contains("--ai-settings-layout-only")) { IslandUi(root, iconEntryProbe: "ai-settings-layout"); Console.WriteLine($"All {_checks} AI settings layout checks passed."); return; }
+            if (args.Contains("--service-provider-presets-only")) { await ServiceProviderProtocolChecks(); IslandUi(root, iconEntryProbe: "service-provider-presets"); Console.WriteLine($"All {_checks} service provider checks passed."); return; }
+            if (args.Contains("--provider-settings-clarity-only")) { IslandUi(root, iconEntryProbe: "provider-settings-clarity"); Console.WriteLine($"All {_checks} settings clarity checks passed."); return; }
             if (args.Contains("--plugin-settings-surface-only")) { IslandUi(root, iconEntryProbe: "plugin-settings-surface"); Console.WriteLine($"All {_checks} plugin settings surface checks passed."); return; }
             if (args.Contains("--codex-status-recovery-only")) { IslandUi(root, iconEntryProbe: "codex-status-recovery"); Console.WriteLine($"All {_checks} Codex state recovery checks passed."); return; }
             if (args.Contains("--codex-terminal-only")) { await CodexTerminalChecks(root); Console.WriteLine($"All {_checks} Codex terminal checks passed."); return; }
@@ -390,6 +420,9 @@ internal static partial class Program
             if (args.Contains("--greeting-notification-sound-only")) { IslandUi(root, iconEntryProbe: "greeting-notification-sound"); Console.WriteLine($"All {_checks} greeting portrait and notification sound checks passed."); return; }
             if (args.Contains("--spectrum-visibility-only")) { IslandUi(root, iconEntryProbe: "spectrum-visibility"); Console.WriteLine($"All {_checks} spectrum visibility checks passed."); return; }
             if (args.Contains("--amiya-handle-only")) { IslandUi(root, iconEntryProbe: "amiya-handle"); Console.WriteLine($"All {_checks} Amiya and adaptive handle checks passed."); return; }
+            if (args.Contains("--plugin-details-availability-only")) { IslandUi(root, iconEntryProbe: "plugin-details-availability"); Console.WriteLine($"All {_checks} plugin details availability checks passed."); return; }
+            if (args.Contains("--welcome-logo-only")) { IslandUi(root, iconEntryProbe: "welcome-logo"); Console.WriteLine($"All {_checks} welcome logo checks passed."); return; }
+            if (args.Contains("--compact-island-click-only")) { IslandUi(root, iconEntryProbe: "compact-island-click"); Console.WriteLine($"All {_checks} compact island click checks passed."); return; }
             if (args.Contains("--greeting-once-only")) { IslandUi(root, iconEntryProbe: "greeting-once"); Console.WriteLine($"All {_checks} single-play greeting checks passed."); return; }
             if (args.Contains("--caption-modes-only")) { IslandUi(root, iconEntryProbe: "caption-modes"); Console.WriteLine($"All {_checks} independent caption mode checks passed."); return; }
             if (args.Contains("--agent-completion-visual-only")) { IslandUi(root, iconEntryProbe: "agent-completion-visual"); Console.WriteLine($"All {_checks} completion and satellite checks passed."); return; }
@@ -1076,7 +1109,11 @@ internal static partial class Program
                 }
                 T Field<T>(string name) => (T)ReadWindowMember(window, name)!;
                 void SetField(string name, object? value) => WriteWindowMember(window, name, value);
+                SetField("_compactIslandPointer", new Func<System.Windows.Point?>(() => new System.Windows.Point(300, 300)));
                 var root = (System.Windows.Controls.Grid)window.Content;
+
+                if (iconEntryProbe == "plugin-enable-state") { PluginEnableStateChecks(window, testRoot); return; }
+                if (iconEntryProbe == "main-window-resources") { MainWindowResourceChecks(window); return; }
                 if (iconEntryProbe == "multi-display") { MultiDisplayUiChecks(window); return; }
                 if (iconEntryProbe == "notification-refinement") { NotificationRefinementChecks(window); return; }
                 if (iconEntryProbe == "api-persona") { ApiPersonaUiChecks(testRoot); return; }
@@ -1095,6 +1132,7 @@ internal static partial class Program
                 { Width = 1200, Height = 340, PositionX = -32000, PositionY = -32000, WindowStyle = unchecked((int)0x90000000), ExtendedWindowStyle = 0x08000080 });
                 source.RootVisual = root;
                 root.UpdateLayout();
+                if (iconEntryProbe == "agent-file-transfer") { AgentFileTransferUiChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "small-screen-compatibility") { SmallScreenCompatibilityChecks(root); return; }
                 if (iconEntryProbe == "api-model-avatar") { ApiModelAvatarChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "interaction-feedback") { InteractionFeedbackChecks(window, root, testRoot); return; }
@@ -1121,6 +1159,8 @@ internal static partial class Program
                 if (iconEntryProbe == "resident-memory") { ResidentMemoryChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "settings-icon-media-pin") { SettingsIconMediaPinChecks(window, root); return; }
                 if (iconEntryProbe == "media-peripheral-lifecycle") { MediaPeripheralLifecycleChecks(window, root); return; }
+                if (iconEntryProbe == "service-provider-presets") { ServiceProviderUiChecks(testRoot); return; }
+                if (iconEntryProbe == "provider-settings-clarity") { ProviderSettingsClarityChecks(window, testRoot); return; }
                 if (iconEntryProbe == "game-resource-budget") { GameResourceBudgetChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "gaming-memory") { GamingMemoryChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "gaming-notifications") { GamingNotificationChecks(window, root); return; }
@@ -1199,6 +1239,9 @@ internal static partial class Program
                 if (iconEntryProbe == "greeting-notification-sound") { GreetingNotificationSoundChecks(window, root, testRoot); return; }
                 if (iconEntryProbe == "spectrum-visibility") { SpectrumVisibilityChecks(window, root); return; }
                 if (iconEntryProbe == "amiya-handle") { AmiyaHandleChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "plugin-details-availability") { PluginDetailsAvailabilityChecks(window, testRoot); return; }
+                if (iconEntryProbe == "welcome-logo") { WelcomeLogoChecks(window, root); return; }
+                if (iconEntryProbe == "compact-island-click") { CompactIslandClickChecks(window, root); return; }
                 if (iconEntryProbe == "greeting-once") { GreetingSinglePlaybackChecks(window, testRoot); return; }
                 if (iconEntryProbe == "caption-modes") { CaptionModesChecks(window, testRoot); return; }
                 if (iconEntryProbe == "satellite-material") { SatelliteMaterialChecks(window, root); return; }

@@ -124,7 +124,7 @@ internal static partial class Program
             var options = new IslandOptions().Normalized(); settings.LoadFrom(options);
             Check(settings.FindName("AiTemperatureSlider") == null && settings.FindName("AiMaxTokensSlider") == null
                 && SettingsRegistry.Find("AiTemperature") == null && SettingsRegistry.Find("AiMaxTokens") == null, "温度和最大回复长度选项完全从设置界面及注册表移除");
-            Check(!settings.AiModelBox.IsEditable && !settings.AiModelBox.IsEnabled && !settings.TestAiModelButton.IsEnabled, "尚未连接时不能手填或选择未验证的模型列表");
+            Check(settings.AiModelBox.IsEditable && settings.AiModelBox.IsEnabled && settings.AiEnabledToggle.IsChecked != true, "未连接时允许手填模型供测试，但不会自动启用对话");
             settings.AiApiKeyBox.Password = TestApiKey;
             Complete(settings.ConnectAiModelsAsync());
             Check(settings.AiModelBox.IsEnabled && settings.AiModelBox.Items.Count == 2 && settings.TestAiModelButton.IsEnabled
@@ -145,10 +145,10 @@ internal static partial class Program
             settings.LoadFrom(current);
             Check(settings.AiModelBox.IsEnabled && settings.AiModelBox.SelectedItem as string == "model-b", "保存密钥后重新打开保持对应的模型选择");
             settings.AiBaseUrlBox.Text = "https://another.invalid/v1";
-            Check(!settings.AiModelBox.IsEnabled && !settings.TestAiModelButton.IsEnabled, "更换接口地址立即禁用旧模型列表");
+            Check(settings.AiModelBox.IsEnabled && settings.AiEnabledToggle.IsChecked != true, "更换接口地址后保持模型可编辑并使旧连接失效");
             Check(settings.AiEnabledToggle.IsChecked == false, "更换接口后自动关闭 AI 对话");
             Complete(settings.ConnectAiModelsAsync()); settings.AiApiKeyBox.Password = "different-test-key";
-            Check(!settings.AiModelBox.IsEnabled && !settings.TestAiModelButton.IsEnabled, "更换输入密钥立即使旧列表失效");
+            Check(settings.AiModelBox.IsEnabled && settings.AiEnabledToggle.IsChecked != true, "更换输入密钥使旧连接失效，仍可编辑模型后测试");
             Check(settings.AiEnabledToggle.IsChecked == false, "更换输入密钥后自动关闭 AI 对话");
             Complete(settings.ConnectAiModelsAsync());
             Check(settings.AiEnabledToggle.IsChecked == true, "新密钥重新连接成功后自动恢复对话");
@@ -179,10 +179,10 @@ internal static partial class Program
                 Check(!pending.IsCompleted && pendingSettings.ConnectAiModelsButton.Content as string == "取消测试", "连接期间按钮提供取消操作且不阻塞界面");
                 pendingSettings.ConnectAiModelsButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                 Complete(pending);
-                Check(pendingSettings.AiConnectionStatus.Text == "已取消测试" && !pendingSettings.AiModelBox.IsEnabled, "点击取消后恢复界面，旧请求不覆盖取消状态");
+                Check(pendingSettings.AiConnectionStatus.Text == "已取消测试" && pendingSettings.AiModelBox.IsEnabled && pendingSettings.AiEnabledToggle.IsChecked != true, "点击取消后恢复界面，旧请求不覆盖取消状态");
                 pending = pendingSettings.ConnectAiModelsAsync();
                 pendingSettings.AiBaseUrlBox.Text = "https://changed.invalid/v1"; Complete(pending);
-                Check(!pendingSettings.AiModelBox.IsEnabled && pendingSettings.AiConnectionStatus.Text.Contains("请先连接"), "请求中更换地址会取消旧请求且不回填旧结果");
+                Check(pendingSettings.AiModelBox.IsEnabled && pendingSettings.AiEnabledToggle.IsChecked != true && pendingSettings.AiConnectionStatus.Text == "获取模型，或填写后测试", "请求中更换地址会取消旧请求且不回填旧结果");
                 pending = pendingSettings.ConnectAiModelsAsync(); pendingSettings.Dispose(); Complete(pending);
                 Check(pending.IsCompleted, "关闭设置会及时取消未完成的模型连接");
             }

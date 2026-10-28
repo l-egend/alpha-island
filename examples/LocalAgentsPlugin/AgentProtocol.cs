@@ -1,4 +1,5 @@
 using System.IO;
+using AlphaIsland.PluginSdk;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -11,8 +12,16 @@ internal static class AgentProtocol
     internal static string SafeError(JsonElement error) => Redact(Text(error,"message") is { Length: >0 } message ? message : "未返回详细原因");
     internal static string Redact(string text)
     {
-        text=Regex.Replace(text, @"(?i)(Bearer\s+|(?:api[_-]?key|token|secret|password|authorization)\s*[=:]\s*)[^\s,;""']+", "$1[已隐藏]");
-        return text.Length>1500 ? text[..1500] : text;
+        try
+        {
+            if (text.Length > 8000) text = text[..8000];
+            text = Regex.Replace(text, @"\b(?:Bearer|Basic)\s+[^\s""',;]+", "[已隐藏]",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+            text = Regex.Replace(text, @"((?:[""']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|authorization|cookie)(?:[""']?)\s*[:=]\s*)(?:\[已隐藏\]|""[^""\r\n]*""|'[^'\r\n]*'|[^\s,;}&\]]+)", "$1[已隐藏]",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+            return text.Length > 1500 ? text[..1500] : text;
+        }
+        catch (RegexMatchTimeoutException) { return "错误内容无法安全脱敏，已省略。"; }
     }
     internal static (string Delta,bool Done,string Error) Decode(string provider,JsonElement message,string session)
     {
@@ -62,8 +71,11 @@ internal sealed class AgentSession
     { if(id.Length is >0 and <=256 && id.All(c=>char.IsAsciiLetterOrDigit(c)||c is '-' or '_')) NativeSession=id; }
     internal Func<LocalAgent,IReadOnlyList<string>,string,RpcProcess> Start {get;set;}=(agent,args,cwd)=>new(agent.Executable,args,cwd,agent.Id=="dsh" ? agent.Home : null);
     internal async IAsyncEnumerable<string> RunAsync(LocalAgent agent,string directory,string prompt,string model,string pluginDirectory,string configDirectory,int bridgePort,
-        Func<string,CancellationToken,Task<bool>> approve,[EnumeratorCancellation] CancellationToken token)
+        Func<string,CancellationToken,Task<bool>> approve,[EnumeratorCancellation] CancellationToken token, IReadOnlyList<string>? files = null)
     {
+        string[] attachments = files is { Count: > 0 } ? PluginFileInput.Validate(files) : [];
+        prompt = AgentAttachments.WithPaths(prompt, attachments);
+        object[] codexInput = agent.Id == "codex" ? AgentAttachments.CodexInput(prompt, attachments) : [];
         IReadOnlyList<string> args=agent.Id switch
         {
             "codex"=>new[]{"app-server"},
@@ -79,7 +91,7 @@ internal sealed class AgentSession
             var thread=await rpc.CallAsync(NativeSession.Length==0 ? "thread/start" : "thread/resume",new {threadId=NativeSession.Length==0 ? null : NativeSession,cwd=directory,sandbox="workspace-write",approvalPolicy="on-request",approvalsReviewer="user"},token);
             NativeSession=AgentProtocol.Text(AgentProtocol.Child(thread,"thread"),"id");
             if(NativeSession.Length==0) throw new IOException("Codex 未返回会话标识");
-            await rpc.CallAsync("turn/start",new {threadId=NativeSession,input=new[]{new {type="text",text=prompt}}},token);
+            await rpc.CallAsync("turn/start",new {threadId=NativeSession,input=codexInput},token);
         }
         else if(agent.Id=="dsh")
         {

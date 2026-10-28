@@ -284,9 +284,7 @@ internal static partial class Program
             var sideCenter = window.SideBubble.PointToScreen(new System.Windows.Point(window.SideBubble.ActualWidth / 2, window.SideBubble.ActualHeight / 2));
             Check((bool)PrivateCall(window, "IsPointInsideInteractiveZone", (int)sideCenter.X, (int)sideCenter.Y)!,
                 "缩略岛进入原生窗口命中区域，点击不会穿透到桌面或先触发收回");
-            var mouse = new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
-                { RoutedEvent = UIElement.MouseLeftButtonUpEvent };
-            PrivateCall(window, "SideBubble_MouseLeftButtonUp", window.SideBubble, mouse); PumpAnimations(300);
+            ClickCompactIsland(window.SideBubble); PumpAnimations(300);
             Check(pages.ActiveId == IslandPageIds.Music && (IslandState)Get("_state")! == IslandState.Card, "点击媒体缩略岛切回播放器后保持展开");
             typeof(SmtcService).GetProperty(nameof(SmtcService.Sessions))!.SetValue(smtc, new[] {
                 new MediaSessionInfo("chrome-menu", "chrome.exe", "网页媒体", PlaybackState.Playing, 1),

@@ -9,7 +9,8 @@ namespace alpha_island.Services;
 
 internal static class GreetingPresetCatalog
 {
-    internal const string Rabbit = "rabbit";
+    internal const string Logo = "logo";
+    private const string LegacyRabbit = "rabbit";
     internal const string Nailong = "nailong";
     internal const string Amiya = "amiya";
     internal const string HoshinoSwimsuit = "hoshino-swimsuit";
@@ -19,8 +20,8 @@ internal static class GreetingPresetCatalog
     internal const string NailongMedia = "builtin:nailong";
     internal const string AmiyaMedia = "builtin:amiya";
     internal const string HoshinoSwimsuitMedia = "builtin:hoshino-swimsuit";
-    internal static readonly string[] Ids = [Rabbit, Nailong, Amiya, HoshinoSwimsuit, Random];
-    internal static readonly string[] Labels = ["兔子 · 轻柔启动音", "奶龙 · 欢笑音效", "阿米娅 · 问候语音", "星野 · 欢迎语音", "随机 · 图片与语音配套"];
+    internal static readonly string[] Ids = [Logo, Nailong, Amiya, HoshinoSwimsuit, Random];
+    internal static readonly string[] Labels = ["Alpha Island · 轻柔启动音", "奶龙 · 欢笑音效", "阿米娅 · 问候语音", "星野 · 欢迎语音", "随机 · 图片与语音配套"];
     internal static string ChooseRandomPreset() => Ids[System.Random.Shared.Next(Ids.Length - 1)];
     internal static bool IsBuiltInAnimation(string? key) => key is NailongMedia or AmiyaMedia or HoshinoSwimsuitMedia;
     internal static bool IsBuiltInSound(string? key) => IsBuiltInAnimation(key);
@@ -33,10 +34,11 @@ internal static class GreetingPresetCatalog
     internal static string GetId(IslandOptions options)
     {
         string id = SettingsRegistry.GetText(options, "GreetingPreset", "");
-        if (id is Rabbit or Nailong or Amiya or HoshinoSwimsuit or Random or Custom) return id;
+        if (id == LegacyRabbit) return Logo;
+        if (id is Logo or Nailong or Amiya or HoshinoSwimsuit or Random or Custom) return id;
         string image = SettingsRegistry.GetText(options, "GreetingImagePath", "");
         string sound = SettingsRegistry.GetText(options, "GreetingSoundPath", "");
-        if (image.Length == 0 && sound.Length == 0) return Rabbit;
+        if (image.Length == 0 && sound.Length == 0) return Logo;
         return MatchesLegacyPair(image, sound) ? Nailong : Custom;
     }
 
@@ -60,7 +62,8 @@ internal static class GreetingPresetCatalog
 
     internal static void Select(IslandOptions options, string id)
     {
-        if (id is not (Rabbit or Nailong or Amiya or HoshinoSwimsuit or Random)) throw new ArgumentException("未知的欢迎组合。", nameof(id));
+        if (id == LegacyRabbit) id = Logo;
+        if (id is not (Logo or Nailong or Amiya or HoshinoSwimsuit or Random)) throw new ArgumentException("未知的欢迎组合。", nameof(id));
         SettingsRegistry.Write(options, "GreetingPreset", id);
         SettingsRegistry.Write(options, "GreetingImagePath", "");
         SettingsRegistry.Write(options, "GreetingSoundPath", "");

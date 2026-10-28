@@ -53,7 +53,7 @@ public sealed partial class ChatService
         try
         {
             using var request = new HttpRequestMessage(method, endpoint);
-            if (config.HasKey) request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + config.ApiKey);
+            config.Authenticate(request);
             if (payload != null) request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false);
             using var stream = await response.Content.ReadAsStreamAsync(linked.Token).ConfigureAwait(false);

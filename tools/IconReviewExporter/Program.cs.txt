@@ -195,8 +195,8 @@ internal static partial class Program
     {
         string[] dirs = { "Animation", "Controls", "Core", "Interop", "Services", "Settings", "Themes", "Plugins", "ConversationCore", "examples" };
         var files = new List<string>();
-        files.AddRange(Directory.GetFiles(Root, "MainWindow*.cs"));
-        files.AddRange(new[] { "MainWindow.xaml", "App.xaml" }.Select(f => Path.Combine(Root, f)));
+        files.AddRange(Directory.GetFiles(Path.Combine(Root, "MainWindow"), "MainWindow*.cs"));
+        files.AddRange(new[] { "MainWindow/MainWindow.xaml", "App.xaml" }.Select(f => Path.Combine(Root, f)));
         foreach (string dir in dirs)
             if (Directory.Exists(Path.Combine(Root, dir))) files.AddRange(Directory.EnumerateFiles(Path.Combine(Root, dir), "*", SearchOption.AllDirectories)
                 .Where(f => (f.EndsWith(".cs") || f.EndsWith(".xaml")) && !f.Contains("\\bin\\") && !f.Contains("\\obj\\") && !f.Contains("\\upstream\\")));
@@ -259,7 +259,7 @@ internal static partial class Program
         foreach (string file in new[] { "Controls/SemanticIcon.cs", "Controls/SemanticIcon.Weather.cs", "Controls/SemanticIcon.SystemShapes.cs", "PluginSdk/GlyphIcon.cs", "PluginSdk/GlyphArtwork.cs", "PluginSdk/GlyphContentConverter.cs", "Controls/BluetoothDeviceArtwork.cs",
             "Controls/DesktopNotificationIcons.cs", "Controls/DesktopNotificationCard.cs", "Controls/ComponentRadialMenu.cs",
             "Animation/ActionIconMotion.cs", "Animation/MotionPolicy.cs", "Core/WeatherIconPolicy.cs", "Themes/Win11Settings.xaml",
-            "Themes/Controls.xaml", "Themes/LiquidGlass.xaml", "MainWindow.xaml", "Settings/SettingsWindow.xaml" })
+            "Themes/Controls.xaml", "Themes/LiquidGlass.xaml", "MainWindow/MainWindow.xaml", "Settings/SettingsWindow.xaml" })
             Copy(file, "10-绘制与动画源码/" + file);
         File.WriteAllText(Path.Combine(Out, "说明与来源.md"), "# Alpha Island 当前图标审阅包\n\n" +
             "版本：" + typeof(SemanticIcon).Assembly.GetName().Version + "\n\n" +

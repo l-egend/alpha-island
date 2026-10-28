@@ -47,6 +47,14 @@ namespace alpha_island.Services
         /// <summary>是否有密钥（本地模型如 Ollama 可以没有）。</summary>
         public bool HasKey => !string.IsNullOrWhiteSpace(ApiKey);
 
+        internal void Authenticate(HttpRequestMessage request)
+        {
+            if (!HasKey) return;
+            string header = Uri.TryCreate(Endpoint, UriKind.Absolute, out var uri) && uri.Host.Equals("api.xiaomimimo.com", StringComparison.OrdinalIgnoreCase)
+                ? "api-key" : "Authorization";
+            request.Headers.TryAddWithoutValidation(header, header == "api-key" ? ApiKey : "Bearer " + ApiKey);
+        }
+
         public static ChatConfig From(IChatSettings options, bool includeKey = true) => new(
             (options.GetText("AiBaseUrl", "https://api.deepseek.com/v1") ?? "").Trim(),
             includeKey ? AiSecretStore.Load() : "",
@@ -199,10 +207,7 @@ namespace alpha_island.Services
                 {
                     Content = new StringContent(json, Encoding.UTF8, "application/json")
                 };
-                if (config.HasKey)
-                {
-                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + config.ApiKey);
-                }
+                config.Authenticate(request);
 
                 try
                 {

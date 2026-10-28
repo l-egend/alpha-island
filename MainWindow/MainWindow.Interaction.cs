@@ -36,6 +36,7 @@ namespace alpha_island
 
         private void IslandBody_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            if (IsCompactIslandDoubleClick(e)) { e.Handled = true; return; }
             if (GameDoNotDisturbActive) { e.Handled = true; return; }
             if (VoiceIslandVisible) { _isSwiping = false; _dragStartedInsideIsland = true; return; }
             _mediaOpenPointer = IsMediaOpenSurface(e.OriginalSource as DependencyObject) ? e.GetPosition(this) : null;
@@ -600,6 +601,7 @@ namespace alpha_island
         /// <summary>悬停展开一级胶囊，点击进入完整卡片。</summary>
         private void IslandBody_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            if (IsCompactIslandDoubleClick(e)) { e.Handled = true; return; }
             if (_exiting || GameDoNotDisturbActive) return;
             if (VoiceIslandVisible) { e.Handled = true; return; }
             if (_state == IslandState.Pill && IsAgentIslandKey(PinTargetLayer()) && TryOpenAgentIsland(PinTargetLayer()))
@@ -662,6 +664,7 @@ namespace alpha_island
             // card is open to detect an outside press without another global loop.
             if (_state == IslandState.Card && IsCardControlSource(Mouse.Captured as DependencyObject))
             { _hoverOutTicks = 0; return; }
+            if (_compactIslandPress != null) { _hoverOutTicks = 0; return; }
             if (_state == IslandState.Card) PollOutsideCardClick();
             else _outsideCardButtonDown = false;
 
@@ -862,7 +865,7 @@ namespace alpha_island
             IntPtr fg = NativeMethods.GetForegroundWindow();
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (_exiting) return;
+                if (_exiting || _compactIslandPress != null) return;
                 // Ignore the opening click and its possible double-click tail while the
                 // launcher/menu hands input over to the selected card's new geometry.
                 if (_state == IslandState.Card && e.Timestamp <= _componentSelectedTick

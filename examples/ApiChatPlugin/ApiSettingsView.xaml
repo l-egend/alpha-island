@@ -50,7 +50,7 @@
             </Style>
         </ResourceDictionary>
     </UserControl.Resources>
-    <StackPanel x:Name="AiSettingsRoot">
+    <StackPanel x:Name="AiSettingsRoot" Margin="16,0,16,16">
         <TextBlock Margin="0,26,0,16" Style="{StaticResource W11CardTitle}" Text="AI 对话"/>
         <Border Style="{StaticResource W11Card}">
             <StackPanel>
@@ -112,9 +112,9 @@
                     </Border>
                     <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
                         <TextBlock Style="{StaticResource AiLabel}" Text="模型"/>
-                        <TextBlock Style="{StaticResource AiHint}" Text="连接后选择模型"/>
+                        <TextBlock Style="{StaticResource AiHint}" Text="获取或手动填写模型"/>
                     </StackPanel>
-                    <ComboBox x:Name="AiModelBox" Grid.Column="2" IsEditable="False" IsEnabled="False" MinHeight="36"
+                    <ComboBox x:Name="AiModelBox" Grid.Column="2" IsEditable="True" IsTextSearchEnabled="False" MinHeight="36"
                               VerticalAlignment="Center" MaxDropDownHeight="240" SelectionChanged="AiModel_SelectionChanged" FontSize="12"/>
                 </Grid>
                 <Grid x:Name="AiModelActions" Width="248" HorizontalAlignment="Right" Margin="0,0,16,12">

@@ -81,7 +81,7 @@ internal static partial class Program
             PrivateCall(main, "DismissGreeting");
             Check(AgentField<object?>(main, "_greetingPortrait") == null && AgentField<GreetingGifFrame[]>(main, "_greetingFrames").Length == 1,
                 "欢迎结束后清理出框层并只保留动画首帧");
-            GreetingPresetCatalog.Select(live, GreetingPresetCatalog.Rabbit); PrivateCall(main, "ApplyGreetingMedia");
+            GreetingPresetCatalog.Select(live, GreetingPresetCatalog.Logo); PrivateCall(main, "ApplyGreetingMedia");
             Check(main.GreetingIcon.Visibility == Visibility.Visible && main.GreetingCustomImage.Width == 32,
                 "切回兔子保持原来的显示尺寸，不沿用奶龙裁切");
         }

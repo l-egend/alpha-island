@@ -29,7 +29,7 @@ internal sealed class PluginWorkerServer : IDisposable
     private int _disposed;
     private int _eventWrites;
     private string? _active;
-    private bool _gameSuspensionPrepared;
+    private bool _gameSuspensionPrepared, _settingsOnly;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _textCalls = new();
     [DllImport("kernel32.dll")] private static extern uint SetErrorMode(uint mode);
     internal PluginWorkerServer(System.Windows.Application application, string pipe, string nonce)
@@ -110,6 +110,7 @@ internal sealed class PluginWorkerServer : IDisposable
         "frame" => Frame(PluginWire.Read<RemoteViewRequest>(packet.Data)),
         "input" => Input(PluginWire.Read<RemoteCommand>(packet.Data)),
         "prefill" => Prefill(PluginWire.Read<RemoteCommand>(packet.Data)),
+        "files" => AttachFiles(PluginWire.Read<RemoteFileInput>(packet.Data)),
         "text-cancel" => CancelText(PluginWire.Read<RemoteTextInput>(packet.Data)),
         "action" => Action(PluginWire.Read<string>(packet.Data)),
         "configuration" => Configure(PluginWire.Read<Dictionary<string, JsonElement>>(packet.Data)),
@@ -130,6 +131,7 @@ internal sealed class PluginWorkerServer : IDisposable
     private RemoteRegistry Initialize(PluginStart start)
     {
         if (_plugin != null) throw new InvalidOperationException("插件已经启动");
+        _settingsOnly = start.SettingsOnly;
         string directory = Path.GetFullPath(start.Directory);
         string assembly = Path.GetFullPath(Path.Combine(directory, start.Assembly));
         if (!assembly.StartsWith(directory.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
@@ -140,11 +142,12 @@ internal sealed class PluginWorkerServer : IDisposable
             ?? throw new InvalidDataException("找不到插件入口");
         _plugin = Activator.CreateInstance(type) as IIslandPlugin ?? throw new InvalidDataException("插件未实现 IIslandPlugin");
         _plugin.Initialize(_context); _context.Sealed = true;
-        foreach (var service in _context.Services) { _started.Add(service); service.Start(_lifetime.Token); }
-        return new(_context.Pages.Select(page => new RemotePage(page.Key, page.Title, page.Glyph, page.Height, page.Order)).ToArray(),
-            _context.Settings.ToArray(), Actions(), _context.SettingsView != null,
-            _context.Networks.Select(source => new RemoteNetwork(source.Key, source.Title, source.Priority)).ToArray(),
-            _context.ToolHandlers.Select(t => t.Definition).ToArray(), _plugin is IPluginSuspendGuard);
+        if (!_settingsOnly)
+            foreach (var service in _context.Services) { _started.Add(service); service.Start(_lifetime.Token); }
+        return new(_settingsOnly ? [] : _context.Pages.Select(page => new RemotePage(page.Key, page.Title, page.Glyph, page.Height, page.Order)).ToArray(),
+            _context.Settings.ToArray(), _settingsOnly ? [] : Actions(), _context.SettingsView != null,
+            _settingsOnly ? [] : _context.Networks.Select(source => new RemoteNetwork(source.Key, source.Title, source.Priority)).ToArray(),
+            _settingsOnly ? [] : _context.ToolHandlers.Select(t => t.Definition).ToArray(), !_settingsOnly && _plugin is IPluginSuspendGuard);
     }
     private bool CancelTool(string id) { if (_toolCalls.TryGetValue(id, out var cancel)) cancel.Cancel(); return true; }
     private async Task<ToolResult> RunToolAsync(ToolRequest request)
@@ -164,11 +167,22 @@ internal sealed class PluginWorkerServer : IDisposable
     private PluginWorkerContext Context => _context ?? throw new InvalidOperationException("插件尚未初始化");
     private RemoteStatus Status()
     {
+        if (_settingsOnly) return new([], [], null, null, null, 0, Interlocked.Read(ref _lastPulse));
         PluginNetworkSample? network = null; PluginNetworkSource? selected = null;
         foreach (var source in Context.Networks.OrderByDescending(source => source.Priority))
             if (source.Read() is { } sample && PluginNetworkRules.IsUsable(sample, DateTimeOffset.UtcNow)) { network = sample; selected = source; break; }
+        string diagnostics = "";
+        try
+        {
+            if (_plugin is IPluginDiagnostics info)
+            {
+                string content = info.DiagnosticText ?? "";
+                diagnostics = Core.DiagnosticRedactor.Redact(content[..Math.Min(content.Length, 4096)]);
+            }
+        }
+        catch (Exception error) { diagnostics = "PLUGIN_DIAGNOSTICS_FAILED: " + error.GetType().Name; }
         return new(Context.Pages.Select(page => new RemotePageState(page.Key, page.Available?.Invoke() ?? true, page.Summary?.Invoke() ?? page.Title)).ToArray(),
-            Actions(), network, selected?.Title, selected?.Key, selected?.Priority ?? 0, Interlocked.Read(ref _lastPulse));
+            Actions(), network, selected?.Title, selected?.Key, selected?.Priority ?? 0, Interlocked.Read(ref _lastPulse), diagnostics);
     }
     private RemoteFrame Frame(RemoteViewRequest request)
     {
@@ -193,7 +207,7 @@ internal sealed class PluginWorkerServer : IDisposable
             height = Math.Clamp(Math.Ceiling(document.DesiredSize.Height) + 2, 80, 650);
         }
         _owner.Width = width; _owner.Height = height;
-        return surface.Capture(width, height);
+        return surface.Capture(width, height, request.Scale);
     }
     private void Deactivate()
     {
@@ -209,6 +223,7 @@ internal sealed class PluginWorkerServer : IDisposable
     }
     private PluginWorkerSurface Surface(string key)
     {
+        if (_settingsOnly && key != "$settings") throw new InvalidOperationException("当前进程仅用于插件设置");
         if (_surfaces.TryGetValue(key, out var existing)) return existing;
         FrameworkElement view = key == "$settings"
             ? new C.ScrollViewer { Content = Context.SettingsView?.Invoke() ?? throw new InvalidOperationException("插件没有设置界面"), VerticalScrollBarVisibility = C.ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = C.ScrollBarVisibility.Disabled }
@@ -217,6 +232,18 @@ internal sealed class PluginWorkerServer : IDisposable
         var surface = new PluginWorkerSurface(view);
         _surfaces.Add(key, surface);
         return surface;
+    }
+    private PluginFileInputResult AttachFiles(RemoteFileInput request)
+    {
+        if (_gameSuspensionPrepared) return new(false, "游戏模式已暂停附件接收。");
+        try
+        {
+            var paths = PluginFileInput.Validate(request.Paths);
+            return Surface(request.View).View is IPluginFileInput input
+                ? input.AttachFiles(paths) : new(false, "此插件版本不支持文件附件，请更新插件。");
+        }
+        catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException)
+        { return new(false, Core.DiagnosticRedactor.Redact(error.Message)); }
     }
     private bool Prefill(RemoteCommand command) => Surface(command.View).Prefill(command.Text ?? "");
     private async Task<PluginTextInputResult> SubmitTextAsync(RemoteTextInput request)

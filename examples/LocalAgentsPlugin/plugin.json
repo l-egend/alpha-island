@@ -1,1 +1,1 @@
-{"id":"ai.local-agents","name":"本机 Agent","version":"0.1.28","apiVersion":6,"assembly":"AlphaIsland.Plugins.LocalAgents.dll","entryType":"AlphaIsland.Plugins.LocalAgents.LocalAgentsPlugin","description":"使用本机 Codex、DeepSeek Harness 或 Antigravity CLI 的既有登录，任务与回复直接显示在岛内。"}
+{"id":"ai.local-agents","name":"本机 Agent","version":"0.1.29","apiVersion":7,"assembly":"AlphaIsland.Plugins.LocalAgents.dll","entryType":"AlphaIsland.Plugins.LocalAgents.LocalAgentsPlugin","description":"使用本机 Codex、DeepSeek Harness 或 Antigravity CLI 的既有登录，任务与回复直接显示在岛内。"}

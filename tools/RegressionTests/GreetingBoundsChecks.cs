@@ -16,7 +16,7 @@ internal static partial class Program
         MotionPolicy.OverrideRenderTierForDebug(2); MotionPolicy.Apply(false, false);
         try
         {
-            foreach (string id in new[] { GreetingPresetCatalog.Nailong, GreetingPresetCatalog.Amiya, GreetingPresetCatalog.HoshinoSwimsuit, GreetingPresetCatalog.Rabbit })
+            foreach (string id in new[] { GreetingPresetCatalog.Nailong, GreetingPresetCatalog.Amiya, GreetingPresetCatalog.HoshinoSwimsuit, GreetingPresetCatalog.Logo })
             {
                 GreetingPresetCatalog.Select(options, id);
                 PrivateCall(main, "ApplyGreetingMedia"); PrivateCall(main, "PreviewStartupGreeting");
@@ -73,7 +73,7 @@ internal static partial class Program
                     var upper = main.IslandBody.TranslatePoint(new System.Windows.Point(30, -4), main.GreetingCustomImage);
                     Check(clip.FillContains(upper), id + " 的裁切保留上方出框区域");
                 }
-                else Check(main.GreetingIcon.ActualHeight <= body.Height, "默认兔子保留原有尺寸与安全边距");
+                else Check(main.GreetingIcon.ActualHeight <= body.Height, "默认项目 Logo保留原有尺寸与安全边距");
                 PrivateCall(main, "DismissGreeting");
             }
         }

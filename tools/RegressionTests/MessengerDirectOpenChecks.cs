@@ -67,7 +67,7 @@ internal static partial class Program
 
                 PrivateCall(window, "SetState", IslandState.Card, true, "focus"); PumpAnimations(50); root.UpdateLayout();
                 Check(AgentField<string?>(window, "_sideBubbleComponentKey") == "desktoptoast", "展开其他卡片时消息通过旁侧提示显示");
-                var sideClick = ClickArgs(); PrivateCall(window, "SideBubble_MouseLeftButtonUp", window.SideBubble, sideClick); Wait();
+                var sideClick = ClickCompactIsland(window.SideBubble); Wait();
                 Check(sideClick.Handled && pages.ActiveId == "focus" && opened.Count == 2 && opened.Last().Key == item.Key,
                     "旁侧消息直接打开客户端，保留正在查看的卡片");
 
@@ -76,8 +76,7 @@ internal static partial class Program
                 var orbs = AgentField<Dictionary<string, Border>>(window, "_satelliteOrbViews");
                 Check(orbs.TryGetValue("desktoptoast", out var orb) && orb.Visibility == Visibility.Visible,
                     "另一提示作为主岛时消息作为缩略小岛显示");
-                orb!.RaiseEvent(new MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, MouseButton.Left)
-                    { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent });
+                ClickCompactIsland(orb!);
                 Wait();
                 Check(opened.Count == 3 && opened.Last().Key == item.Key && AgentField<string>(window, "_activeMainIslandKey") == "system",
                     "缩略通知点击直接打开客户端，不先切换主岛");

@@ -22,11 +22,12 @@ public partial class SettingsWindow
     private bool _pluginRefreshPending;
     internal void BindPluginHost(PluginHost host)
     {
+        InitializePluginSettingsLifetime();
         UnbindPluginHost(); _pluginHost = host; host.Changed += QueuePluginRefresh;
         RebuildPluginRows();
     }
     private void UnbindPluginHost()
-    { if (_pluginHost != null) _pluginHost.Changed -= QueuePluginRefresh; _pluginHost = null; }
+    { ReleasePluginSettingsSessions(); if (_pluginHost != null) _pluginHost.Changed -= QueuePluginRefresh; _pluginHost = null; }
     private void QueuePluginRefresh()
     {
         if (_pluginRefreshPending) return;
@@ -38,6 +39,7 @@ public partial class SettingsWindow
     private void RebuildPluginRows()
     {
         if (PluginRows == null) return;
+        PrunePluginSettingsSessions();
         PluginRows.Children.Clear();
         if (_pluginHost == null || _pluginHost.Entries.Count == 0)
         {
@@ -52,8 +54,7 @@ public partial class SettingsWindow
             header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var labels = new StackPanel { Margin = new Thickness(0, 0, 16, 0) };
             labels.Children.Add(PluginText(entry.Manifest is { } manifest ? $"{manifest.Name}  ·  {manifest.Version}" : Path.GetFileName(entry.Directory), "W11RowLabel"));
-            string status = entry.UninstallError.Length > 0 ? "卸载失败：" + entry.UninstallError
-                : entry.Error.Length > 0 ? "加载失败：" + entry.Error : entry.Running ? "已启用" : "未启用";
+            string status = PluginHost.StateText(entry, entry.Manifest != null && PluginHost.IsEnabled(_options, entry.Manifest.Id));
             labels.Children.Add(PluginText(status, "W11RowHint"));
             if (entry.Manifest is { Description.Length: > 0 }) labels.ToolTip = entry.Manifest.Description;
             header.Children.Add(labels); content.Children.Add(header);
@@ -87,15 +88,7 @@ public partial class SettingsWindow
                 System.Windows.Automation.AutomationProperties.SetName(toggle, "启用" + entry.Manifest.Name);
                 toggle.Checked += (_, _) => SetPluginValue(PluginHost.EnabledKey(id), true);
                 toggle.Unchecked += (_, _) => SetPluginValue(PluginHost.EnabledKey(id), false);
-                if (entry.Running && entry.Context != null)
-                {
-                    foreach (var setting in entry.Context.Settings) content.Children.Add(CreatePluginSettingRow(id, setting));
-                    if (entry.Context.SettingsView != null)
-                    {
-                        try { content.Children.Add(entry.Context.SettingsView()); }
-                        catch (Exception ex) { content.Children.Add(PluginText("无法打开插件设置：" + ex.Message, "W11RowHint")); }
-                    }
-                }
+                AddPluginDetails(entry, actions, content);
             }
             PluginRows.Children.Add(card);
         }
@@ -165,6 +158,7 @@ public partial class SettingsWindow
     {
         foreach (var pair in source.Extras.Where(p => p.Key.StartsWith("plugin/", StringComparison.Ordinal) || p.Key.StartsWith("Ai", StringComparison.Ordinal)))
             _options.Extras[pair.Key] = pair.Value;
+        foreach (var session in _pluginSettingsSessions.Values) session.Synchronize();
     }
     private void OpenPluginsFolder_Click(object sender, RoutedEventArgs e)
     {

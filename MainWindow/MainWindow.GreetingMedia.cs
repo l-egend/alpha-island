@@ -2,6 +2,7 @@
 using System.Windows.Threading;
 using alpha_island.Animation;
 using alpha_island.Core;
+using alpha_island.Controls;
 using alpha_island.Services;
 
 namespace alpha_island;
@@ -39,6 +40,9 @@ public partial class MainWindow
             GreetingCustomImage.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
             GreetingIcon.Visibility = custom ? Visibility.Collapsed : Visibility.Visible;
         }
+        GreetingIcon.AnimationEnabled = !SettingsRegistry.GetBool(_options, "ReduceEffectsEnabled", false);
+        GreetingIcon.AvailableDuration = TimeSpan.FromSeconds(Math.Clamp(_options.GreetingSeconds - .35, 1.1, WelcomeLogoIcon.PlaybackDuration.TotalSeconds));
+        GreetingIcon.SetPresentation(_greetingPresentationVisible && GreetingPresentationEnabled && GreetingIcon.Visibility == Visibility.Visible);
         SyncGreetingPortrait();
         SyncGreetingImageAnimation();
         if (!GreetingPresentationEnabled || !SettingsRegistry.GetBool(_options, "GreetingSoundEnabled", true)) _greetingAudio?.Stop();
@@ -111,6 +115,7 @@ public partial class MainWindow
         _greetingPresentationVisible = visible;
         if (!visible)
         {
+            GreetingIcon.SetPresentation(false);
             RemoveGreetingPortrait();
             StopGreetingImageAnimation();
             if (_greetingFrames.Length > 0) GreetingCustomImage.Source = _greetingFrames[0].Image;

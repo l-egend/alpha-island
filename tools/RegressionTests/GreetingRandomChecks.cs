@@ -10,7 +10,7 @@ internal static partial class Program
 {
     private static void GreetingRandomChecks(alpha_island.MainWindow main, string testRoot)
     {
-        string[] builtIns = [GreetingPresetCatalog.Rabbit, GreetingPresetCatalog.Nailong, GreetingPresetCatalog.Amiya, GreetingPresetCatalog.HoshinoSwimsuit];
+        string[] builtIns = [GreetingPresetCatalog.Logo, GreetingPresetCatalog.Nailong, GreetingPresetCatalog.Amiya, GreetingPresetCatalog.HoshinoSwimsuit];
         Check(Enumerable.Range(0, 100).All(_ => builtIns.Contains(GreetingPresetCatalog.ChooseRandomPreset())),
             "随机欢迎只从四个内置组合中抽取，不会选到随机本身或失效的自定义文件");
         string legacyPath = Path.Combine(testRoot, "retired-greeting.json");

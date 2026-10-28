@@ -47,7 +47,7 @@ internal static partial class Program
             PrivateCall(window, "SwitchMainIsland", "music"); PrivateCall(window, "SyncSatelliteOrbs"); PumpAnimations(80);
             if (orbs.TryGetValue("charging", out var orb))
             {
-                orb.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent });
+                ClickCompactIsland(orb!);
                 PumpAnimations(80); root.UpdateLayout();
             }
             Expect(AgentField<IslandState>(window, "_state") == IslandState.Card && pages.ActiveId == IslandPageIds.System,

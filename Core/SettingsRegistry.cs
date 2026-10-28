@@ -485,8 +485,8 @@ namespace alpha_island.Core
                 SettingsPageIds.General, controlName: "StartupEnabledToggle"));
             list.Add(ExtraBool("StartupBootTimeNotify", "开机耗时提醒", "自启动时显示开机耗时；缺少精确记录时提供参考值", true,
                 SettingsPageIds.General, controlName: "StartupBootTimeToggle", enabledBy: "StartupEnabled"));
-            list.Add(ExtraText("GreetingPreset", "启动欢迎组合", "内置兔子、奶龙、阿米娅和星野；可按组合随机切换", "", SettingsPageIds.Notifications));
-            list.Add(ExtraText("GreetingImagePath", "左侧欢迎图片", "在启动问候中导入图片；保留本机副本，清除后恢复默认兔子图标", "", SettingsPageIds.Notifications));
+            list.Add(ExtraText("GreetingPreset", "启动欢迎组合", "内置项目 Logo、奶龙、阿米娅和星野；可按组合随机切换", "", SettingsPageIds.Notifications));
+            list.Add(ExtraText("GreetingImagePath", "左侧欢迎图片", "在启动问候中导入图片；保留本机副本，清除后恢复默认项目 Logo", "", SettingsPageIds.Notifications));
             list.Add(ExtraBool("GreetingSoundEnabled", "欢迎音效", "欢迎提示出现时播放一次，可自选音效和试听", true,
                 SettingsPageIds.Notifications, controlName: "GreetingSoundToggle"));
             list.Add(ExtraText("GreetingSoundPath", "启动音效文件", "支持 WAV、MP3 等系统可解码音效；最长 10 秒，留空使用内置轻柔启动音", "", SettingsPageIds.Notifications));

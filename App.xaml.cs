@@ -16,6 +16,7 @@ namespace alpha_island
         /// <summary>异常日志路径：%LOCALAPPDATA%\alpha-island\error.log</summary>
         public static string LogPath => AppPaths.ErrorLogFile;
         internal static bool IsAutoStartup { get; private set; }
+        internal const string MainWindowXamlPath = "MainWindow/MainWindow.xaml";
         private Plugins.Isolation.PluginWorkerServer? _pluginWorker;
 
         protected override void OnStartup(StartupEventArgs e)
@@ -45,7 +46,7 @@ namespace alpha_island
                 Shutdown(result);
                 return;
             }
-            StartupUri = new Uri("MainWindow.xaml", UriKind.Relative);
+            StartupUri = new Uri(MainWindowXamlPath, UriKind.Relative);
             IsAutoStartup = e.Args.Contains("--startup", StringComparer.OrdinalIgnoreCase);
             base.OnStartup(e);
 

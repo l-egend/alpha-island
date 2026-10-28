@@ -795,12 +795,6 @@ namespace alpha_island
             AlphaIsland.PluginSdk.AnimationClockLifetime.Begin(MusicOrbBubble,UIElement.OpacityProperty, opacityAnim);
         }
 
-        private void MusicOrbBubble_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            e.Handled = true;
-            SwitchMainIsland("music");
-        }
-
         private void MusicOrbBubble_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;

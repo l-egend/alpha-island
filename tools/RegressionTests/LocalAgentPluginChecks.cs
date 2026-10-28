@@ -25,6 +25,16 @@ internal static partial class Program
             if(method=="turn/start")
             {
                 string text=AgentProtocol.Text(AgentProtocol.Child(p,"input").EnumerateArray().First(),"text");
+                if (mode == "codex-files")
+                {
+                    var inputs = AgentProtocol.Child(p, "input").EnumerateArray().ToArray();
+                    var image = inputs.Single(item => AgentProtocol.Text(item, "type") == "localImage");
+                    if (!File.Exists(AgentProtocol.Text(image, "path")) || !text.Contains("notes.txt")) throw new Exception("Attachment payload missing");
+                    await Emit(new { id, result = new { turn = new { id = "files-turn", status = "inProgress" } } });
+                    await Emit(new { method = "item/agentMessage/delta", @params = new { threadId = session, delta = "附件协议已核验" } });
+                    await Emit(new { method = "turn/completed", @params = new { threadId = session, turn = new { id = "files-turn", status = "completed" } } });
+                    continue;
+                }
                 await Emit(new{id,result=new{turn=new{id="fixture-turn",status="inProgress"}}});
                 if(text=="block") { await Emit(new{method="item/agentMessage/delta",@params=new{threadId=session,delta="正在等待"}});continue; }
                 await Emit(new{id="approval-test",method="item/commandExecution/requestApproval",@params=new{threadId=session,turnId="fixture-turn",command="fixture-read-only",reason="测试允许一次"}});continue;

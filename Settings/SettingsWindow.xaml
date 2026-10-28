@@ -942,7 +942,7 @@
                                     <Button Content="刷新插件列表" Click="RefreshPlugins_Click"/>
                                     <Button Content="打开插件目录" Click="OpenPluginsFolder_Click" Margin="10,0,0,0"/>
                                 </StackPanel>
-                                <TextBlock Style="{StaticResource W11RowHint}" TextWrapping="Wrap" Margin="2,0,2,16" Text="新插件默认关闭；更新已加载插件后需重启"/>
+                                <TextBlock Style="{StaticResource W11RowHint}" TextWrapping="Wrap" Margin="2,0,2,16" Text="可单独打开插件设置；替换已加载的插件后需重启"/>
                                 <StackPanel x:Name="PluginRows"/>
                             </StackPanel>
                             <StackPanel Visibility="Collapsed" x:Name="Page_About">

@@ -42,6 +42,17 @@ test('fresh device with no optional apps stays usable without creating app confi
   }finally{await f.cleanup();}
 });
 
+test('installed Codex without a user profile reports initialization required and leaves the profile untouched',{skip:process.platform!=='win32'},async()=>{
+  const f=await fixture(false);try{
+    await mkdir(path.join(f.local,'OpenAI','Codex'),{recursive:true});
+    const report=f.run('Auto','codex',[],{},true);
+    const codex=report.providers.find(p=>p.id==='codex');
+    assert.equal(codex.detected,true);
+    assert.equal(codex.status,'profile-required');
+    await assert.rejects(readdir(f.codex));
+  }finally{await f.cleanup();}
+});
+
 test('fresh Codex installation automatically covers projects on different drives without a project directory',{skip:process.platform!=='win32'},async()=>{
   const f=await fixture();try{
     await rm(path.join(f.data,'config','codex-hooks.json'));

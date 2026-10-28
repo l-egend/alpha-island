@@ -3,13 +3,19 @@ using System.Windows.Threading;
 
 namespace AlphaIsland.PluginSdk;
 
-public static class PluginApi { public const int Version = 6; public const int MinimumVersion = 1; }
+public static class PluginApi { public const int Version = 7; public const int MinimumVersion = 1; }
 
 /// <summary>Initialize 只注册贡献。宿主在 UI 线程调用所有生命周期方法。</summary>
 public interface IIslandPlugin : IDisposable
 {
     void Initialize(IPluginContext context);
     void OnSettingsChanged() { }
+}
+
+/// <summary>Optional operational diagnostics. Do not include credentials or conversation content.</summary>
+public interface IPluginDiagnostics
+{
+    string DiagnosticText { get; }
 }
 
 /// <summary>Allows an idle worker to exit and restart without losing drafts or interrupting work.</summary>

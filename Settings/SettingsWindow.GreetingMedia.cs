@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using alpha_island.Core;
@@ -24,7 +24,7 @@ public partial class SettingsWindow
     private GreetingAudioPlayer? _greetingSoundPreview;
     private TextBlock _greetingImageHint = null!, _greetingSoundHint = null!, _greetingMediaStatus = null!;
     private Image _greetingImagePreview = null!;
-    private Controls.WelcomeRabbitIcon _greetingRabbitPreview = null!;
+    private Controls.WelcomeLogoIcon _greetingLogoPreview = null!;
     private ComboBox _greetingPresetCombo = null!;
     private TextBlock _greetingCustomPresetLabel = null!;
     private bool _greetingPresetUpdating;
@@ -49,9 +49,9 @@ public partial class SettingsWindow
         rows.Children.Add(GreetingFileRow("启动欢迎组合", "图片与音效同步切换。", presetActions, out _, "\uE7F4"));
         var imageActions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var preview = new Grid { Width = 72, Height = 72, Margin = new Thickness(0, 0, 12, 0) };
-        _greetingRabbitPreview = new Controls.WelcomeRabbitIcon { Width = 64, Height = 64, AnimationEnabled = false };
+        _greetingLogoPreview = new Controls.WelcomeLogoIcon { Width = 64, Height = 64, AnimationEnabled = false };
         _greetingImagePreview = new Image { Width = 72, Height = 72, Stretch = Stretch.Uniform };
-        preview.Children.Add(_greetingRabbitPreview); preview.Children.Add(_greetingImagePreview);
+        preview.Children.Add(_greetingLogoPreview); preview.Children.Add(_greetingImagePreview);
         imageActions.Children.Add(preview);
         var imageButtons = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var chooseAndTest = new StackPanel { Orientation = Orientation.Horizontal };
@@ -143,12 +143,12 @@ public partial class SettingsWindow
             GreetingPresetCatalog.Amiya => "已切换为阿米娅透明动画与问候语音。",
             GreetingPresetCatalog.HoshinoSwimsuit => "已切换为星野透明动画与欢迎语音。",
             GreetingPresetCatalog.Random => "每次启动随机选择一组，图片和语音同步切换。",
-            _ => "已切换为兔子图标与轻柔启动音。"
+            _ => "已切换为项目 Logo 与轻柔启动音。"
         };
         ApplyChanges(); RefreshGreetingMediaSettings();
     }
 
-    private void ResetGreetingMedia(bool image) => SelectGreetingPreset(GreetingPresetCatalog.Rabbit);
+    private void ResetGreetingMedia(bool image) => SelectGreetingPreset(GreetingPresetCatalog.Logo);
 
     private void PreviewGreeting()
     {
@@ -185,7 +185,7 @@ public partial class SettingsWindow
             GreetingPresetCatalog.AmiyaMedia => "内置阿米娅透明动图",
             GreetingPresetCatalog.NailongMedia => "内置奶龙透明动图",
             GreetingPresetCatalog.HoshinoSwimsuitMedia => "内置星野透明动图",
-            _ => string.IsNullOrWhiteSpace(image) ? "默认兔子图标" : File.Exists(image) ? "已导入自定义图片" : "图片不可用，显示默认兔子图标"
+            _ => string.IsNullOrWhiteSpace(image) ? "默认项目 Logo" : File.Exists(image) ? "已导入自定义图片" : "图片不可用，显示默认项目 Logo"
         };
         if (id == GreetingPresetCatalog.Random) _greetingImageHint.Text = "本次组合：" + GreetingPresetCatalog.Labels[Array.IndexOf(GreetingPresetCatalog.Ids, preset)];
         _greetingSoundHint.Text = sound switch
@@ -205,7 +205,7 @@ public partial class SettingsWindow
         catch { _greetingPreviewFrames = []; }
         _greetingImagePreview.Source = _greetingPreviewFrames.Length > 0 ? _greetingPreviewFrames[0].Image : null;
         _greetingImagePreview.Visibility = _greetingPreviewFrames.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        _greetingRabbitPreview.Visibility = _greetingPreviewFrames.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _greetingLogoPreview.Visibility = _greetingPreviewFrames.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateGreetingMediaEnabledStates()

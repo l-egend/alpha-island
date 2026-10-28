@@ -46,14 +46,6 @@ public partial class MainWindow
             UpdateCombinedStatus(_sideNetworkView, CurrentNetworkSample);
         }
     }
-    private void SideBubble_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (!TryOpenMessengerNotification(_sideBubbleComponentKey)
-            && !TryOpenAgentIsland(_sideBubbleComponentKey)
-            && _sideBubbleComponentKey is { } key && PageForCompactIsland(key) is { } page) SelectComponent(page);
-        e.Handled = true;
-    }
-
     private void SideBubble_PreviewMouseRightButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         e.Handled = true;

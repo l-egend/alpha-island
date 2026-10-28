@@ -39,30 +39,18 @@ internal static partial class Program
             PrivateCall(window, "ShowStartupGreeting");
             PumpAnimations(500); root.UpdateLayout();
             Check(window.GreetingLayer.Visibility == Visibility.Visible && !animator.IsRunning,
-                "启动问候完成展开后显示兔子出框图标");
-            var rabbit = window.GreetingIcon;
-            var leftEar = (RotateTransform)rabbit.FindName("LeftEarRotation");
-            Check(leftEar.HasAnimatedProperties, "问候使用有限的耳朵过渡动画");
-            PumpAnimations(1050);
-            Check(!leftEar.HasAnimatedProperties, "问候动画完成后释放时钟");
-            var bounds = VisualTreeHelper.GetDescendantBounds(rabbit);
-            Check(bounds.Top < -5 && rabbit.ActualHeight == 32 && !rabbit.ClipToBounds,
-                "兔子耳朵真实超出32像素圆框，不挤压问候文字布局");
-            var bitmap = Render("welcome-rabbit");
-            var rabbitOrigin = rabbit.TransformToAncestor(root).Transform(new Point(0, 0));
-            int width = bitmap.PixelWidth, stride = width * 4;
-            var pixels = new byte[stride * bitmap.PixelHeight]; bitmap.CopyPixels(pixels, stride, 0);
-            int earPixels = 0;
-            for (int y = (int)rabbitOrigin.Y - 7; y < (int)rabbitOrigin.Y; y++)
-                for (int x = (int)rabbitOrigin.X; x < (int)rabbitOrigin.X + 32; x++)
-                {
-                    if (y < 0 || x < 0 || x >= width) continue;
-                    int offset = y * stride + x * 4;
-                    if (pixels[offset] > 180 && pixels[offset + 1] > 180 && pixels[offset + 2] > 180) earPixels++;
-                }
-            Check(earPixels > 12, $"实际岛体裁切后仍能看到圆框上方的耳朵（{earPixels}像素）");
+                "启动问候完成展开后显示项目 Logo");
+            var logo = window.GreetingIcon;
+            Check(DependencyPropertyHelper.GetValueSource(logo, alpha_island.Controls.WelcomeLogoIcon.ProgressProperty).IsAnimated,
+                "问候使用有限的入场、飞离与返程动画");
+            PumpAnimations(450); Render("welcome-logo");
+            Check(logo.ActualWidth == 32 && logo.ActualHeight == 32, "Logo 显示区不挤压欢迎文字布局");
+            PumpAnimations((int)alpha_island.Controls.WelcomeLogoIcon.PlaybackDuration.TotalMilliseconds + 200);
+            Check(!DependencyPropertyHelper.GetValueSource(logo, alpha_island.Controls.WelcomeLogoIcon.ProgressProperty).IsAnimated,
+                "问候动画完成后释放时钟");
             PrivateCall(window, "DismissGreeting"); PumpAnimations(500);
-            Check(!leftEar.HasAnimatedProperties, "问候隐藏后不保留动画");
+            Check(!DependencyPropertyHelper.GetValueSource(logo, alpha_island.Controls.WelcomeLogoIcon.ProgressProperty).IsAnimated,
+                "问候隐藏后不保留动画");
 
             options.BatteryNotifyEnabled = false; options.BatteryNotifySeconds = 2;
             var settings = new alpha_island.Settings.SettingsWindow(false);

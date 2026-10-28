@@ -20,11 +20,11 @@ internal sealed class PluginWorkerContext(PluginStart start, Dispatcher dispatch
         ToolHandlers.Add(tool);
     }
     public async ValueTask<ToolDefinition[]> GetToolsAsync(CancellationToken cancellationToken = default)
-        => await HostCall<ToolDefinition[]>("tool-list", new { }, cancellationToken);
+        => start.SettingsOnly ? [] : await HostCall<ToolDefinition[]>("tool-list", new { }, cancellationToken);
     public async ValueTask<ToolResult> ExecuteAsync(ToolRequest request, CancellationToken cancellationToken = default)
-        => await HostCall<ToolResult>("tool-execute", request, cancellationToken);
+        => start.SettingsOnly ? ToolResult.Fail("请先启用插件后再执行此操作。") : await HostCall<ToolResult>("tool-execute", request, cancellationToken);
     public async ValueTask<DesktopContextSnapshot> GetDesktopContextAsync(string prompt, CancellationToken cancellationToken = default)
-        => await HostCall<DesktopContextSnapshot>("desktop-context", prompt, cancellationToken);
+        => start.SettingsOnly ? DesktopContextSnapshot.Empty : await HostCall<DesktopContextSnapshot>("desktop-context", prompt, cancellationToken);
     private async Task<T> HostCall<T>(string kind, object data, CancellationToken cancellationToken)
     {
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(token, cancellationToken);

@@ -43,13 +43,13 @@ public partial class SettingsWindow
         {
             var choice = new System.Windows.Controls.ComboBox { Width = 210, MinHeight = 32, ItemsSource = choices,
                 DisplayMemberPath = "Value", SelectedValuePath = "Key" };
-            choice.SelectionChanged += (_, _) => { if (!_suppress) ApplyChanges(); }; input = choice;
+            choice.SelectionChanged += (_, _) => { if (!_suppress) { if (descriptor.Key == "SpeechProvider") SpeechProviderChanged(choice); else ApplyChanges(); } }; input = choice;
         }
         else if (descriptor.Kind == SettingKind.Text)
         {
             var box = new TextBox { Style = (Style)FindResource("W11TextBox"), Width = descriptor.Key.StartsWith("Speech") ? 250 : 190, MinHeight = 32, MaxLength = descriptor.Key == "SpeechBaseUrl" ? 512 : descriptor.Key == "SpeechModel" ? 128 : 64,
                 VerticalContentAlignment = VerticalAlignment.Center };
-            box.TextChanged += Setting_Changed; input = box;
+            if (descriptor.Key == "SpeechBaseUrl") box.TextChanged += (_, _) => SpeechAddressChanged(); else box.TextChanged += Setting_Changed; input = box;
         }
         else
         {

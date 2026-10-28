@@ -17,7 +17,7 @@ internal static partial class Program
     private static void GreetingPresetChecks(alpha_island.MainWindow main, string testRoot)
     {
         var options = new IslandOptions().Normalized();
-        Check(GreetingPresetCatalog.GetId(options) == GreetingPresetCatalog.Rabbit, "新配置仍默认选择兔子与轻柔启动音");
+        Check(GreetingPresetCatalog.GetId(options) == GreetingPresetCatalog.Logo, "新配置仍默认选择项目 Logo与轻柔启动音");
         SettingsRegistry.Write(options, "GreetingSoundVolume", 10);
         SettingsRegistry.Write(options, "GreetingSoundEnabled", false);
         SettingsRegistry.Write(options, "GreetingImagePath", "old-picture.gif");
@@ -95,7 +95,7 @@ internal static partial class Program
         finally { MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduce, save); }
         Check(AgentField<GreetingGifFrame[]>(main, "_greetingFrames").Length == 1
             && AgentField<object?>(main, "_greetingImageTimer") == null, "欢迎岛隐藏后只保留首帧并释放动画计时器");
-        GreetingPresetCatalog.Select(live, GreetingPresetCatalog.Rabbit); PrivateCall(main, "ApplyGreetingMedia");
+        GreetingPresetCatalog.Select(live, GreetingPresetCatalog.Logo); PrivateCall(main, "ApplyGreetingMedia");
         Check(main.GreetingCustomImage.Source == null && main.GreetingIcon.Visibility == Visibility.Visible
             && GreetingPresetCatalog.SoundKey(live) == "", "切回兔子同时恢复默认图标和轻柔音效");
     }
@@ -111,7 +111,7 @@ internal static partial class Program
             int changes = 0; settings.OptionsChanged += (_, _) => changes++;
             Check(combo.Items.Count == 5 && combo.SelectedIndex == 1, "真实设置展示四个内置组合与随机选项并正确回填奶龙选择");
             combo.SelectedIndex = 0;
-            Check(GreetingPresetCatalog.GetId(saved) == GreetingPresetCatalog.Rabbit && GreetingPresetCatalog.ImageKey(saved) == ""
+            Check(GreetingPresetCatalog.GetId(saved) == GreetingPresetCatalog.Logo && GreetingPresetCatalog.ImageKey(saved) == ""
                 && GreetingPresetCatalog.SoundKey(saved) == "" && changes == 1, "下拉切换兔子通过同一次设置事件同步更换图片和音效");
             combo.SelectedIndex = 1;
             Check(GreetingPresetCatalog.GetId(saved) == GreetingPresetCatalog.Nailong && changes == 2

@@ -39,10 +39,12 @@ internal sealed class PluginWorkerSurface
         input.SetCurrentValue(C.TextBox.TextProperty, text[..Math.Min(text.Length, input.MaxLength > 0 ? input.MaxLength : 12000)]);
         input.GetBindingExpression(C.TextBox.TextProperty)?.UpdateSource(); return true;
     }
-    internal RemoteFrame Capture(double width, double height)
+    internal RemoteFrame Capture(double width, double height, double scale = 1)
     {
         width = Math.Clamp(double.IsFinite(width) ? width : 414, 160, 1024);
         height = Math.Clamp(double.IsFinite(height) ? height : 294, 80, 1024);
+        scale = Math.Clamp(double.IsFinite(scale) ? scale : 1, 1, 3);
+        scale = Math.Min(scale, Math.Sqrt((PluginWire.MaximumImagePixels - 8192d) / (width * height)));
         View.Measure(new Size(width, height)); View.Arrange(new Rect(0, 0, width, height)); View.UpdateLayout();
         var controls = new List<RemoteVisual>(); var hidden = new List<(FrameworkElement View, double Opacity)>();
         _elements.Clear();
@@ -75,7 +77,7 @@ internal sealed class PluginWorkerSurface
                     _elements[id] = element;
                     string text = element switch
                     {
-                        C.TextBlock block => block.Text, C.TextBox input => input.Text,
+                        C.TextBlock block => block.Text, C.TextBox input => input.Text, C.ComboBox choice => choice.Text,
                         C.ContentControl content => content.Content switch { string label => label, C.TextBlock label => label.Text, _ => "" }, _ => ""
                     };
                     if (text.Length > 128_000) text = text[^128_000..];
@@ -90,7 +92,7 @@ internal sealed class PluginWorkerSurface
                         element is C.PasswordBox password ? password.Password.Length > 0 : (element as C.CheckBox)?.IsChecked, clip.X - box.X, clip.Y - box.Y, clip.Width, clip.Height,
                         (control?.FontWeight ?? blockElement?.FontWeight ?? FontWeights.Normal).ToOpenTypeWeight() >= 600,
                         blockElement?.TextWrapping == TextWrapping.Wrap, element is ScrollBar bar ? bar.Orientation.ToString() : blockElement?.TextAlignment.ToString() ?? "Left",
-                        element is C.Button or C.CheckBox ? Snapshot(element, box.Width, box.Height) : "", element.ToolTip as string ?? "", (element as ScrollBar)?.ViewportSize ?? 0));
+                        element is C.Button or C.CheckBox ? Snapshot(element, box.Width, box.Height, scale) : "", element.ToolTip as string ?? "", (element as ScrollBar)?.ViewportSize ?? 0, element is C.ComboBox { IsEditable: true }));
                     hidden.Add((element, element.Opacity));
                     return; // A control's template is rendered by the host, not duplicated as child controls.
                 }
@@ -101,7 +103,7 @@ internal sealed class PluginWorkerSurface
         try
         {
             foreach (var item in hidden) item.View.SetCurrentValue(UIElement.OpacityProperty, 0d);
-            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(width), (int)Math.Ceiling(height), 96, 96, PixelFormats.Pbgra32);
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             bitmap.Render(View); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using var bytes = new MemoryStream(); encoder.Save(bytes);
             return new(width, height, Convert.ToBase64String(bytes.ToArray()), controls.ToArray(), ++_revision);
@@ -116,10 +118,10 @@ internal sealed class PluginWorkerSurface
         return value?.ToString() ?? "";
     }
     private static string Color(Brush? brush) => brush is SolidColorBrush color ? color.Color.ToString() : "";
-    private static string Snapshot(FrameworkElement element, double width, double height)
+    private static string Snapshot(FrameworkElement element, double width, double height, double scale)
     {
         if (width > 1024 || height > 1024) return "";
-        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(width)), Math.Max(1, (int)Math.Ceiling(height)), 96, 96, PixelFormats.Pbgra32);
+        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(width * scale)), Math.Max(1, (int)Math.Ceiling(height * scale)), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
         // Render in local coordinates. Rendering an arranged child directly also
         // applies its layout offset, which can put all pixels outside this bitmap.
         var visual = new DrawingVisual();
@@ -168,6 +170,8 @@ internal sealed class PluginWorkerSurface
                 input.SetCurrentValue(C.TextBox.TextProperty, (command.Text ?? "")[..Math.Min(command.Text?.Length ?? 0, 128_000)]);
                 input.GetBindingExpression(C.TextBox.TextProperty)?.UpdateSource(); return true;
             case C.PasswordBox password when command.Action == "text": password.Password = command.Text ?? ""; return true;
+            case C.ComboBox { IsEditable: true } combo when command.Action == "choice-text":
+                combo.SetCurrentValue(C.ComboBox.TextProperty, (command.Text ?? "")[..Math.Min(command.Text?.Length ?? 0, 256)]); return true;
             case C.ComboBox combo when command.Action == "choice": combo.SetCurrentValue(Selector.SelectedIndexProperty, Math.Clamp((int)command.Number, -1, combo.Items.Count - 1)); return true;
             case C.CheckBox check when command.Action == "check": check.SetCurrentValue(ToggleButton.IsCheckedProperty, command.Checked); check.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); return true;
             case C.Slider slider when command.Action == "value" && double.IsFinite(command.Number): slider.SetCurrentValue(RangeBase.ValueProperty, Math.Clamp(command.Number, slider.Minimum, slider.Maximum)); return true;

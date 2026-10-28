@@ -49,8 +49,7 @@ internal static partial class Program
                 // Exercise the real native message before routing the WPF click.
                 int activation = (int)SendAgentMouseActivate(islandWindow.Handle, 0x21, target.Handle, new IntPtr((0x201 << 16) | 1));
                 if (activation is 1 or 2) fixture.Foreground = islandWindow.Handle;
-                orb!.RaiseEvent(new MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, MouseButton.Left)
-                    { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent });
+                ClickCompactIsland(orb!);
                 Check(activation == 3 && fixture.Activated == null && fixture.Foreground == target.Handle,
                     provider + " 在前台时点击残留縮略小岛不抢焦点，也不重复跳转");
                 Check(AgentField<alpha_island.Animation.MediaHandoffOverlay?>(window, "_agentHandoff") == null,
@@ -59,8 +58,7 @@ internal static partial class Program
                 fixture.Foreground = IntPtr.Zero; fixture.Activated = null;
                 PrivateCall(window, "UpdateAgentStatusUi");
                 PrivateCall(window, "SwitchMainIsland", "system"); PumpAnimations(50); root.UpdateLayout();
-                orb.RaiseEvent(new MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, MouseButton.Left)
-                    { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent });
+                ClickCompactIsland(orb!);
                 Check(fixture.Activated?.Handle == target.Handle,
                     provider + " 在后台时缩略小岛仍直接打开对应助手");
 
@@ -75,8 +73,7 @@ internal static partial class Program
                 Check(!(bool)PrivateCall(window, "CompactClickKeepsExternalFocus", (int)center.X, (int)center.Y)!,
                     "完整卡片主体仍允许激活和文字输入");
                 fixture.Foreground = target.Handle;
-                PrivateCall(window, "SideBubble_MouseLeftButtonUp", window.SideBubble,
-                    new MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
+                ClickCompactIsland(window.SideBubble);
                 Check(fixture.Activated == null, "助手已在前台时旁侧入口不重复打开");
                 AgentStatus.Reset(owner: owner); PrivateCall(window, "StopAgentWindowTracking"); layers.HideAll();
             }

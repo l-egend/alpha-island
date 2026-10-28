@@ -21,13 +21,14 @@ internal sealed class IsolatedPlugin : IIslandPlugin
     private IPluginContext? _context;
     private RemoteStatus? _status;
     private string? _active;
-    private bool _disposed, _polling, _presentationDirty;
+    private bool _disposed, _polling, _presentationDirty, _settingsOnly;
     private readonly Dictionary<string, CancellationTokenSource> _hostCalls = new();
     private long _configurationVersion, _sentConfigurationVersion;
     internal long ConfigurationVersion => _configurationVersion;
     internal long AppliedConfigurationVersion { get; private set; }
     internal Task ShutdownCompletion => _session.Completion;
     internal int ProcessId => _session.ProcessId;
+    internal string Diagnostics => _status?.Diagnostics ?? "";
     internal bool IsAlive => !_disposed && _session.IsAlive;
     internal bool SupportsRuntimeSuspension { get; private set; }
     internal Task<bool> PrepareGameSuspensionAsync() => _session.Request<bool>("prepare-game-suspension", new { });
@@ -40,11 +41,11 @@ internal sealed class IsolatedPlugin : IIslandPlugin
         _session = new(dispatcher); _session.Failed += failed; _session.Event += OnEvent;
     }
     public void Initialize(IPluginContext context) => throw new InvalidOperationException("隔离插件通过异步加载接口初始化");
-    internal async Task InitializeAsync(IPluginContext context, PluginManifest manifest, string directory)
+    internal async Task InitializeAsync(IPluginContext context, PluginManifest manifest, string directory, bool settingsOnly = false)
     {
-        _context = context;
+        _context = context; _settingsOnly = settingsOnly;
         var registry = await _session.StartAsync(new(directory, manifest.Assembly, manifest.EntryType, manifest.Id,
-            context.DataDirectory, _configuration()), context.Lifetime).ConfigureAwait(false);
+            context.DataDirectory, _configuration(), settingsOnly), context.Lifetime).ConfigureAwait(false);
         var initial = await _session.Request<RemoteStatus>("status", new { }).ConfigureAwait(false);
         await _dispatcher.InvokeAsync(() =>
         {
@@ -111,7 +112,7 @@ internal sealed class IsolatedPlugin : IIslandPlugin
             {
                 double width = Math.Clamp(visible.ActualWidth > 0 ? visible.ActualWidth : 414, 160, 1024);
                 double height = Math.Clamp(visible.ActualHeight > 0 ? visible.ActualHeight : 294, 80, 1024);
-                var frame = await _session.Request<RemoteFrame>("frame", new RemoteViewRequest(visible.Key, width, height));
+                var frame = await _session.Request<RemoteFrame>("frame", new RemoteViewRequest(visible.Key, width, height, Scale: System.Windows.Media.VisualTreeHelper.GetDpi(visible).DpiScaleX));
                 if (!_disposed && visible.IsPresented) visible.Apply(frame);
                 _active = visible.Key;
             }
@@ -131,6 +132,7 @@ internal sealed class IsolatedPlugin : IIslandPlugin
         foreach (var action in status.Actions) _actions[action.Key] = action.Available;
         return changed;
     }
+    internal Task<PluginFileInputResult> AttachFilesAsync(string key, string[] paths) => _session.Request<PluginFileInputResult>("files", new RemoteFileInput(key, paths));
     internal Task<bool> PrefillAsync(string key, string text) => _session.Request<bool>("prefill", new RemoteCommand(key, "prefill", Text: text));
     internal Task<PluginTextInputResult> SubmitTextAsync(string key, string requestId, string text)
         => _session.Request<PluginTextInputResult>("text-submit", new RemoteTextInput(key, requestId, text), TimeSpan.FromMinutes(5));
@@ -165,6 +167,7 @@ internal sealed class IsolatedPlugin : IIslandPlugin
     private void OnEvent(RemoteEvent item)
     {
         if (_disposed || _context == null || _context.Lifetime.IsCancellationRequested) return;
+        if (_settingsOnly && item.Name is not ("configuration" or "refresh" or "log")) return;
         switch (item.Name)
         {
             case "host-call" when item.Value is JsonElement call: Observe(HandleHostCall(PluginWire.Read<RemoteHostCall>(call))); break;

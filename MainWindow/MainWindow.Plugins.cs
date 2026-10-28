@@ -55,6 +55,7 @@ public partial class MainWindow
             SyncCardPageVisuals();
             _tray?.SetPluginActions(_plugins.AvailableActions);
         };
+        DiagnosticsReport.RegisterSection("插件状态", () => _plugins.DiagnosticsText());
         if (_runtimeEnabled) _plugins.Discover();
     }
 

@@ -58,7 +58,7 @@ namespace alpha_island.Core
             }
 
             list.Add(new DiagnosticsSection("最近日志", RecentLogText(60)));
-            return list;
+            return list.Select(section => new DiagnosticsSection(DiagnosticRedactor.Redact(section.Title), DiagnosticRedactor.Redact(section.Body))).ToArray();
         }
 
         private static string MemoryText()
@@ -112,6 +112,7 @@ namespace alpha_island.Core
             Assembly asm = typeof(DiagnosticsReport).Assembly;
 
             sb.Append("程序版本：").AppendLine(asm.GetName().Version?.ToString() ?? "未知");
+            sb.Append("构建标识：").AppendLine(asm.ManifestModule.ModuleVersionId.ToString("N"));
             sb.Append("目标框架：").AppendLine(asm.GetCustomAttribute<System.Runtime.Versioning.TargetFrameworkAttribute>()?.FrameworkName ?? "未知");
             sb.Append("运行时：").AppendLine(RuntimeInformation.FrameworkDescription);
             sb.Append("系统：").AppendLine(RuntimeInformation.OSDescription.Trim());
@@ -175,15 +176,12 @@ namespace alpha_island.Core
         internal static void AddSharedLog(ZipArchive archive, string path)
         {
             using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            long remaining = source.Length;
-            using var target = archive.CreateEntry(Path.GetFileName(path), CompressionLevel.Optimal).Open();
-            var buffer = new byte[8192];
-            while (remaining > 0)
-            {
-                int count = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
-                if (count == 0) break;
-                target.Write(buffer, 0, count); remaining -= count;
-            }
+            const int maximumBytes = 1_048_576;
+            bool clipped = source.Length > maximumBytes;
+            if (clipped) source.Seek(-maximumBytes, SeekOrigin.End);
+            using var reader = new StreamReader(source, Encoding.UTF8, true, 8192, true);
+            if (clipped) reader.ReadLine();
+            AddText(archive, Path.GetFileName(path), (clipped ? "（仅包含最近 1 MiB 日志）\n" : "") + reader.ReadToEnd());
         }
 
         /// <summary>读 options.json 并把疑似密钥的字段值打码；读不到就返回一句说明。</summary>
@@ -224,6 +222,7 @@ namespace alpha_island.Core
         private static readonly string[] SensitiveHints =
         {
             "key", "secret", "token", "password", "passwd", "credential", "apikey", "cookie",
+            "prompt", "persona", "history", "clipboard", "messagebody", "privatekey", "authorization",
         };
 
         private static bool IsSensitive(string name)
@@ -256,6 +255,9 @@ namespace alpha_island.Core
                     writer.WriteEndArray();
                     break;
 
+                case JsonValueKind.String:
+                    writer.WriteStringValue(DiagnosticRedactor.Redact(element.GetString()));
+                    break;
                 default:
                     element.WriteTo(writer);
                     break;
@@ -267,7 +269,8 @@ namespace alpha_island.Core
             ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
             using Stream s = entry.Open();
             using var w = new StreamWriter(s, new UTF8Encoding(false));
-            w.Write(text);
+            w.Write(entryName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                ? MaskJson(text) : DiagnosticRedactor.Redact(text));
         }
 
         private static TimeSpan SafeUptime()

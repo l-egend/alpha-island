@@ -327,6 +327,8 @@ namespace alpha_island
             }
 
             InitializeComponent();
+            RegisterCompactIslandInput(SideBubble, () => _sideBubbleComponentKey, openCard: true);
+            RegisterCompactIslandInput(MusicOrbBubble, () => "music");
             PillSpectrum.IsVisibleChanged += (_, _) => SyncSpectrumWork();
             CardWave.IsVisibleChanged += (_, _) => SyncSpectrumWork();
 

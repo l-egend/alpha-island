@@ -6,7 +6,7 @@
         xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
         xmlns:pluginUi="clr-namespace:AlphaIsland.PluginSdk;assembly=AlphaIsland.PluginSdk"
         Title="Alpha Island"
-        Icon="Assets/alpha-island.ico"
+        Icon="/alpha-island;component/Assets/alpha-island.ico"
         Width="1200" Height="340"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -307,8 +307,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- 圆框与兔子分层，耳朵出框但仍保留在岛体内。 -->
-                    <controls:WelcomeRabbitIcon x:Name="GreetingIcon" Grid.Column="0"/>
+                    <controls:WelcomeLogoIcon x:Name="GreetingIcon" Grid.Column="0"/>
                     <Image x:Name="GreetingCustomImage" Grid.Column="0" Width="32" Height="32"
                            Stretch="Uniform" Visibility="Collapsed" IsHitTestVisible="False"/>
 
@@ -746,21 +745,23 @@
                             </ItemsControl>
                         </ScrollViewer>
 
-                        <!-- 右侧快捷操作：收起与清空 -->
-                        <StackPanel Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Center">
+                        <WrapPanel Grid.Column="1" Width="60" Margin="4,0,0,0" VerticalAlignment="Center">
+                            <Button x:Name="SendTransferFilesToAgentButton" Style="{StaticResource TransportButton}"
+                                    Width="28" Height="28" Focusable="False" ToolTip="发送至本机 Agent"
+                                    AutomationProperties.Name="发送中转站文件至本机 Agent" Click="SendTransferFilesToAgent_Click">
+                                <icons:GlyphIcon Text="&#xE99A;" FontSize="17" Foreground="{StaticResource AccentCyan}"/>
+                            </Button>
                             <Button x:Name="CloseFileTransferButton" Style="{StaticResource TransportButton}"
-                                    FocusVisualStyle="{x:Null}" Focusable="False" Width="28" Height="28"
+                                    FocusVisualStyle="{x:Null}" Focusable="False" Width="28" Height="28" Margin="4,0,0,0"
                                     ToolTip="直接收起中转站" Click="CloseFileTransferButton_Click">
-                                <icons:GlyphIcon Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="11"
-                                           Foreground="#8CFFFFFF" HorizontalAlignment="Center"/>
+                                <icons:GlyphIcon Text="&#xE711;" FontSize="11" Foreground="#8CFFFFFF"/>
                             </Button>
                             <Button x:Name="ClearFileTransferButton" Style="{StaticResource TransportButton}"
-                                    FocusVisualStyle="{x:Null}" Focusable="False" Width="28" Height="28" Margin="0,3,0,0"
+                                    FocusVisualStyle="{x:Null}" Focusable="False" Width="28" Height="28" Margin="0,4,0,0"
                                     ToolTip="清空中转站所有文件" Click="ClearFileTransferButton_Click">
-                                <icons:GlyphIcon Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="17"
-                                           Foreground="#8CFFFFFF" HorizontalAlignment="Center"/>
+                                <icons:GlyphIcon Text="&#xE74D;" FontSize="17" Foreground="#8CFFFFFF"/>
                             </Button>
-                        </StackPanel>
+                        </WrapPanel>
                     </Grid>
                 </Grid>
 
@@ -1739,7 +1740,6 @@
                 Panel.ZIndex="2"
                 ClipToBounds="True"
                 Cursor="Hand"
-                MouseLeftButtonUp="SideBubble_MouseLeftButtonUp"
                 PreviewMouseRightButtonUp="SideBubble_PreviewMouseRightButtonUp"
                 IsHitTestVisible="True"
                 Visibility="Collapsed"
@@ -1794,8 +1794,6 @@
                 Visibility="Collapsed"
                 Opacity="0"
                 ToolTip="点击恢复媒体播放器（右键置顶/取消置顶）"
-                MouseLeftButtonDown="MusicOrbBubble_MouseLeftButtonDown"
-                PreviewMouseLeftButtonDown="MusicOrbBubble_MouseLeftButtonDown"
                 PreviewMouseRightButtonUp="MusicOrbBubble_PreviewMouseRightButtonUp"
                 RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform>

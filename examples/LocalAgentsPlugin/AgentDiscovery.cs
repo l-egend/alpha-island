@@ -4,14 +4,14 @@ using System.Text.RegularExpressions;
 namespace AlphaIsland.Plugins.LocalAgents;
 internal sealed record LocalAgent(string Id, string Name, string Executable, string Entry = "", string Home = "")
 { public override string ToString() => Name; }
-internal static class AgentDiscovery
+internal static partial class AgentDiscovery
 {
     internal static IReadOnlyList<LocalAgent> Find(string configDirectory)
     {
         var found = new List<LocalAgent>();
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string? codex = OnPath("codex.exe") ?? Children(Path.Combine(local,"OpenAI","Codex","bin"), "codex.exe");
+        string? codex = FindCodex(configDirectory, local, user);
         if (codex != null) found.Add(new("codex","Codex",codex));
         string? agy = OnPath("agy.exe") ?? Existing(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","antigravity-cli","agy.exe"))
             ?? Existing(Path.Combine(local,"Programs","antigravity-cli","agy.exe")) ?? Existing(Path.Combine(user,".local","bin","agy.exe"));

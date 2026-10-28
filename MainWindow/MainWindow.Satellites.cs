@@ -724,17 +724,7 @@ namespace alpha_island
 
             orb.Child = grid;
 
-            // 鼠标左键点击：变大成为主岛（Preview + MouseLeftButtonDown 双保）
-            orb.PreviewMouseLeftButtonDown += (s, e) =>
-            {
-                e.Handled = true;
-                if (!TryOpenMessengerNotification(key) && !TryOpenAgentIsland(key) && !TryOpenBatteryIsland(key)) SwitchMainIsland(key);
-            };
-            orb.MouseLeftButtonDown += (s, e) =>
-            {
-                e.Handled = true;
-                if (!TryOpenMessengerNotification(key) && !TryOpenAgentIsland(key) && !TryOpenBatteryIsland(key)) SwitchMainIsland(key);
-            };
+            RegisterCompactIslandInput(orb, () => key);
 
             // 鼠标右键点击：独立置顶/取消置顶
             orb.PreviewMouseRightButtonUp += (s, e) =>

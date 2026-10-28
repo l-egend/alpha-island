@@ -29,21 +29,33 @@ internal static partial class Program
         {
             var frame=AwaitPlugin(session.Request<RemoteFrame>("frame",new RemoteViewRequest("$settings",width,650)));
             var remote=new RemotePluginView("$settings",_=>Task.CompletedTask,error=>throw error);remote.Apply(frame);
-            var panel=new Border {Background=new SolidColorBrush(System.Windows.Media.Color.FromRgb(28,28,28)),Child=remote};
-            SaveConversationPreview(panel,$"docs/screens/v113-ai-settings-{width}.png",width,(int)Math.Ceiling(frame.Height));
-            var buttons=frame.Elements.Where(e=>e.Kind=="button").ToArray();
-            RemoteVisual Control(string name)=>frame.Elements.Single(e=>e.Name==name);
-            var save=Control("SaveAiKeyButton");var clear=Control("ClearAiKeyButton");
-            var connect=Control("ConnectAiModelsButton");var test=Control("TestAiModelButton");
+            SaveProviderPreview(remote,$"api-settings-{width}",width,frame.Height,1);
+            RemoteFrame Seek(params string[] names)
+            {
+                for(int attempt=0;attempt<30;attempt++)
+                {
+                    var visible=AwaitPlugin(session.Request<RemoteFrame>("frame",new RemoteViewRequest("$settings",width,650)));
+                    if(names.All(name=>visible.Elements.Any(item=>item.Name==name && item.ClipHeight>=item.Height-1))) return visible;
+                    AwaitPlugin(session.Request<bool>("input",new RemoteCommand("$settings","wheel",Number:-180,X:width/2d,Y:visible.Height-20)));
+                }
+                throw new Exception("未能滚动到控件："+string.Join(",",names));
+            }
+            var keyFrame=Seek("SaveAiKeyButton","ClearAiKeyButton","AiApiKeyBox");
+            RemoteVisual In(RemoteFrame snapshot,string name)=>snapshot.Elements.Single(item=>item.Name==name);
+            var save=In(keyFrame,"SaveAiKeyButton");var clear=In(keyFrame,"ClearAiKeyButton");
+            var modelFrame=Seek("ConnectAiModelsButton","TestAiModelButton","AiModelBox");
+            var connect=In(modelFrame,"ConnectAiModelsButton");var test=In(modelFrame,"TestAiModelButton");
             Check(Math.Abs(save.Y-clear.Y)<1 && clear.X-save.X-save.Width>=7, $"{width}px：保存和删除密钥并排且保留间距");
             Check(Math.Abs(connect.Y-test.Y)<1 && test.X-connect.X-connect.Width>=7, $"{width}px：连接和测试模型并排且保留间距");
-            Check(save.Y>=Control("AiApiKeyBox").Y+Control("AiApiKeyBox").Height+7, $"{width}px：密钥输入和操作按钮不挤在一起");
-            Check(connect.Y>=Control("AiModelBox").Y+Control("AiModelBox").Height+7, $"{width}px：模型选择和操作按钮有足够留白");
+            Check(save.Y>=In(keyFrame,"AiApiKeyBox").Y+In(keyFrame,"AiApiKeyBox").Height+7, $"{width}px：密钥输入和操作按钮不挤在一起");
+            Check(connect.Y>=In(modelFrame,"AiModelBox").Y+In(modelFrame,"AiModelBox").Height+7, $"{width}px：模型选择和操作按钮有足够留白");
+            var buttons=frame.Elements.Concat(keyFrame.Elements).Concat(modelFrame.Elements).Where(e=>e.Kind=="button").ToArray();
             Check(buttons.All(e=>e.Height>=32 && e.X>=0 && e.X+e.Width<=width), $"{width}px：按钮尺寸统一且不会超出设置页");
-            var importPersona=Control("AiPersonaImportButton"); var openPersonas=Control("AiPersonaFolderButton");
+            var personaFrame=Seek("AiPersonaImportButton","AiPersonaFolderButton","AiSystemPromptBox");
+            var importPersona=In(personaFrame,"AiPersonaImportButton"); var openPersonas=In(personaFrame,"AiPersonaFolderButton");
             Check(Math.Abs(importPersona.Y-openPersonas.Y)<1 && openPersonas.X-importPersona.X-importPersona.Width>=7, $"{width}px：人格导入与文件夹按钮并排且有间距");
             Check(importPersona.ClipHeight>=importPersona.Height-1 && openPersonas.ClipHeight>=openPersonas.Height-1, $"{width}px：人格操作按钮完整可见");
-            var prompt=Control("AiSystemPromptBox");
+            var prompt=In(personaFrame,"AiSystemPromptBox");
             Console.WriteLine($"AI settings {width}px: height={frame.Height:F1}, promptBottom={prompt.Y+prompt.Height:F1}, promptClip={prompt.ClipHeight:F1}/{prompt.Height:F1}");
             Check(prompt.ClipHeight>=prompt.Height-1 && prompt.Y+prompt.Height+12<=frame.Height, $"{width}px：人格提示词和卡片底部完整显示");
             Check(frame.Height<=650, $"{width}px：扩展设置不超过宿主可滚动视口上限");

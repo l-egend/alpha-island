@@ -42,13 +42,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/Test-Maintenance.ps1 -
 
 ## 发布与安装维护
 
+安装包默认保留最近两个版本。`Clean-BuildArtifacts.ps1` 默认只显示计划，`-Apply` 执行清理；边界与保留规则由 `Test-BuildArtifactRetention.ps1` 验证。
+
 | 入口 | 用途 |
 | --- | --- |
-| `build-installer.ps1` | 显式生成 EXE 安装包；需要 Inno Setup，可按参数下载并校验运行库。 |
+| `build-installer.ps1` | 完成更新后生成 EXE 安装包；成功后自动只保留最近两个版本并清理旧展开目录。 |
 | `build-msix.ps1 -CreatePackage` | 可选的开发 MSIX 打包，需要 Windows SDK 与开发签名；省略开关不会打包。 |
 | `Install-NotificationBuild.ps1`、`Trust-NotificationPublisher.ps1` | 可选 MSIX 安装与开发证书信任，须审核后明确选择。 |
 | `package-earbuds-plugin.ps1`、`package-vivo-plugin.ps1` | 打包独立设备插件。 |
-| `Update-TestInstallation.ps1`、`Verify-TestInstallation.ps1` | 开发者测试安装升级与配置保留核验，需要传入自己的安装目录。 |
+| `Update-TestInstallation.ps1`、`Verify-TestInstallation.ps1` | 完成构建后同步升级已授权的检阅安装、重启并核验配置保留；须显式传入实际安装目录。安装包生成后仍需执行部署步骤。 |
 | `Verify-SettingsMigration.ps1`、`Verify-ClipboardHistoryRuntimeUpdate.ps1` | 核验迁移或升级审计，不能替代通用单元测试。 |
 | `test-installer.ps1` | 安装器专用测试；执行前阅读参数和前置条件。 |
 

@@ -22,7 +22,7 @@ public partial class ApiSettingsView : UserControl, IDisposable
         _context = context; _options = context == null ? new MemorySettings() : new PluginChatSettings(context);
         _aiSecretsFile = aiSecretsFile ?? (context == null ? null : Path.Combine(context.ConfigDirectory,"ai","secrets.dat"));
         _aiConnectionService = connectionService ?? new ChatService();
-        InitializeComponent(); AddAssistantSettings(); LoadFrom(_options);
+        InitializeComponent(); InitializeProviderPresets(); AddAssistantSettings(); InitializeResponsiveLayout(); LoadFrom(_options);
         Unloaded += (_, _) => CancelAiConnection();
     }
     internal void LoadFrom(IChatSettings settings)
@@ -31,7 +31,7 @@ public partial class ApiSettingsView : UserControl, IDisposable
         AiBaseUrlBox.Text = settings.GetText("AiBaseUrl","https://api.deepseek.com/v1");
         LoadPersona(settings);
         foreach (var pair in _assistantOptions) pair.Value.IsChecked = !string.Equals(settings.GetText(pair.Key, "true"), "false", StringComparison.OrdinalIgnoreCase);
-        RefreshAiKeyState(); RefreshAiModelConnection(); SyncAiAutomaticState(); _suppress = false;
+        SyncProviderPreset(); RefreshAiKeyState(); RefreshAiModelConnection(); SyncAiAutomaticState(); _suppress = false;
     }
     private void ApplyChanges()
     {
@@ -44,7 +44,7 @@ public partial class ApiSettingsView : UserControl, IDisposable
             UpdatePersonaInfo();
         }
         _options.SetValue("AiBaseUrl", AiBaseUrlBox.Text.Trim());
-        _options.SetValue("AiModel", AiModelBox.SelectedItem as string ?? "");
+        _options.SetValue("AiModel", SelectedAiModel);
         _options.SetValue("AiPersonaPrompt", AiSystemPromptBox.Text);
         _options.SetValue("AiPersonaFile", _personaFile);
         foreach (var pair in _assistantOptions) _options.SetValue(pair.Key, pair.Value.IsChecked == true);
@@ -54,7 +54,7 @@ public partial class ApiSettingsView : UserControl, IDisposable
     private void TextBox_Changed(object sender, TextChangedEventArgs e)
     {
         if (_suppress) return;
-        if (ReferenceEquals(sender,AiBaseUrlBox)) ResetAiModelConnection();
+        if (ReferenceEquals(sender,AiBaseUrlBox)) { BindLegacyKeyEndpoint(); ResetAiModelConnection(); SyncProviderPreset(); RefreshAiKeyState(); }
         if (ReferenceEquals(sender,AiSystemPromptBox)) { _personaFile = ""; UpdatePersonaInfo(); }
         ApplyChanges();
     }
@@ -63,7 +63,7 @@ public partial class ApiSettingsView : UserControl, IDisposable
     { if (AiEnabledToggle.IsChecked != true) return; AiConversationRequested?.Invoke(this, EventArgs.Empty); _context?.OpenPage("chat"); }
     private void ManageAiHistory_Click(object sender, RoutedEventArgs e)
     { AiHistoryRequested?.Invoke(this, EventArgs.Empty); }
-    public void Dispose() { if (_disposed) return; _disposed=true;CancelAiConnection(); _aiConnectionService.Dispose(); }
+    public void Dispose() { if (_disposed) return; _disposed=true;_presetModelEditorCleanup?.Invoke();CancelAiConnection(); _aiConnectionService.Dispose(); }
     private sealed class MemorySettings : IChatSettings
     {
         private readonly Dictionary<string,object> _values = new();

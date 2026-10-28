@@ -18,6 +18,7 @@ public partial class ApiSettingsView {
                     _suppress = true;
                     box.Password = string.Empty;   // 收进加密文件后立刻清掉界面明文
                     _suppress = wasSuppressed;
+                    _options.SetValue("AiSecretEndpoint", AiBaseUrlBox.Text.Trim());
                     AiConnectionState.Invalidate(_options);
                     ApplyChanges();
                 }
@@ -39,7 +40,7 @@ public partial class ApiSettingsView {
         {
             if (FindName("AiApiKeyState") is TextBlock state)
             {
-                state.Text = _aiSecretsFile != null && File.Exists(_aiSecretsFile)
+                state.Text = _aiSecretsFile != null && File.Exists(_aiSecretsFile) && SavedKeyMatchesEndpoint
                     ? "已加密保存（更换后点击保存）"
                     : "尚未保存（本地模型可留空）";
             }

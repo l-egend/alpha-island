@@ -143,7 +143,7 @@ internal static partial class Program
     {
         var locations = new SortedDictionary<int, SortedSet<string>>();
         string[] roots = { "Animation", "Controls", "Core", "Interop", "Services", "Settings", "Themes", "Plugins", "ConversationCore", "AgentTools", "examples" };
-        var files = Directory.EnumerateFiles(Root, "MainWindow*", SearchOption.TopDirectoryOnly)
+        var files = Directory.EnumerateFiles(Path.Combine(Root, "MainWindow"), "MainWindow*", SearchOption.TopDirectoryOnly)
             .Concat(new[] { "App.xaml" }.Select(file => Path.Combine(Root, file)))
             .Concat(roots.SelectMany(dir => Directory.EnumerateFiles(Path.Combine(Root, dir), "*", SearchOption.AllDirectories)))
             .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase))

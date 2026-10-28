@@ -38,6 +38,7 @@ internal sealed class RemotePluginView : C.Grid
     internal RemotePluginView(string key, Func<RemoteCommand, Task> send, Action<Exception> failed)
     {
         if (key == "$settings") Height = 650;
+        UseLayoutRounding = true; SnapsToDevicePixels = true;
         Key = key; _send = send; _failed = failed; NameScope.SetNameScope(this, new NameScope());
         ClipToBounds = true; _canvas.ClipToBounds = true; _canvas.Children.Add(_background);
         Children.Add(new C.Viewbox { Stretch = Stretch.Fill, Child = _canvas });
@@ -85,7 +86,7 @@ internal sealed class RemotePluginView : C.Grid
             _commands.Clear(); foreach (var item in pending) _commands.Enqueue(item);
         }
         if (_commands.Count >= 256) { _failed(new IOException("插件操作队列已满")); return; }
-        if (command.Action is "text" or "value" or "choice" or "scroll") _editing.Add(command.Element);
+        if (command.Action is "text" or "value" or "choice" or "choice-text" or "scroll") _editing.Add(command.Element);
         _commands.Enqueue(command);
         if (!_sending) { _sending = true; _ = Dispatcher.InvokeAsync(Send).Task.Unwrap(); }
     }
@@ -166,7 +167,7 @@ internal sealed class RemotePluginView : C.Grid
                     case C.ComboBox combo when !_editing.Contains(item.Id):
                         var choices = item.Choices ?? [];
                         if (!combo.Items.Cast<string>().SequenceEqual(choices)) combo.ItemsSource = choices;
-                        combo.SelectedIndex = Math.Clamp(item.Selected, -1, choices.Length - 1); break;
+                        combo.IsEditable = item.Editable; combo.SelectedIndex = Math.Clamp(item.Selected, -1, choices.Length - 1); if (item.Editable) combo.Text = item.Text; break;
                     case C.CheckBox check:
                         check.IsChecked = item.Checked;
                         System.Windows.Automation.AutomationProperties.SetName(check, item.ToolTip.Length > 0 ? item.ToolTip : item.Text);
@@ -187,7 +188,7 @@ internal sealed class RemotePluginView : C.Grid
                         if (item.Artwork.Length != 0)
                         {
                             if (button.Tag as string != item.Artwork)
-                            { button.Content = new C.Image { Source = Decode(item.Artwork), Stretch = Stretch.Fill }; button.Tag = item.Artwork; }
+                            { button.Template = SnapshotTemplate; button.Content = new C.Image { Source = Decode(item.Artwork), Stretch = Stretch.Fill, SnapsToDevicePixels = true }; button.Tag = item.Artwork; }
                             button.BorderThickness = new Thickness(0);
                         }
                         else button.Content = item.Text;
@@ -222,7 +223,10 @@ internal sealed class RemotePluginView : C.Grid
                 password.PasswordChanged += (_, _) => Queue(new(Key, "text", item.Id, password.Password)); view = password; break;
             case "choice":
                 var combo = new C.ComboBox { Padding = new Thickness(4, 1, 4, 1) };
-                combo.SelectionChanged += (_, _) => Queue(new(Key, "choice", item.Id, Number: combo.SelectedIndex)); view = combo; break;
+                combo.SelectionChanged += (_, _) => Queue(new(Key, "choice", item.Id, Number: combo.SelectedIndex));
+                combo.AddHandler(C.Primitives.TextBoxBase.TextChangedEvent, new C.TextChangedEventHandler((_, _) =>
+                { if (!_applying && combo.IsEditable) Queue(new(Key, "choice-text", item.Id, combo.Text)); }), true);
+                view = combo; break;
             case "check":
                 var check = new C.CheckBox(); check.Click += (_, _) => Queue(new(Key, "check", item.Id, Checked: check.IsChecked)); view = check; break;
             case "slider":
@@ -297,13 +301,15 @@ internal sealed class RemotePluginView : C.Grid
         if (value.Length > PluginWire.MaximumPacketBytes) throw new InvalidDataException("插件图像过大");
         byte[] bytes = Convert.FromBase64String(value);
         if (bytes.Length < 24 || !bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })
-            || System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(16, 4)) is < 1 or > 1024
-            || System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(20, 4)) is < 1 or > 1024)
+            || System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(16, 4)) is < 1 or > PluginWire.MaximumImageSide
+            || System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(20, 4)) is < 1 or > PluginWire.MaximumImageSide)
             throw new InvalidDataException("插件 PNG 尺寸无效");
+        if ((long)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(16, 4)) * System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(20, 4)) > PluginWire.MaximumImagePixels)
+            throw new InvalidDataException("插件图像尺寸过大");
         using var stream = new MemoryStream(bytes);
         var image = new BitmapImage(); image.BeginInit(); image.StreamSource = stream; image.CacheOption = BitmapCacheOption.OnLoad;
         image.EndInit();
-        if (image.PixelWidth > 1024 || image.PixelHeight > 1024) throw new InvalidDataException("插件图像尺寸过大");
+        if (image.PixelWidth > PluginWire.MaximumImageSide || image.PixelHeight > PluginWire.MaximumImageSide || (long)image.PixelWidth * image.PixelHeight > PluginWire.MaximumImagePixels) throw new InvalidDataException("插件图像尺寸过大");
         image.Freeze(); return image;
     }
 }

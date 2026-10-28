@@ -6,4 +6,10 @@ Codex 使用 App Server，DeepSeek Harness 使用 SDK 协议，Antigravity 使�
 
 本机 Agent 仍使用对应账号的模型额度。配置在 config/options.json，任务记录在 config/plugins/ai.local-agents/last-conversation.json；不复制第三方应用的历史。
 
+程序发现支持 PATH、npm、桌面版、MSIX 和 VS Code 扩展的常见 Codex 布局。插件设置提供重新检测、手动选择 codex.exe 和重置路径；发现 CLI 不等于已验证账号。外部应用状态接入还需要 Hooks 和原生信任，与本插件的 CLI 检测分别排查。
+
+文件中转站中的“发送至本机 Agent”会附加最多 16 个文件或文件夹并打开本卡片，输入指令后发送。Codex 图片使用原生 localImage，文档及文件夹使用本地路径引用；保持原有访问审批，不移动原文件，不清空中转条目。取消和失败保留附件，游戏暂停期间拒绝唤醒。
+
+诊断导出会过滤常见凭据与个人路径，保留插件运行状态和程序发现结果。完整操作与验证边界见[诊断脱敏与本机 Agent 文件接入](../../docs/诊断脱敏与本机Agent文件接入.md)。
+
 接口资料：[Codex](https://developers.openai.com/codex/app-server)、[Harness](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/sdk)、[Antigravity](https://www.antigravity.google/docs/cli/headless/)。

@@ -29,6 +29,10 @@ try {
     $executable = Join-Path $projectRoot "tools\RegressionTests\bin\$Configuration\net8.0-windows10.0.19041.0\AlphaIsland.RegressionTests.exe"
     if ($runtimeOutput) { $executable = Join-Path $runtimeOutput 'AlphaIsland.RegressionTests.exe' }
     $flags = @(
+        '--service-provider-presets-only','--provider-settings-clarity-only','--agent-file-transfer-only',
+        '--diagnostics-privacy-only','--agent-discovery-portability-only','--plugin-enable-state-only',
+        '--main-window-resources-only','--compact-island-click-only','--welcome-logo-only','--plugin-details-availability-only',
+        '--welcome-power-preview-only','--agent-foreground-click-only','--messenger-direct-open-only','--agent-ui-only',
         '--multi-display-only',
         '--media-lyrics-controls-only',
         '--lyric-rest-only',
@@ -55,7 +59,7 @@ try {
     )
     if ($SkipLiveGraphics) { $flags = $flags | Where-Object { $_ -notin @('--liquid-glass-native-only','--liquid-glass-live-only') } }
     if ($Only) {
-        foreach ($flag in $Only) { if ($flag -notin $flags -and $flag -notin @('--volume-flash-live','--volume-game-quiet-live','--speech-audio-live','--boot-timing-live','--launch-links-only','--screen-tools-theme-only')) { throw "Unknown maintenance check: $flag" } }
+        foreach ($flag in $Only) { if ($flag -notin $flags -and $flag -notin @('--local-agents-only','--file-transfer-out-only','--volume-flash-live','--volume-game-quiet-live','--speech-audio-live','--boot-timing-live','--launch-links-only','--screen-tools-theme-only')) { throw "Unknown maintenance check: $flag" } }
         $flags = $Only
     }
     $results = @()

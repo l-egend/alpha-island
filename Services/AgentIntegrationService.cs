@@ -13,6 +13,7 @@ internal sealed record AgentIntegrationInfo(string Id, string Name, bool Detecte
         "configured" => Id == "codex" ? "已接入 · 请在 Codex 中检查 Hooks 信任" : Id == "claude-code" ? "已接入 · 新会话生效，原生授权保留" : "已接入",
         "available" => "已检测到 · 可接入", "disabled" => "已停用", "removed" => "接入已被移除 · 可手动恢复",
         "not-installed" => "未检测到应用 · 安装并启动一次后重新检测",
+        "profile-required" => "已检测到 Codex · 请先打开并完成初始化后重新检测",
         "runtime-missing" => "运行环境缺失 · 请修复安装", "scope-required" => "已检测到 · 请选择接入的项目目录",
         _ => "接入失败：" + Detail
     };

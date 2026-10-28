@@ -87,7 +87,7 @@ internal static partial class Program
             PrivateCall(settings, "ImportGreetingMedia", sourceSound, false);
             Check(GreetingPresetCatalog.GetId(saved) == GreetingPresetCatalog.Custom
                 && GreetingPresetCatalog.ImageKey(saved) == GreetingPresetCatalog.AmiyaMedia && File.Exists(GreetingPresetCatalog.SoundKey(saved)),
-                "以后单独导入新音效时保留阿米娅动画，不退回默认兔子");
+                "以后单独导入新音效时保留阿米娅动画，不退回默认项目 Logo");
         }
         finally { settings.Close(); }
 

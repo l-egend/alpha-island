@@ -61,13 +61,22 @@ public sealed class ChatAudioSpeechRecognizer(SpeechRecognitionOptions options, 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(35));
         using var request = new HttpRequestMessage(HttpMethod.Post, options.Endpoint("/chat/completions"));
         SpeechHttp.Authenticate(request, options, mimo);
+        bool qwen = !mimo && options.Model.StartsWith("qwen3-asr", StringComparison.OrdinalIgnoreCase);
+        string audioData = "data:audio/wav;base64," + Convert.ToBase64String(audio.Wave.Span);
+        object inputAudio = qwen ? new { data = audioData } : new { data = audioData, format = "wav" };
         var body = new Dictionary<string, object?>
         {
             ["model"] = options.Model,
-            ["messages"] = new[] { new { role = "user", content = new[] { new { type = "input_audio", input_audio = new { data = "data:audio/wav;base64," + Convert.ToBase64String(audio.Wave.Span), format = "wav" } } } } },
+            ["messages"] = new[] { new { role = "user", content = new[] { new { type = "input_audio", input_audio = inputAudio } } } },
             ["stream"] = true
         };
         if (mimo) body["asr_options"] = new { language = options.Language is "zh" or "en" ? options.Language : "auto" };
+        else if (qwen)
+        {
+            var hints = new Dictionary<string, object> { ["enable_itn"] = true };
+            if (options.Language is "zh" or "en") hints["language"] = options.Language;
+            body["asr_options"] = hints;
+        }
         request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         using var response = await SpeechHttp.SendAsync(http ?? SpeechHttp.Client, request, timeout.Token).ConfigureAwait(false);
         if (response.Content.Headers.ContentType?.MediaType != "text/event-stream")
@@ -123,7 +132,8 @@ public sealed class TranscriptionSpeechRecognizer(SpeechRecognitionOptions optio
         var file = new ByteArrayContent(audio.Wave.ToArray()); file.Headers.ContentType = new("audio/wav");
         form.Add(file, "file", "speech.wav"); form.Add(new StringContent(options.Model), "model");
         form.Add(new StringContent("json"), "response_format");
-        if (options.Language is "zh" or "en") form.Add(new StringContent(options.Language), "language");
+        if (options.Language is "zh" or "en")
+            form.Add(new StringContent(options.Language), options.Model.Equals("gpt-transcribe", StringComparison.OrdinalIgnoreCase) ? "languages[]" : "language");
         request.Content = form;
         using var response = await SpeechHttp.SendAsync(http ?? SpeechHttp.Client, request, timeout.Token).ConfigureAwait(false);
         using var document = JsonDocument.Parse(await SpeechHttp.ReadBoundedAsync(response.Content, timeout.Token).ConfigureAwait(false));

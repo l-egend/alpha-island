@@ -71,7 +71,7 @@ internal static partial class Program
         var options = AgentField<IslandOptions>(main, "_options");
         SettingsRegistry.Write(options, "GreetingImagePath", image); PrivateCall(main, "ApplyGreetingMedia");
         Check(main.GreetingCustomImage.Visibility == Visibility.Visible && main.GreetingIcon.Visibility == Visibility.Collapsed
-            && main.GreetingCustomImage.Source is BitmapSource { IsFrozen: true }, "真实欢迎层用自选图片替换默认兔子，并使用冻结资源");
+            && main.GreetingCustomImage.Source is BitmapSource { IsFrozen: true }, "真实欢迎层用自选图片替换默认项目 Logo，并使用冻结资源");
         AgentField<IslandLayerHost>(main, "_layers").HideAll(); options.GreetingEnabled = true; options.GreetingSeconds = 10;
         PrivateCall(main, "SetState", IslandState.Bar, true);
         PrivateCall(main, "ShowStartupGreeting"); PumpAnimations(500); root.UpdateLayout();
@@ -106,7 +106,7 @@ internal static partial class Program
         }
         finally { MotionPolicy.OverrideRenderTierForDebug(tier); MotionPolicy.Apply(reduced, saving); }
         SettingsRegistry.Write(options, "GreetingImagePath", Path.Combine(folder, "missing.png")); PrivateCall(main, "ApplyGreetingMedia");
-        Check(main.GreetingCustomImage.Source == null && main.GreetingIcon.Visibility == Visibility.Visible, "欢迎图片缺失时回退默认兔子，不影响提示启动");
+        Check(main.GreetingCustomImage.Source == null && main.GreetingIcon.Visibility == Visibility.Visible, "欢迎图片缺失时回退默认项目 Logo，不影响提示启动");
         Check(AgentField<GreetingAudioPlayer?>(main, "_greetingAudio") == null, "隔离 UI 检查不会播放真实声音或访问系统音频设备");
         PrivateCall(main, "DismissGreeting");
 

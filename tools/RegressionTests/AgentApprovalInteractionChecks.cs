@@ -107,7 +107,8 @@ internal static partial class Program
             Check(AgentField<IslandState>(window, "_state") == IslandState.Pill, "审批细条悬停恢复不受剪切板锁定影响");
             PrivateCall(window, "SetState", IslandState.Bar);
             SetAgentField(window, "_sideBubbleComponentKey", "approval");
-            PrivateCall(window, "SideBubble_MouseLeftButtonUp", window.SideBubble, MouseArgs(System.Windows.Input.Mouse.MouseUpEvent));
+            window.SideBubble.Visibility = Visibility.Visible; root.UpdateLayout();
+            ClickCompactIsland(window.SideBubble);
             Check(AgentField<IslandState>(window, "_state") == IslandState.Pill && layers.LastWinnerKey == "approval",
                 "点击审批缩略岛直接恢复审批，不依赖 AI 会话卡片");
             PrivateCall(window, "SetState", IslandState.Bar);
@@ -212,7 +213,8 @@ internal static partial class Program
             PrivateCall(window, "UpdateAgentStatusUi");
             PrivateCall(window, "SetState", IslandState.Card, false, IslandPageIds.System);
             SetAgentField(window, "_sideBubbleComponentKey", "agentstatus");
-            PrivateCall(window, "SideBubble_MouseLeftButtonUp", window.SideBubble, MouseArgs(System.Windows.Input.Mouse.MouseUpEvent));
+            window.SideBubble.Visibility = Visibility.Visible; root.UpdateLayout();
+            ClickCompactIsland(window.SideBubble);
             Check(AgentField<IslandState>(window, "_state") == IslandState.Pill && AgentField<string>(window, "_activeMainIslandKey") == "agentstatus",
                 "AI 会话关闭时点击外部 agent 小岛仍能恢复状态详情");
         }

@@ -27,8 +27,8 @@
 		<Product>Alpha Island</Product>
 		<Company>Alpha Island</Company>
 		<Description>灵动岛风格的桌面状态面板与 AI 助手</Description>
-		<Version>0.1.177</Version>
-		<FileVersion>0.1.177.0</FileVersion>
+		<Version>0.1.182</Version>
+		<FileVersion>0.1.182.0</FileVersion>
 		<Copyright>© Alpha Island</Copyright>
 	</PropertyGroup>
 
@@ -58,6 +58,7 @@
 	<ItemGroup>
 	  <Resource Include="Assets\alpha-island.ico" />
 	  <Resource Include="Assets\alpha-island-source.png" />
+      <Resource Include="Assets\alpha-island-256.png" />
       <EmbeddedResource Include="Assets\Sounds\StartupGentle.wav" LogicalName="AlphaIsland.StartupGentle.wav" />
       <EmbeddedResource Include="Assets\Lyrics\*" LogicalName="AlphaIsland.Lyrics.%(Filename)%(Extension)" />
       <EmbeddedResource Include="Assets\Sounds\NotificationGentle.wav" LogicalName="AlphaIsland.NotificationGentle.wav" />

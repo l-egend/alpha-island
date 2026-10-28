@@ -7,7 +7,7 @@ namespace alpha_island.Plugins.Isolation;
 
 internal sealed record PluginPacket(long Id, string Kind, JsonElement Data, string? Error = null);
 internal sealed record PluginStart(string Directory, string Assembly, string EntryType, string PluginId,
-    string DataRoot, Dictionary<string, JsonElement> Configuration);
+    string DataRoot, Dictionary<string, JsonElement> Configuration, bool SettingsOnly = false);
 internal sealed record RemotePage(string Key, string Title, string Glyph, double Height, int Order);
 internal sealed record RemoteAction(string Key, string Title, bool Available);
 internal sealed record RemoteNetwork(string Key, string Title, int Priority);
@@ -17,17 +17,18 @@ internal sealed record RemoteHostCall(string Id, string Kind, JsonElement Data);
 internal sealed record RemoteHostReply(string Id, JsonElement Data, string? Error = null);
 internal sealed record RemotePageState(string Key, bool Available, string Summary);
 internal sealed record RemoteStatus(RemotePageState[] Pages, RemoteAction[] Actions, PluginNetworkSample? Network,
-    string? NetworkTitle, string? NetworkKey, int NetworkPriority, long UiPulse);
+    string? NetworkTitle, string? NetworkKey, int NetworkPriority, long UiPulse, string Diagnostics = "");
 internal sealed record RemoteCommand(string View, string Action, int Element = 0, string? Text = null,
     double Number = 0, bool? Checked = null, double X = 0, double Y = 0, double Width = 414, double Height = 294);
-internal sealed record RemoteViewRequest(string Key, double Width, double Height, bool Active = true);
+internal sealed record RemoteViewRequest(string Key, double Width, double Height, bool Active = true, double Scale = 1);
 internal sealed record RemoteTextInput(string View, string RequestId, string Text = "");
+internal sealed record RemoteFileInput(string View, string[] Paths);
 internal sealed record RemoteVisual(int Id, string Kind, string Name, double X, double Y, double Width, double Height,
     string Text, string Foreground, string Background, double FontSize, string FontFamily, bool Enabled,
     bool ReadOnly = false, bool Multiline = false, string[]? Choices = null, int Selected = -1,
     double Minimum = 0, double Maximum = 100, double Value = 0, bool? Checked = null,
     double ClipX = 0, double ClipY = 0, double ClipWidth = 0, double ClipHeight = 0,
-    bool Bold = false, bool Wrap = false, string Alignment = "Left", string Artwork = "", string ToolTip = "", double Viewport = 0);
+    bool Bold = false, bool Wrap = false, string Alignment = "Left", string Artwork = "", string ToolTip = "", double Viewport = 0, bool Editable = false);
 internal sealed record RemoteFrame(double Width, double Height, string Background, RemoteVisual[] Elements, long Revision);
 internal sealed record RemoteEvent(string Name, string Key = "", string Text = "", string Detail = "",
     double Seconds = 6, JsonElement? Value = null, PluginBluetoothBattery? Battery = null, PluginDeviceBattery[]? DeviceBatteries = null);
@@ -35,6 +36,7 @@ internal sealed record RemoteEvent(string Name, string Key = "", string Text = "
 internal static class PluginWire
 {
     internal const int MaximumPacketBytes = 6 * 1024 * 1024;
+    internal const int MaximumImageSide = 4096, MaximumImagePixels = 4 * 1024 * 1024;
     internal static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, MaxDepth = 32 };
     internal static JsonElement Element<T>(T value) => JsonSerializer.SerializeToElement(value, Json);
     internal static T Read<T>(JsonElement value) => value.Deserialize<T>(Json)
