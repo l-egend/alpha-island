@@ -1,15 +1,45 @@
-# 本机 Agent 插件
+**简体中文 | [English](README.en.md)**
 
-Codex 使用 App Server，DeepSeek Harness 使用 SDK 协议，Antigravity 使用官方 CLI 的 stream-json。复用各应用已有登录，不读取或复制凭据。桌面版 Antigravity 的 agentapi 依赖桌面内部服务地址，不能替代 CLI；只有安装并登录 CLI 后才启用该提供方。
+# 本机 Agent
 
-选择任务目录后发送；不会接管各应用已经打开的对话。新建清除本插件当前上下文。取消、切换目录、禁用、卸载都会结束本插件拥有的进程，原应用继续运行。需要确认的 Codex 操作在岛内允许一次或拒绝；Harness 沿用岛的现有原生审批桥。Antigravity 保留自己的权限配置，无人回答的 Ask 操作会拒绝，不开启跳过权限选项。
+在 Alpha Island 内向本机可用的 Codex、DeepSeek Harness 或 Antigravity CLI 发送任务，并查看回答和审批。
 
-本机 Agent 仍使用对应账号的模型额度。配置在 config/options.json，任务记录在 config/plugins/ai.local-agents/last-conversation.json；不复制第三方应用的历史。
+- 版本：**0.1.30**
+- 插件 ID：`ai.local-agents`
+- 宿主插件 API 要求：**7**
 
-程序发现支持 PATH、npm、桌面版、MSIX 和 VS Code 扩展的常见 Codex 布局。插件设置提供重新检测、手动选择 codex.exe 和重置路径；发现 CLI 不等于已验证账号。外部应用状态接入还需要 Hooks 和原生信任，与本插件的 CLI 检测分别排查。
+## 使用条件
 
-文件中转站中的“发送至本机 Agent”会附加最多 16 个文件或文件夹并打开本卡片，输入指令后发送。Codex 图片使用原生 localImage，文档及文件夹使用本地路径引用；保持原有访问审批，不移动原文件，不清空中转条目。取消和失败保留附件，游戏暂停期间拒绝唤醒。
+对应工具已安装、登录并能正常使用；发现程序不代表账号或访问权限已经验证。
 
-诊断导出会过滤常见凭据与个人路径，保留插件运行状态和程序发现结果。程序发现、账号可用性、访问审批和外部状态接入应分别检查；不要将“已找到程序”当作完整连接验证。
+## 主要功能
 
-接口资料：[Codex](https://developers.openai.com/codex/app-server)、[Harness](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/sdk)、[Antigravity](https://www.antigravity.google/docs/cli/headless/)。
+- 选择提供方和工作目录，创建本插件自己的任务会话。
+- 从文件中转站附加最多 16 个文件或文件夹，再输入指令。
+- 查看流式输出，处理支持的审批，取消本插件发起的任务。
+
+## 安装与使用
+
+先按[通用安装步骤](../../README.md#install)放置完整插件目录，再进行以下操作：
+
+1. 安装并启用插件，在插件设置中检测可用工具；需要时手动选择 Codex 程序。
+2. 打开本机 Agent 卡片，选择提供方和任务目录。
+3. 输入指令并发送；附加文件也可从文件中转站选择“发送至本机 Agent”。
+
+## 说明与限制
+
+- 复用原工具已有登录，仍使用对应账号的模型额度。
+- 不接管其他应用已经打开的对话；“本机 Agent 对话”与“外部助手状态识别”是两项独立功能。
+- 文档与文件夹以本地路径引用，Codex 图片使用本地图像输入；原文件不被移动，原有访问审批继续生效。
+
+## 从源码构建
+
+在插件源码根目录执行：
+
+```powershell
+dotnet build examples/LocalAgentsPlugin/LocalAgentsPlugin.csproj -c Release
+```
+
+需要 Windows 和 .NET 8 SDK。普通构建只生成文件；安装时仍需手动放置完整插件目录。本机批量打包命令在仓库之外单独维护。
+
+[返回插件列表](../../README.md#local-agents)

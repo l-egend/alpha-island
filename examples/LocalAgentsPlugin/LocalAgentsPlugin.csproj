@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><EnableDynamicLoading>true</EnableDynamicLoading><AssemblyName>AlphaIsland.Plugins.LocalAgents</AssemblyName></PropertyGroup>
-  <ItemGroup><ProjectReference Include="$(AlphaIslandSdkProject)" Private="false"/><None Update="plugin.json;README.md;harness-approval.mjs" CopyToOutputDirectory="PreserveNewest"/><InternalsVisibleTo Include="AlphaIsland.RegressionTests"/></ItemGroup>
+  <ItemGroup><ProjectReference Include="$(AlphaIslandSdkProject)" Private="false"/><None Update="plugin.json;README.md;README.en.md;harness-approval.mjs" CopyToOutputDirectory="PreserveNewest"/><InternalsVisibleTo Include="AlphaIsland.RegressionTests"/></ItemGroup>
   <Target Name="DeployLocalAgentsPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
     <ItemGroup>
       <LocalAgentFiles Include="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).deps.json;$(MSBuildProjectDirectory)\plugin.json;$(MSBuildProjectDirectory)\README.md;$(MSBuildProjectDirectory)\harness-approval.mjs" />

@@ -6,7 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="$(AlphaIslandSdkProject)"><Private>false</Private><ExcludeAssets>runtime</ExcludeAssets></ProjectReference>
-    <None Update="plugin.json;README.md;SOURCES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="plugin.json;README.md;README.en.md;SOURCES.md" CopyToOutputDirectory="PreserveNewest" />
     <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
   </ItemGroup>
 </Project>

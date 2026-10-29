@@ -14,7 +14,7 @@
       <ExcludeAssets>runtime</ExcludeAssets>
     </ProjectReference>
     <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
-    <None Update="plugin.json;README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="plugin.json;README.md;README.en.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="DeployVivoPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
     <ItemGroup>

@@ -2,7 +2,7 @@
   <PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><EnableDynamicLoading>true</EnableDynamicLoading><AssemblyName>AlphaIsland.Plugins.TrafficMonitor</AssemblyName></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="$(AlphaIslandSdkProject)"><Private>false</Private><ExcludeAssets>runtime</ExcludeAssets></ProjectReference>
-    <None Update="plugin.json;README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="plugin.json;README.md;README.en.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="DeployTrafficMonitorPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
     <ItemGroup><PluginFiles Include="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).deps.json;$(MSBuildProjectDirectory)\plugin.json" /></ItemGroup>

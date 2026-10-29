@@ -22,7 +22,7 @@
     <EmbeddedResource Include="upstream2\Data\Oplus.DeviceModels.json" LogicalName="AlphaIsland.EarbudsV2.Assets.Oplus.Data.DeviceModels.json" />
     <EmbeddedResource Include="upstream2\Data\Oplus.EqModeNames.json" LogicalName="AlphaIsland.EarbudsV2.Assets.Oplus.Data.EqModeNames.json" />
     <EmbeddedResource Include="upstream2\Data\Strings.json" LogicalName="AlphaIsland.EarbudsV2.Assets.Localization.Strings.json" />
-    <None Update="plugin.json;LICENSE;THIRD-PARTY-NOTICES.md;README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="plugin.json;LICENSE;THIRD-PARTY-NOTICES.md;README.md;README.en.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="DeployEarbudsPlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
     <ItemGroup>

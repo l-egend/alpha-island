@@ -11,7 +11,7 @@ foreach($package in $report.Plugins){
  try{
   $entries=@{};foreach($entry in $zip.Entries){$name=$entry.FullName.Replace('\','/');if($name -match '(^|/)\.\.(/|$)|^[a-zA-Z]:|^/'){throw 'Unsafe package entry.'};$entries[$name]=$entry}
   $manifestEntry=$entries[$package.Id+'/plugin.json'];if(!$manifestEntry){throw 'Plugin manifest missing.'}
-  if(!$entries[$package.Id+'/README.md']){throw 'Every plugin package must include its usage instructions.'}
+  foreach($guide in @('README.md','README.en.md')){if(!$entries[$package.Id+'/'+$guide]){throw 'Every plugin package must include Chinese and English usage instructions.'}}
   $reader=[IO.StreamReader]::new($manifestEntry.Open());try{$manifest=$reader.ReadToEnd()|ConvertFrom-Json}finally{$reader.Dispose()}
   if($manifest.id -ne $package.Id -or $manifest.assembly -ne [IO.Path]::GetFileName($manifest.assembly) -or !$entries[$package.Id+'/'+$manifest.assembly]){throw 'Plugin assembly does not match its manifest.'}
   if(@($entries.Keys|Where-Object{$_ -match '(^|/)(options\.json|secrets\.dat|clipboard_history\.json|error\.log)$'}).Count){throw 'Personal data entered a plugin package.'}
@@ -21,7 +21,7 @@ foreach($package in $report.Plugins){
 $source=[IO.Compression.ZipFile]::OpenRead((Join-Path $root $report.SourceArchive))
 try{
  $names=@($source.Entries|ForEach-Object{$_.FullName.Replace('\','/')})
- foreach($required in @('examples/ClockPlugin/ClockPlugin.csproj','examples/ApiChatPlugin/ApiChatPlugin.csproj','examples/OppoPodsPlugin/LICENSE','PluginSdk/AlphaIsland.PluginSdk.csproj','PluginSdk/Localization/Strings.en.json','ConversationCore/AlphaIsland.ConversationCore.csproj','README.md')){
+ foreach($required in @('examples/ClockPlugin/ClockPlugin.csproj','examples/ApiChatPlugin/ApiChatPlugin.csproj','examples/OppoPodsPlugin/LICENSE','PluginSdk/AlphaIsland.PluginSdk.csproj','PluginSdk/Localization/Strings.en.json','ConversationCore/AlphaIsland.ConversationCore.csproj','README.md','README.en.md','Plugins/TrafficMonitorBridge/README.md','Plugins/TrafficMonitorBridge/README.en.md')){
   if($required -notin $names){throw ('Corresponding source missing: '+$required)}
  }
  if(@($names|Where-Object{$_ -match '(^|/)(bin|obj|\.git)(/|$)'}).Count){throw 'Build caches entered corresponding source.'}

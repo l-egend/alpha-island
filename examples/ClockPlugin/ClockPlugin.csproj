@@ -12,7 +12,7 @@
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
     </ProjectReference>
-    <None Update="plugin.json;README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="plugin.json;README.md;README.en.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- Deployment is opt-in; Directory.Build.props disables it by default. -->
   <Target Name="DeployExamplePlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
