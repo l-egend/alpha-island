@@ -86,4 +86,4 @@ Plugins live on the separate `plugins` branch and are not required to build the 
 
 Use [Issues](https://github.com/l-egend/alpha-island/issues) for bugs and suggestions, and Pull Requests for changes. Include the app and Windows versions, reproduction steps, resolution and scaling. Remove private content from logs and screenshots.
 
-Asset sources and licensing are documented for [Bluetooth icons](Assets/Bluetooth/SOURCES.md), [welcome assets](Assets/Greetings/SOURCES.md) and [built-in sounds](Assets/Sounds/SOURCES.md). Plugin and native bridge licenses ship with their separate packages. Character artwork and voice recordings remain the property of their respective rights holders.
+Some assets are sourced from third parties; rights remain with their respective owners. For rights concerns, please [contact the author](https://github.com/l-egend/alpha-island/issues). See the notices for [device icons](Assets/Bluetooth/SOURCES.md), [welcome assets](Assets/Greetings/SOURCES.md) and [built-in sounds](Assets/Sounds/SOURCES.md). Resource and dependency licenses are included in their respective directories and release packages.

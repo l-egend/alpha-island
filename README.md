@@ -86,4 +86,4 @@ dotnet run --project alpha-island.csproj -c Release --no-build
 
 欢迎通过 [Issues](https://github.com/l-egend/alpha-island/issues) 反馈问题，通过 Pull Request 提交改进。请附上版本号、Windows 版本、复现步骤、分辨率与缩放；日志和截图请去除私人内容。
 
-素材来源与许可见 [蓝牙图标](Assets/Bluetooth/SOURCES.md)、[欢迎素材](Assets/Greetings/SOURCES.md) 和 [内置音效](Assets/Sounds/SOURCES.md)。插件及原生桥接的许可随独立包提供；角色插画与语音的权利归各自权利人。
+部分素材来源于第三方，相关权利归原权利人所有。如有侵权，请[联系作者](https://github.com/l-egend/alpha-island/issues)处理。素材说明见 [设备图标](Assets/Bluetooth/SOURCES.md)、[欢迎素材](Assets/Greetings/SOURCES.md) 和 [内置提示音](Assets/Sounds/SOURCES.md)。资源与依赖的许可证随对应目录及发布包提供。
