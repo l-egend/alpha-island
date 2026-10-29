@@ -2,9 +2,9 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-**Keep status and tools within reach.**
+**A Windows application for desktop status display and tool integration.**
 
-Alpha Island is a Windows desktop status panel built with C# and WPF. It rests at the top of the desktop, expands into a capsule for music, notifications or tasks, and opens a full card when you need controls. Liquid glass, component switching and multiple islands keep information close at hand.
+Alpha Island is built with C# and WPF. It displays media, notifications, system and device status, and provides screen tools, reminders and plugin integration. The main panel appears at the top of the primary display by default and supports status bar mode, summary view and card view. Auxiliary panels display other activities. The interface supports liquid glass effects, component switching and content pinning.
 
 **[Download the app](https://github.com/l-egend/alpha-island/releases/tag/v0.2.32) · [Download optional plugins](https://github.com/l-egend/alpha-island/releases/tag/plugins-v0.2.32) · [Plugin catalog](https://github.com/l-egend/alpha-island/tree/plugins) · [Report an issue](https://github.com/l-egend/alpha-island/issues)**
 
@@ -30,10 +30,10 @@ App updates preserve existing configuration and installed plugins. The installer
 | Screen tools | Screen OCR, color picker, text translation and QR scanning; separate speech recognition and selected-region translation. |
 | Time and focus | Pomodoro, natural-language reminders, productivity statistics, local habit suggestions and system health alerts. |
 | Desktop tools | Clipboard history, file shelf, quick launcher and download status. |
-| Appearance and interaction | Liquid glass, multiple islands, welcome animations and sounds, game mode, automatic collapse for maximized browsers. |
+| Appearance and interaction | Liquid glass, multi-panel layout, welcome animations and sounds, game mode, automatic collapse for maximized browsers. |
 | Optional extensions | API Chat, Local Agents, earbud controls, 2.4G batteries, phone connection, network data and an example clock. |
 
-Speech, translation and online models require an appropriate service configuration. Device readings and controls depend on Windows, hardware protocols and plugins; unreported data is shown as unknown. The main island follows the system's primary display and responds to resolution, scaling and work-area changes.
+Speech, translation and online models require an appropriate service configuration. Device readings and controls depend on Windows, hardware protocols and plugins; unreported data is shown as unknown. The main panel is located on the system's primary display and responds to primary-display, resolution, scaling and work-area changes.
 
 ## Interface and controls
 
@@ -43,11 +43,13 @@ Speech, translation and online models require an appropriate service configurati
 
 These images were generated from the current app's actual UI controls with sample data. They contain no real notifications, accounts or device records.
 
-- Click or approach Alpha Island to view content, and click outside to collapse it. Right-click supported content to pin it.
-- Click or scroll the right-hand switch bar to change components; hold it to open the component menu. Scrolling inside a card scrolls its contents.
-- Click a secondary island to open that activity. Maximized or full-screen browsers can trigger bar mode; click to expand temporarily.
+- Click or hover over the panel to expand it, and click outside to collapse it. Right-click supported content to pin it.
+- The right-hand component switcher supports clicking, scrolling and a hold menu. Scrolling inside a card scrolls its contents.
+- Click an auxiliary panel to open its activity. Maximized or full-screen browsers can switch the main panel to status bar mode; click to expand temporarily.
 - Open Settings from the tray icon to configure shortcuts, welcome presets, game mode and startup.
 - Settings → General → Interface language offers system default, Simplified Chinese and English. Restart to apply the language.
+
+See [Terminology](docs/TERMINOLOGY.md) for panel and view definitions.
 
 ## Plugins and branches
 

@@ -29,7 +29,7 @@ try {
     $iconStage = Join-Path $stage 'icons'
     New-Item -ItemType Directory -Path $iconStage -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $installerRepo 'Assets\alpha-island.ico') -Destination (Join-Path $iconStage ('alpha-island-' + $version + '.ico')) -Force
-    foreach ($guide in @('README.md', 'README.en.md', 'docs\QUICKSTART.zh-CN.md', 'docs\QUICKSTART.en.md', 'Assets\Lyrics\歌词源导入规范.md')) {
+    foreach ($guide in @('README.md', 'README.en.md', 'docs\QUICKSTART.zh-CN.md', 'docs\QUICKSTART.en.md', 'docs\TERMINOLOGY.md', 'Assets\Lyrics\歌词源导入规范.md')) {
         $sourceGuide = Join-Path $installerRepo $guide
         if (!(Test-Path -LiteralPath $sourceGuide -PathType Leaf)) { throw ('Missing public package guide: ' + $guide) }
         $targetGuide = Join-Path $stage $guide

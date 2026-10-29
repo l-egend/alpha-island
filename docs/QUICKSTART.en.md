@@ -11,8 +11,8 @@ Exit Alpha Island from the tray before updating, then run the installer. Use the
 ## First use
 
 1. Open Settings from the tray and choose your language, appearance and components.
-2. Play media to view the top status capsule. Click or approach to expand it; right-click supported content to pin it.
-3. Click or scroll the right-hand switch bar to change components, or hold it for the menu. Scrolling within a card only scrolls its contents.
+2. Play media to view its status in the main panel. Click or hover to expand the panel; right-click supported content to pin it.
+3. Use the right-hand component switcher to change components, or hold it for the menu. Scrolling within a card only scrolls its contents.
 4. Use Screen Tools for OCR, color picking or QR scanning. Speech recognition and region translation are separate modes; region translation first requires a selected screen area.
 5. Notifications, location and speech may require Windows permissions. Battery readings depend on hardware, drivers and protocols; unknown values are not treated as 0%.
 
