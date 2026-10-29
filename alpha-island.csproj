@@ -34,20 +34,20 @@
 
 	<ItemGroup>
 	  <!-- Pin runtime packs for installers without overriding the Windows SDK projection pack. -->
-	  <FrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App;Microsoft.WindowsDesktop.App.WPF;Microsoft.WindowsDesktop.App.WindowsForms"
-	                      RuntimeFrameworkVersion="$(InstallerRuntimeVersion)" Condition="'$(InstallerRuntimeVersion)' != ''" />
+	  <FrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App;Microsoft.WindowsDesktop.App.WPF;Microsoft.WindowsDesktop.App.WindowsForms" RuntimeFrameworkVersion="$(InstallerRuntimeVersion)" Condition="'$(InstallerRuntimeVersion)' != ''" />
 	  <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
       <PackageReference Include="NAudio" Version="2.2.1" />
       <PackageReference Include="System.Speech" Version="8.0.0" />
 	  <PackageReference Include="ZXing.Net" Version="0.16.11" />
-	  <Compile Remove="tools\RegressionTests\**\*.cs" />
-	  <Compile Remove="tools\LocalizationMaintenance\**\*.cs" />
-	  <Compile Remove="tools\PluginFixture\**\*.cs" />
 	  <Compile Remove="PluginSdk\**\*.cs;examples\**\*.cs" />
 	  <Compile Remove="Hardware\**\*.cs;ConversationCore\**\*.cs;AgentTools\**\*.cs;SpeechCore\**\*.cs" />
+	  <Compile Remove="tools\**" />
+	  <EmbeddedResource Remove="tools\**" />
+	  <None Remove="tools\**" />
       <ProjectReference Include="SpeechCore\AlphaIsland.SpeechCore.csproj" />
       <ProjectReference Include="AgentTools\AlphaIsland.AgentTools.csproj" />
       <Page Remove="ConversationCore\**\*.xaml" />
+      <Page Remove="tools\**" />
       <ProjectReference Include="ConversationCore\AlphaIsland.ConversationCore.csproj" />
 	  <Page Remove="PluginSdk\**\*.xaml;examples\**\*.xaml" />
 	  <ProjectReference Include="PluginSdk\AlphaIsland.PluginSdk.csproj" />

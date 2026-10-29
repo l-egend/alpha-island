@@ -1,81 +1,87 @@
 # Alpha Island
 
-Current version: **0.2.32**. The main installer contains no optional plugins. Their source lives in the separate sibling directory `alpha-island-plugins/`, with releases under `packages/<version>/`. Install optional plugin packages separately from Settings > Plugins. Main app updates preserve existing plugins and their settings. External translation starts disabled with an empty app name and shortcut.
+[简体中文](README.md) · [English](README.en.md)
 
-[English](README.en.md) · [简体中文](README.md)
+**Keep status and tools within reach.**
 
-A compact Windows desktop panel for media, notifications, system status and everyday tools. Alpha Island stays as a small bar, expands into a pill for timely updates, and opens cards for detailed controls.
+Alpha Island is a Windows desktop status panel built with C# and WPF. It rests at the top of the desktop, expands into a capsule for music, notifications or tasks, and opens a full card when you need controls. Liquid glass, component switching and multiple islands keep information close at hand.
 
-![Music and lyrics](docs/screens/music-lyrics.png)
+**[Download the app](https://github.com/l-egend/alpha-island/releases/tag/v0.2.32) · [Download optional plugins](https://github.com/l-egend/alpha-island/releases/tag/plugins-v0.2.32) · [Plugin catalog](https://github.com/l-egend/alpha-island/tree/plugins) · [Report an issue](https://github.com/l-egend/alpha-island/issues)**
+
+![Media card](docs/images/media.en.png)
+
+## Download and install
+
+Current version: **0.2.32**. Requires **x64** Windows 10 version 2004 (19041) or later, or Windows 11.
+
+1. Download `AlphaIsland-0.2.32-win-x64-Setup.exe` from the [app release](https://github.com/l-egend/alpha-island/releases/tag/v0.2.32) and run it.
+2. The installer includes the .NET runtime; no SDK is required. Exit Alpha Island before running an update installer.
+3. Optional plugins are distributed separately. Open Settings → Plugins → Open plugin folder, copy the complete extracted plugin folder there, then refresh and enable it.
+
+App updates preserve existing configuration and installed plugins. The installer contains no settings or API keys from the development computer. See the [quick start](docs/QUICKSTART.en.md) for installation, data locations and troubleshooting.
 
 ## Features
 
-- Media controls, cover artwork, an audio spectrum, synchronized lyrics and configurable lyric sources.
-- A notification center with app filtering, grouped messages, actions, clearing and custom sounds.
-- CPU, memory, network and power monitoring, plus battery levels from supported Bluetooth, receiver and controller devices.
-- Screen OCR, a color picker, QR scanning, speech transcription and region translation.
-- API chat, persona imports, voice commands and local agent integrations.
-- Focus timers, local reminders, habit suggestions, system health alerts and productivity statistics.
-- Clipboard history, a file shelf, quick launcher, welcome presets and optional plugins.
-- Simplified Chinese and English interfaces, including built-in plugin settings.
+| Module | What it does |
+| --- | --- |
+| Media and lyrics | Windows media sessions, playback controls, artwork and live spectrum; synchronized lyrics, translations and word highlighting. Reorder lyric sources, add custom sources or import local LRC files. Four dots bridge intros and identifiable instrumental breaks. |
+| Notifications | Filter, stack, read and dismiss notifications; choose a notification sound. |
+| Devices and system | CPU, memory, network speed, power and supported device batteries; Bluetooth connection and charging alerts. |
+| Screen tools | Screen OCR, color picker, text translation and QR scanning; separate speech recognition and selected-region translation. |
+| Time and focus | Pomodoro, natural-language reminders, productivity statistics, local habit suggestions and system health alerts. |
+| Desktop tools | Clipboard history, file shelf, quick launcher and download status. |
+| Appearance and interaction | Liquid glass, multiple islands, welcome animations and sounds, game mode, automatic collapse for maximized browsers. |
+| Optional extensions | API Chat, Local Agents, earbud controls, 2.4G batteries, phone connection, network data and an example clock. |
 
-Hardware readings depend on Windows, device protocols and plugins. AI, cloud speech and translation require a compatible service configured by you. Missing readings are shown as unavailable.
+Speech, translation and online models require an appropriate service configuration. Device readings and controls depend on Windows, hardware protocols and plugins; unreported data is shown as unknown. The main island follows the system's primary display and responds to resolution, scaling and work-area changes.
 
-## Getting started
+## Interface and controls
 
-Requires Windows 10 version 2004 (19041) or later, or Windows 11. The x64 installer includes the required .NET runtime.
+| Screen tools | Settings |
+| --- | --- |
+| ![Screen tools](docs/images/tools.en.png) | ![Settings](docs/images/settings.en.png) |
 
-- Open Settings from the system tray.
-- Choose **General → Interface language → English**, then **Restart app**. **Follow Windows** selects Chinese for a Chinese Windows display language and English otherwise.
-- Click the side handle to switch components. Scroll within cards to scroll their content; scroll on the handle to switch cards.
-- Hold the side handle to open the component menu. Right-click supported content to pin it.
-- While a browser is maximized or fullscreen on the main display, the panel collapses automatically. Volume feedback stays visible. Click the bar to expand temporarily.
+These images were generated from the current app's actual UI controls with sample data. They contain no real notifications, accounts or device records.
 
-Language changes use local resources and do not call a translation API. Your messages, device names, lyrics, filenames and saved custom content are preserved. Imported welcome voices keep their original audio language. Third-party plugins supply their own text.
+- Click or approach Alpha Island to view content, and click outside to collapse it. Right-click supported content to pin it.
+- Click or scroll the right-hand switch bar to change components; hold it to open the component menu. Scrolling inside a card scrolls its contents.
+- Click a secondary island to open that activity. Maximized or full-screen browsers can trigger bar mode; click to expand temporarily.
+- Open Settings from the tray icon to configure shortcuts, welcome presets, game mode and startup.
+- Settings → General → Interface language offers system default, Simplified Chinese and English. Restart to apply the language.
 
-## Local reminders
+## Plugins and branches
 
-Use the reminder window or API chat:
+| Branch / download | Purpose |
+| --- | --- |
+| [master](https://github.com/l-egend/alpha-island/tree/master) | Main application source and documentation. |
+| [plugins](https://github.com/l-egend/alpha-island/tree/plugins) | Independent plugin sources, bilingual guides and development examples. |
+| [App release](https://github.com/l-egend/alpha-island/releases/tag/v0.2.32) | Windows x64 installer and SHA-256 checksums. |
+| [Plugin release](https://github.com/l-egend/alpha-island/releases/tag/plugins-v0.2.32) | Seven individual installable ZIPs, a combined bundle, source and optional native bridge. |
 
-```text
-Remind me to drink water in 30 minutes
-Remind me tomorrow at 9 am to call Alex
-Remind me to focus every weekday at 9:30
-Remind me to take a break every 2 hours
-List my reminders
-Cancel reminder drink water
-```
+Install only what you need. `AlphaIsland-plugin-source-0.2.32.zip` is for development and cannot be installed directly as a plugin. See the [plugin catalog](https://github.com/l-egend/alpha-island/blob/plugins/README.en.md) for installation and requirements.
 
-Keep Alpha Island running for timely delivery. Reminders are stored locally, and missed reminders are recorded after the application resumes. Ambiguous or invalid times require clarification.
+## Configuration and privacy
 
-## Build
+Settings and local records are stored in `%LOCALAPPDATA%\alpha-island\config`. User plugins normally live in `%LOCALAPPDATA%\alpha-island\plugins`. Open the actual folders from Settings.
 
-Install the .NET 8 SDK and the Windows desktop development workload if using Visual Studio.
+API keys are encrypted with DPAPI for the current Windows user and must be entered again after migrating to a different account. Online models, recognition, translation and lyric sources contact the configured services; enable them as needed. Diagnostic exports redact recognized secrets, paths and personal fields. Review attachments and screenshots before sharing them.
+
+## Build from source
+
+Requires Windows and the **.NET 8 SDK**. In Visual Studio, install the **.NET desktop development** workload.
 
 ```powershell
 git clone https://github.com/l-egend/alpha-island.git
 cd alpha-island
 dotnet restore alpha-island.sln
-dotnet build alpha-island.sln -c Debug
-dotnet run --project alpha-island.csproj -c Debug --no-build
+dotnet build alpha-island.sln -c Release
+dotnet run --project alpha-island.csproj -c Release --no-build
 ```
 
-Run the language checks with:
+Plugins live on the separate `plugins` branch and are not required to build the app. The [lyric-source import specification](Assets/Lyrics/歌词源导入规范.md) describes lyric extensions.
 
-```powershell
-tools\Test-Maintenance.ps1 -Configuration Debug -Only '--localization-only'
-```
+## Contributing and assets
 
-The extended regression suite requires the separate `alpha-island-plugins/` source directory beside this repository. Override the MSBuild property `ExternalPluginSourceRoot` for another location. The application solution and main installer build independently of those sources.
+Use [Issues](https://github.com/l-egend/alpha-island/issues) for bugs and suggestions, and Pull Requests for changes. Include the app and Windows versions, reproduction steps, resolution and scaling. Remove private content from logs and screenshots.
 
-## Configuration and privacy
-
-Configuration and local records live under `%LOCALAPPDATA%\alpha-island\config`. API keys are encrypted with Windows DPAPI for the current user and must be entered again on another PC. Do not commit credentials or personal records.
-
-Local language resources are in `PluginSdk/Localization/Strings.en.json`. See the [localization guide](docs/中英文界面支持.md) for contribution rules and validation.
-
-## Contributing and licenses
-
-Report bugs through [Issues](https://github.com/l-egend/alpha-island/issues), including your Windows version, display scaling, reproduction steps and relevant redacted screenshots or logs.
-
-Third-party assets have separate attribution and licenses in their resource folders. Character illustrations and voices remain the property of their respective rights holders; their use is not covered by assumptions about the project code's license. See [welcome assets](Assets/Greetings/SOURCES.md), [sounds](Assets/Sounds/SOURCES.md) and [Bluetooth icons](Assets/Bluetooth/SOURCES.md).
+Asset sources and licensing are documented for [Bluetooth icons](Assets/Bluetooth/SOURCES.md), [welcome assets](Assets/Greetings/SOURCES.md) and [built-in sounds](Assets/Sounds/SOURCES.md). Plugin and native bridge licenses ship with their separate packages. Character artwork and voice recordings remain the property of their respective rights holders.
