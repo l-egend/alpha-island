@@ -1,60 +1,22 @@
-# 项目脚本
+# 开发工具
 
-日常开发使用 Visual Studio 或 `dotnet build`，无需运行安装、证书或发布脚本。所有命令从仓库根目录执行。
-
-## 构建与检查
+本目录保留可复用的构建、离线回归、资源维护与脱敏诊断入口。运行日志和生成文件写入 `bin/`，不提交到仓库。
 
 | 入口 | 用途 |
 | --- | --- |
-| `Test-Maintenance.ps1` | 按功能运行离线回归；`-Configuration Debug -Only '--multi-display-only'` 只检查多显示器定位。 |
-| `RegressionTests/`、`PluginFixture/` | WPF、服务与插件的回归程序和隔离测试插件。 |
-| `LocalizationMaintenance/` | 校验中英文文案引用与格式参数；`dotnet run --project tools/LocalizationMaintenance -- . check`，不会改写代码。英文窗口回归使用 `--localization-only`。 |
-| `AgentBridgeTests/` | 外部助手桥接与安装脚本的 Node.js 检查；部分用例需要对应工具或测试包。 |
-| `Test-PackageCompatibility*.ps1`、`Test-ShortcutIcons.ps1` | 检查已有发布目录的运行库、资源和快捷方式。 |
+| `Test-Maintenance.ps1`、`RegressionTests/` | 按功能运行回归；包含可选插件的扩展回归需准备独立插件源码。 |
+| `PluginFixture/`、`PluginCrashFixture/` | 隔离测试插件，只用于回归，不随应用安装。 |
+| `AgentBridgeTests/` | 外部助手接入与协议检查。 |
+| `LocalizationMaintenance/` | 校验中英文资源、文案引用和格式参数。 |
+| `build-installer.ps1` | 构建自包含 EXE 安装包；从项目读取版本，成功后保留最近两个版本。 |
+| `Clean-BuildArtifacts.ps1`、`Test-BuildArtifactRetention.ps1` | 在项目边界内预览、执行并核验构建产物清理。 |
+| `Test-PackageCompatibility*.ps1`、`PackageImageMetadata.cs.txt` | 核验发布目录中的运行库、架构、依赖和个人文件排除。 |
+| `Test-ShortcutIcons.ps1` | 检查快捷方式图标资源。 |
+| `Collect-CodexIslandDiagnostics.ps1` | 导出脱敏的助手接入诊断。 |
+| `Test-RepositoryPrivacy.py`、`privacy-reviewed.json` | 只读隐私检查，以及逐行核对过的测试样例放行记录。 |
+| `OneClickCodex/` | 外部助手接入所需工具，使用前核对参数和运行环境。 |
+| `make-icon.ps1`、`make-notification-sound.ps1`、`Export-GeminiAnimations.py`、`IconReviewExporter/` | 图标、内置音效和动画资源维护。 |
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/Test-Maintenance.ps1 -Configuration Debug -Only '--multi-display-only'
-```
+本机检阅安装、旧版迁移核验、实机探针、开发签名及批量插件打包命令保存在源码目录之外，不进入仓库。可选的实机通知回归需另行提供本机工具；默认离线回归不依赖它们。
 
-检查日志写入 `bin/maintenance-tests-*`；测试中的示例数据与实际设备测量会分别标明。完整检查的前置条件见 [开发与构建](../docs/开发与构建.md)。
-
-## 资源维护
-
-| 入口 | 用途 |
-| --- | --- |
-| `make-icon.ps1` | 重新生成程序图标。 |
-| `make-notification-sound.ps1` | 生成内置默认通知音效。 |
-| `Export-GeminiAnimations.py` | 从指定视频和参考图生成助手状态动画，支持各内置助手类型。需 Pillow、NumPy、imageio-ffmpeg。 |
-| `IconReviewExporter/` | 导出项目图标供视觉审阅，见其目录说明。 |
-
-资源脚本只在修改对应资源时执行；可能覆盖指定的输出文件。第三方素材来源见各 `Assets/*/SOURCES.md`。
-
-## 诊断与接入
-
-| 入口 | 用途 |
-| --- | --- |
-| `Collect-CodexIslandDiagnostics.ps1` | 收集外部助手接入诊断，避免输出密钥。 |
-| `measure-background-cpu.ps1` | 测量已运行进程的后台 CPU。 |
-| `Test-WindowsNotification.ps1` / `.cmd` | 发送真实测试通知，会在当前桌面产生提示。 |
-| `Test-InstalledNotificationTakeover.ps1` | 检查已安装程序的通知接管。 |
-| `agent-bridge-smoke.ps1` | 检查已运行的本地桥接，会发送测试状态和审批请求。 |
-| `OneClickCodex/` | 生成及使用可搬移的助手接入包，需显式提供或准备经校验的 Node.js 运行库。 |
-
-## 发布与安装维护
-
-安装包默认保留最近两个版本。`Clean-BuildArtifacts.ps1` 默认只显示计划，`-Apply` 执行清理；边界与保留规则由 `Test-BuildArtifactRetention.ps1` 验证。
-
-| 入口 | 用途 |
-| --- | --- |
-| `build-installer.ps1` | 完成更新后生成 EXE 安装包；成功后自动只保留最近两个版本并清理旧展开目录。 |
-| `build-msix.ps1 -CreatePackage` | 可选的开发 MSIX 打包，需要 Windows SDK 与开发签名；省略开关不会打包。 |
-| `Install-NotificationBuild.ps1`、`Trust-NotificationPublisher.ps1` | 可选 MSIX 安装与开发证书信任，须审核后明确选择。 |
-| `Update-TestInstallation.ps1`、`Verify-TestInstallation.ps1` | 完成构建后同步升级已授权的检阅安装、重启并核验配置保留；须显式传入实际安装目录。安装包生成后仍需执行部署步骤。 |
-| `Verify-SettingsMigration.ps1`、`Verify-ClipboardHistoryRuntimeUpdate.ps1` | 核验迁移或升级审计，不能替代通用单元测试。 |
-| `test-installer.ps1` | 安装器专用测试；执行前阅读参数和前置条件。 |
-
-`packaging/` 内的脚本是安装器载荷，`examples/*/install.ps1` 是对应集成的安装入口。普通应用启动不会执行这些开发脚本。
-
-可选插件及其构建、打包脚本位于同级独立目录 `alpha-island-plugins/`；在该目录执行 `tools/build-plugins.ps1`，产物写入其 `packages/`。主程序解决方案可独立构建；包含插件的扩展回归需另行准备该源码目录。
-
-`Test-RepositoryPrivacy.py --root . --report <本地报告路径>` 只读检查源码中的凭据、个人路径和常见隐私文件，报告不包含匹配原文。它不能代替图片审核或历史提交检查。开发签名私钥应存放在 `%LOCALAPPDATA%\AlphaIslandBuild\PackageSigning`，不进入仓库。
+`packaging/` 中的维护脚本、`examples/` 中的助手适配器属于产品构建或运行所需文件，继续保留。可选插件源码位于同级独立目录 `alpha-island-plugins/`，发布产物和本地工具均不属于源码。

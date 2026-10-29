@@ -18,7 +18,7 @@
 | `bin/Debug/net8.0-windows10.0.19041.0/plugins/alpha.trafficmonitor/` | Alpha Island | 注册网络数据源，接入内置网速卡片 |
 
 1. 退出 TrafficMonitor，将**原生桥接 DLL**复制到它的 `plugins` 目录，再启动 TrafficMonitor。你这台电脑的目录是 `C:\ExampleTools\TrafficMonitor\plugins`。
-2. 在 Visual Studio 普通 Debug 构建解决方案并 F5。接收插件自动部署到 Alpha Island 的输出目录，不需要 MSIX 或证书。
+2. 在独立插件源码目录构建接收插件，将完整插件目录放入 Alpha Island 设置中打开的插件目录，再刷新并启用；不需要 MSIX 或证书。
 3. 在 Alpha Island **设置 → 插件**启用“TrafficMonitor 网络数据”，保持“使用 TrafficMonitor 数据”开启，并开启系统状态中的网速检测。
 4. 进入“系统状态与网络”卡片，来源应显示“来源：TrafficMonitor”，速率和今日流量均在原网速卡片中显示。接收插件仅提供数据，组件菜单的页数保持不变。
 
@@ -38,14 +38,11 @@
 
 ## 开发与重建
 
-接收插件是解决方案中的 `TrafficMonitorPlugin`，引用已有插件 SDK。它通过 `RegisterNetworkSource` 接入统一网络读取点，现有内置网络卡、主岛和旁侧岛均从该读取点取数。刷新复用宿主的网络采样节拍，资源由插件服务生命周期管理。
+接收插件位于独立插件源码目录的 `examples/TrafficMonitorPlugin`，引用已有插件 SDK。它通过 `RegisterNetworkSource` 接入统一网络读取点，现有内置网络卡、主岛和旁侧岛均从该读取点取数。刷新复用宿主的网络采样节拍，资源由插件服务生命周期管理。
 
-原生 DLL 独立于 C# 日常解决方案：安装 Visual Studio 的“使用 C++ 的桌面开发”后，单独打开 `plugins/TrafficMonitorBridge/TrafficMonitorBridge.vcxproj`，选择 x64 编译。输出复用 `bin/TrafficMonitorBridge/x64`，不生成安装包。当前机器也可用已有的 x64 MinGW：
+原生 DLL 独立于 C# 日常解决方案：安装 Visual Studio 的“使用 C++ 的桌面开发”后，单独打开 `plugins/TrafficMonitorBridge/TrafficMonitorBridge.vcxproj`，选择 x64 编译。输出复用 `bin/TrafficMonitorBridge/x64`，不生成安装包。也可使用 x64 MinGW 工具链单独构建。
 
-```powershell
-cd ..\alpha-island-plugins
-.\tools\build-traffic-monitor-bridge.ps1
-```
+使用独立插件目录中 `Plugins/TrafficMonitorBridge/TrafficMonitorBridge.vcxproj` 构建原生桥接，需要 C++ 桌面工具。
 
 未将原生项目加入日常解决方案，避免普通 C# 构建要求额外安装 C++ 工具链。当前生成的 DLL 静态链接 MinGW 运行库，约 178 KB。
 

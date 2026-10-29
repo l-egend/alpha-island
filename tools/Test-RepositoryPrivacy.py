@@ -26,7 +26,7 @@ LIMIT = 12 * 1024 * 1024
 
 
 def git(root, *args):
-    result = subprocess.run(['git', '-c', 'safe.directory=' + str(root), *args],
+    result = subprocess.run(['git', '-c', 'safe.directory=' + root.as_posix(), *args],
                             cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return result.stdout
 

@@ -26,7 +26,7 @@
 ![插件卡片预览](screens/vivo-plugin.png)
 
 源码位于同级独立目录 `alpha-island-plugins/examples/VivoOfficePlugin/`，发布包位于该目录的 `packages/<宿主版本>/`。
-在独立插件目录执行 `tools/build-plugins.ps1` 可生成插件与对应源码包，不包含 vivo 软件或用户连接记录。
+独立发布包提供插件与对应源码，不包含 vivo 软件或用户连接记录。
 
 vivo 插件字段解析、真实设置开关、连接事件去重与小岛提醒、独立顶置、停用及一键卸载共 87 项专项检查通过。
 真实手机连断以办公套件写入的记录为准，更新速度由办公套件的写入时机和两秒刷新周期共同决定。

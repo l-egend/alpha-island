@@ -36,7 +36,7 @@ internal static partial class Program
                 PumpAnimations(2000);
                 var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
                 foreach (string argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                    Path.GetFullPath("tools/Test-WindowsNotification.ps1"), "-ImagePath", Path.GetFullPath("Assets/alpha-island-256.png"), "-Title", title, "-Count", "2", "-IntervalSeconds", "1" })
+                    LocalDesktopTool("Test-WindowsNotification.ps1"), "-ImagePath", Path.GetFullPath("Assets/alpha-island-256.png"), "-Title", title, "-Count", "2", "-IntervalSeconds", "1" })
                     start.ArgumentList.Add(argument);
                 using var sender = Process.Start(start)!;
                 var deadline = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };

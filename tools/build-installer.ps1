@@ -91,7 +91,7 @@ try {
     foreach ($name in @('node.exe','LICENSE','SHA256.txt')) { Copy-Item -LiteralPath (Join-Path $NodeRuntimeDirectory $name) -Destination $agentRuntime }
     $testTools = Join-Path $stage 'tools'
     New-Item -ItemType Directory -Path $testTools -Force | Out-Null
-    foreach ($file in @('Test-WindowsNotification.ps1','Test-WindowsNotification.cmd','Collect-CodexIslandDiagnostics.ps1')) {
+    foreach ($file in @('Collect-CodexIslandDiagnostics.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $testTools
     }
     $retired = Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object Name -Match 'LibreHardware|PawnIO|HardwareWorker|RegressionTests'

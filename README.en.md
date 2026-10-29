@@ -1,6 +1,6 @@
 # Alpha Island
 
-Current version: **0.2.32**. The main installer contains no optional plugins. Their source and build scripts live in the separate sibling directory `alpha-island-plugins/`, with releases under `packages/<version>/`. Install optional plugin packages separately from Settings > Plugins. Main app updates preserve existing plugins and their settings. External translation starts disabled with an empty app name and shortcut.
+Current version: **0.2.32**. The main installer contains no optional plugins. Their source lives in the separate sibling directory `alpha-island-plugins/`, with releases under `packages/<version>/`. Install optional plugin packages separately from Settings > Plugins. Main app updates preserve existing plugins and their settings. External translation starts disabled with an empty app name and shortcut.
 
 [English](README.en.md) · [简体中文](README.md)
 

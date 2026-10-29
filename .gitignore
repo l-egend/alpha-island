@@ -380,3 +380,25 @@ clipboard_history.json
 integrations.json
 diagnostics-*.zip
 diagnostic-exports/
+
+# Workstation-only commands are maintained outside this repository.
+/local-tools/
+/.local/
+/analysis/
+/command-history/
+ConsoleHost_history.txt
+.bash_history
+.python_history
+/tools/Update-TestInstallation.ps1
+/tools/Verify-TestInstallation.ps1
+/tools/Verify-ClipboardHistoryRuntimeUpdate.ps1
+/tools/Verify-SettingsMigration.ps1
+/tools/Test-InstalledNotificationTakeover.ps1
+/tools/Test-WindowsNotification.ps1
+/tools/Test-WindowsNotification.cmd
+/tools/agent-bridge-smoke.ps1
+/tools/measure-background-cpu.ps1
+/tools/build-msix.ps1
+/tools/Install-NotificationBuild.ps1
+/tools/Trust-NotificationPublisher.ps1
+/tools/test-installer.ps1

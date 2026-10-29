@@ -86,7 +86,7 @@ internal static partial class Program
             }
         });
         var info = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (string argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", Path.GetFullPath("tools/Test-WindowsNotification.ps1"), "-Title", title, "-Count", "1" }) info.ArgumentList.Add(argument);
+        foreach (string argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", LocalDesktopTool("Test-WindowsNotification.ps1"), "-Title", title, "-Count", "1" }) info.ArgumentList.Add(argument);
         using var sender = Process.Start(info)!;
         var root = nativeOnly ? null : AutomationElement.FromHandle(island);
         var condition = new AndCondition(new PropertyCondition(AutomationElement.NameProperty, expectedTitle), new PropertyCondition(AutomationElement.IsOffscreenProperty, false));
