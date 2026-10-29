@@ -14,7 +14,7 @@ Requires both the Alpha Island plugin and the TrafficMonitor native bridge, with
 
 ## Features
 
-- Feed the existing network card, main island and side island without adding another card.
+- Feed the existing network card, main panel and auxiliary panels without adding another card.
 - Read raw upload/download speeds and daily totals when the bridge supplies valid current-day data.
 - Use the network adapter selected in TrafficMonitor for a shared source between the applications.
 
