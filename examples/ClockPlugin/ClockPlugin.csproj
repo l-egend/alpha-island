@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AssemblyName>AlphaIsland.Examples.ClockPlugin</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(AlphaIslandSdkProject)">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+    <None Update="plugin.json;README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- Deployment is opt-in; Directory.Build.props disables it by default. -->
+  <Target Name="DeployExamplePlugin" AfterTargets="Build" Condition="'$(DeployPlugin)' != 'false'">
+    <!-- Shared build outputs can contain another project's plugin.json and DLLs. -->
+    <ItemGroup><PluginFiles Include="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)$(TargetName).deps.json;$(MSBuildProjectDirectory)\plugin.json" /></ItemGroup>
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\net8.0-windows10.0.19041.0\plugins\example.clock" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

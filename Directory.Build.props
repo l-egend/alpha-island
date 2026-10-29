@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <WindowsSdkPackageVersion>10.0.19041.56</WindowsSdkPackageVersion>
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
+    <!-- Desktop hosts and isolated workers use the same bounded-growth GC policy. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
+      <DeployPlugin Condition="'$(DeployPlugin)' == ''">false</DeployPlugin>
+    <AlphaIslandSdkProject Condition="'$(AlphaIslandHostRoot)' != ''">$(AlphaIslandHostRoot)\PluginSdk\AlphaIsland.PluginSdk.csproj</AlphaIslandSdkProject>
+    <AlphaIslandSdkProject Condition="'$(AlphaIslandSdkProject)' == ''">$(MSBuildThisFileDirectory)PluginSdk\AlphaIsland.PluginSdk.csproj</AlphaIslandSdkProject>
+    <AlphaIslandConversationProject Condition="'$(AlphaIslandHostRoot)' != ''">$(AlphaIslandHostRoot)\ConversationCore\AlphaIsland.ConversationCore.csproj</AlphaIslandConversationProject>
+    <AlphaIslandConversationProject Condition="'$(AlphaIslandConversationProject)' == ''">$(MSBuildThisFileDirectory)ConversationCore\AlphaIsland.ConversationCore.csproj</AlphaIslandConversationProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
+</Project>

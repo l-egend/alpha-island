@@ -1,0 +1,8 @@
+[
+  {
+    "path": "Plugins/TrafficMonitorBridge/upstream/PluginInterface.h",
+    "rule": "email-address",
+    "lineHash": "cc6efced5c8eac872aebdc678b596bba6f678a14cc2ac6d1ade6773733331400",
+    "reason": "public upstream author attribution; preserve original license notice"
+  }
+]

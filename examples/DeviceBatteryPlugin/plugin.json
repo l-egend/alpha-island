@@ -1,0 +1,9 @@
+{
+  "id": "alpha.device-battery",
+  "name": "2.4G 设备电量",
+  "version": "1.1.4",
+  "apiVersion": 6,
+  "assembly": "AlphaIsland.Plugins.DeviceBattery.dll",
+  "entryType": "AlphaIsland.Plugins.DeviceBattery.DeviceBatteryPlugin",
+  "description": "本地读取受支持接收器、标准 HID 和手柄电池，汇入电池卡片。独立进程运行，无需 Python 或厂商软件。"
+}

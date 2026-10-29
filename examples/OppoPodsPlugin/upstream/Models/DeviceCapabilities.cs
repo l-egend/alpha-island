@@ -1,0 +1,179 @@
+using System;
+using System.Collections.Generic;
+using OppoPodsManager.Localization;
+
+namespace OppoPodsManager;
+
+/// <summary>
+/// 一个可选的 ANC 模式项（用于按 JSON 动态生成降噪 UI）。
+/// 主模式可含若干子模式（如"降噪"下的智能/中度/超级/轻度）；无子模式则直接可发送。
+/// </summary>
+public sealed class AncOption
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public byte ProtocolIndex { get; set; }
+    public bool Sendable { get; set; } = true;
+    public List<AncOption> Children { get; set; } = new();
+}
+
+/// <summary>
+/// 设备能力检测。从 DeviceModels.json 加载 whitelist 配置，按蓝牙名称匹配设备。
+/// 支持能力、ANC 模式映射、EQ 名称均从 JSON 动态推导，添加新设备只需追加 whitelist 条目。
+/// </summary>
+public class DeviceCapabilities
+{
+    public string DeviceName { get; set; } = "";
+    public string ModelName { get; set; } = "Unknown";
+    public string ModelId { get; set; } = "";
+    public int ProtocolType { get; set; } = 1;
+    public bool SupportSpp { get; set; } = true;
+    public bool IsSupported { get; set; } = true;
+
+    // ========== 功能标志（当前 UI 已用）==========
+    public bool HasSpatialAudio { get; set; }
+    public bool HasSpatialSound { get; set; }
+    /// <summary>官方白名单 function.spatialTypes：0=关闭、1=固定、2=头部跟踪。</summary>
+    public List<int> SpatialTypes { get; set; } = new();
+    public bool HasDualDevice { get; set; }
+    public bool HasAdaptiveAnc { get; set; }
+    public bool IsLegacyAnc { get; set; }
+    public bool HasGameMode { get; set; }
+    /// <summary>运行时确定的游戏模式 feature：0=未确认、0x06=旧版低延迟、0x28=新版主开关。</summary>
+    public byte GameModeFeatureId { get; set; }
+    public bool HasGameSound { get; set; }
+    public byte GameSoundType { get; set; }
+
+    // ========== 扩展功能标志（whiteList.function）==========
+    public bool HasHiResAudio { get; set; }
+    public bool HasDolbyAtmos { get; set; }
+    public bool HasCustomEq { get; set; }
+    public bool HasHearingEnhancement { get; set; }
+    public bool HasPersonalNoise { get; set; }
+    public bool HasWearDetection { get; set; }
+    public bool HasAutoSwitchLink { get; set; }
+    public bool HasFindDevice { get; set; }
+    public bool HasKeyFunction { get; set; }
+    public bool HasClickTakePic { get; set; }
+    public bool HasZenMode { get; set; }
+    public bool HasEarScan { get; set; }
+    public bool HasBassEngine { get; set; }
+    public bool HasCustomDress { get; set; }
+    public bool HasFitDetection { get; set; }
+    public bool HasVocalEnhance { get; set; }
+    public bool HasLongPowerMode { get; set; }
+    public bool HasVoiceCommand { get; set; }
+    public bool HasSpeechPerception { get; set; }
+    public bool HasSleepDetection { get; set; }
+    public bool HasHeadMotion { get; set; }
+    public bool HasAiTranslate { get; set; }
+    public bool HasAiSummary { get; set; }
+    public bool HasMeetingAssistant { get; set; }
+    public bool HasWhiteNoise { get; set; }
+    public bool HasSpineHealth { get; set; }
+    public bool HasDiagnostic { get; set; }
+    public bool HasFirmwareUpdate { get; set; }
+    public bool HasPromptVolume { get; set; }
+    public bool HasMultiConnectManage { get; set; }
+    public int  MultiDevicesConnect { get; set; }
+
+    /// <summary>Melody V1 多设备页：展示连接历史和基础连接控制，不提供历史设备解绑。</summary>
+    public bool IsMultiConnectV1 => MultiDevicesConnect == 1;
+
+    /// <summary>Melody V2 多设备管理页：支持高级管理；具体命令仍需结合运行时能力位图。</summary>
+    public bool IsMultiConnectV2 => MultiDevicesConnect >= 2;
+
+    /// <summary>V2 页面且耳机声明 0x0429 时，才支持 operation=3 取消配对。</summary>
+    public bool CanUnpairMultiConnectDevice(IReadOnlySet<ushort> supportedCommands) =>
+        IsMultiConnectV2 && supportedCommands.Contains(OppoProtocol.CmdOperateHandheld);
+
+    /// <summary>按 Melody 的设备能力集合选择旧版 feature 27 或新版 0x0422 空间协议。</summary>
+    public void ResolveSpatialProtocol(IReadOnlySet<ushort> supportedCommands)
+    {
+        bool whitelisted = SpatialTypes.Count > 0;
+        bool supportsV2 = supportedCommands.Contains(OppoProtocol.CmdQueryHeadsetSpatial);
+        HasSpatialAudio = whitelisted && supportsV2;
+        HasSpatialSound = whitelisted && !supportsV2;
+    }
+
+    /// <summary>
+    /// 根据 0x810D 实际返回的 feature 选择游戏模式协议。
+    /// 白名单已明确支持游戏音效时优先新版；否则优先旧版 0x06，避免旧设备误用 0x28。
+    /// </summary>
+    public void ResolveGameModeProtocol(IReadOnlyDictionary<byte, byte> returnedFeatures)
+    {
+        bool hasLegacy = returnedFeatures.ContainsKey(OppoProtocol.FeatureGameLL);
+        bool hasMain = returnedFeatures.ContainsKey(OppoProtocol.FeatureGameMain);
+
+        if (HasGameSound && hasMain)
+            GameModeFeatureId = OppoProtocol.FeatureGameMain;
+        else if (hasLegacy)
+            GameModeFeatureId = OppoProtocol.FeatureGameLL;
+        else if (hasMain)
+            GameModeFeatureId = OppoProtocol.FeatureGameMain;
+        else if (HasGameMode)
+            GameModeFeatureId = OppoProtocol.GameModeFeature(HasGameSound);
+
+        HasGameMode = GameModeFeatureId != 0;
+    }
+
+    public HashSet<int> GameSoundMutexes { get; set; } = new();
+    public bool GameSoundMutexEq => GameSoundMutexes.Contains(1) || GameSoundMutexes.Contains(3);
+    public bool GameSoundMutexSpatial => GameSoundMutexes.Contains(2);
+
+    /// <summary>默认 EQ 预设名（关闭/无效果），用于互斥时回退。取 EqPresets 中最小 protocolIndex 对应的名称；无预设时返回 "默认"。</summary>
+    public string DefaultEqPreset
+    {
+        get
+        {
+            byte min = byte.MaxValue;
+            string name = LanguageManager.Instance.GetString(LanguageManager.Instance.Eq_Default);
+            foreach (var kv in EqPresets)
+                if (kv.Value < min) { min = kv.Value; name = kv.Key; }
+            return name;
+        }
+    }
+
+    // ========== EQ 预设 ==========
+    public Dictionary<string, byte> EqPresets { get; set; } = new();
+    public Dictionary<byte, string> EqNames { get; set; } = new();
+
+    /// <summary>自定义 EQ 频率数组（如 [31, 62, 125, …]），空数组表示无自定义 EQ。</summary>
+    public int[] CustomEqFrequencies { get; set; } = Array.Empty<int>();
+
+    /// <summary>设备侧可存储的自定义 EQ 预设数上限（customEqMax）。0 表示不支持。</summary>
+    public int CustomEqMaxPresets { get; set; }
+
+    /// <summary>自定义 EQ UI 版本（customEqUiVersion）。2 为当前主流。</summary>
+    public int CustomEqUiVersion { get; set; }
+
+    /// <summary>设备端 EQ 预设名称覆盖（eqId → 名称），按 0x8122 响应合并后更新。</summary>
+    internal Dictionary<byte, string> DeviceEqNames { get; set; } = new();
+
+    /// <summary>protocolIndex → UI 模式名（按型号 noiseReductionMode 动态构建）</summary>
+    public Dictionary<byte, string> AncIndexToName { get; set; } = new();
+
+    /// <summary>UI 模式名 → protocolIndex（发送 ANC 时按型号取正确字节位）</summary>
+    public Dictionary<string, byte> AncNameToIndex { get; set; } = new();
+
+    /// <summary>按 JSON noiseReductionMode 构建的层级化 ANC 选项。</summary>
+    public List<AncOption> AncOptions { get; set; } = new();
+
+    // ========== 静态转发（委托给 DeviceProfileLoader）==========
+
+    /// <summary>根据蓝牙名称自动检测设备能力。</summary>
+    public static DeviceCapabilities Detect(string? deviceName) =>
+        DeviceProfileLoader.Detect(deviceName);
+
+    /// <summary>按完整型号名手动覆盖检测。</summary>
+    public static DeviceCapabilities ForceModel(string modelName) =>
+        DeviceProfileLoader.ForceModel(modelName);
+
+    /// <summary>按 productId 精确识别设备。</summary>
+    public static DeviceCapabilities? DetectById(string productId, string? deviceName = null) =>
+        DeviceProfileLoader.DetectById(productId, deviceName);
+
+    /// <summary>获取所有已知设备型号名称列表。</summary>
+    public static List<string> GetModelNames() =>
+        DeviceProfileLoader.GetModelNames();
+}

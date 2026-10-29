@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework><SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading><AssemblyName>AlphaIsland.Plugins.DeviceBattery</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(AlphaIslandSdkProject)"><Private>false</Private><ExcludeAssets>runtime</ExcludeAssets></ProjectReference>
+    <None Update="plugin.json;README.md;SOURCES.md" CopyToOutputDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="AlphaIsland.RegressionTests" />
+  </ItemGroup>
+</Project>
