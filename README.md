@@ -10,9 +10,9 @@
 
 ## 获取插件
 
-当前分支提供**源码**，安装用插件 ZIP 尚未作为 GitHub Release 发布。下面的源码下载需要自行构建，不能直接安装；各条目提供对应源码和使用说明。
+从 [插件 Release](https://github.com/l-egend/alpha-island/releases/tag/plugins-v0.2.32) 下载**安装用插件 ZIP**，可选择单个插件或全部插件合并包。源码包供开发使用，不能直接安装。
 
-[下载全部插件源码](https://github.com/l-egend/alpha-island/archive/refs/heads/plugins.zip) · [浏览本分支](https://github.com/l-egend/alpha-island/tree/plugins)
+[下载全部可选插件](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/AlphaIsland-optional-plugins-0.2.32.zip) · [下载全部插件源码](https://github.com/l-egend/alpha-island/archive/refs/heads/plugins.zip) · [浏览本分支](https://github.com/l-egend/alpha-island/tree/plugins)
 
 <a id="install"></a>
 
@@ -50,7 +50,7 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 - 版本：**0.1.41**
 - 插件 ID：`ai.api-chat`
 - 使用条件：准备可用的服务地址、模型名称和 API Key；语音输入还需配置语音识别服务。
-- 获取方式：[插件源码](examples/ApiChatPlugin) · [使用说明](examples/ApiChatPlugin/README.md)
+- 获取方式：[下载插件 ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/ai.api-chat-0.1.41.zip) · [插件源码](examples/ApiChatPlugin) · [使用说明](examples/ApiChatPlugin/README.md)
 
 ---
 
@@ -63,7 +63,7 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 - 版本：**0.1.30**
 - 插件 ID：`ai.local-agents`
 - 使用条件：对应工具已安装、登录并能正常使用；发现程序不代表账号或访问权限已经验证。
-- 获取方式：[插件源码](examples/LocalAgentsPlugin) · [使用说明](examples/LocalAgentsPlugin/README.md)
+- 获取方式：[下载插件 ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/ai.local-agents-0.1.30.zip) · [插件源码](examples/LocalAgentsPlugin) · [使用说明](examples/LocalAgentsPlugin/README.md)
 
 ---
 
@@ -76,7 +76,7 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 - 版本：**0.1.6**
 - 插件 ID：`oppo.pods`
 - 使用条件：通常需先在 Windows 中完成配对并连接音频；控制能力随品牌、型号、固件和后端变化。
-- 获取方式：[插件源码](examples/OppoPodsPlugin) · [使用说明](examples/OppoPodsPlugin/README.md)
+- 获取方式：[下载插件 ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/oppo.pods-0.1.6.zip) · [插件源码](examples/OppoPodsPlugin) · [使用说明](examples/OppoPodsPlugin/README.md)
 
 参考项目: [OppoPodsManager](https://github.com/Zhaoyi-ya/OppoPodsManager)
 
@@ -91,7 +91,7 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 - 版本：**0.1.3**
 - 插件 ID：`vivo.office`
 - 使用条件：本机已安装 vivo 办公套件并产生过连接记录；当前在线判断需要套件运行且提供对应设备信息。
-- 获取方式：[插件源码](examples/VivoOfficePlugin) · [使用说明](examples/VivoOfficePlugin/README.md)
+- 获取方式：[下载插件 ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/vivo.office-0.1.3.zip) · [插件源码](examples/VivoOfficePlugin) · [使用说明](examples/VivoOfficePlugin/README.md)
 
 ---
 
@@ -104,7 +104,7 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 - 版本：**1.1.4**
 - 插件 ID：`alpha.device-battery`
 - 使用条件：设备或驱动提供受支持的查询协议或电量字段；无需 Python 或额外厂商管理程序。
-- 获取方式：[插件源码](examples/DeviceBatteryPlugin) · [使用说明](examples/DeviceBatteryPlugin/README.md)
+- 获取方式：[下载插件 ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/alpha.device-battery-1.1.4.zip) · [插件源码](examples/DeviceBatteryPlugin) · [使用说明](examples/DeviceBatteryPlugin/README.md)
 
 ---
 
@@ -117,11 +117,13 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 - 版本：**1.0.2**
 - 插件 ID：`alpha.trafficmonitor`
 - 使用条件：需安装 Alpha Island 插件和 TrafficMonitor 原生桥接，并运行 TrafficMonitor。
-- 获取方式：[插件源码](examples/TrafficMonitorPlugin) · [使用说明](examples/TrafficMonitorPlugin/README.md)
+- 获取方式：[下载插件 ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/alpha.trafficmonitor-1.0.2.zip) · [插件源码](examples/TrafficMonitorPlugin) · [使用说明](examples/TrafficMonitorPlugin/README.md)
 
 原项目: [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor)
 
 ---
+
+[下载可选 x64 原生桥接](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/TrafficMonitor-integration-0.2.32.zip)。它与 Alpha Island 插件是两个部分，安装位置见 [桥接说明](Plugins/TrafficMonitorBridge/README.md)。
 
 <a id="clock"></a>
 
@@ -132,7 +134,7 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 - 版本：**1.0.1**
 - 插件 ID：`example.clock`
 - 使用条件：无需账号、网络或额外应用，使用 Windows 当前本地时间。
-- 获取方式：[插件源码](examples/ClockPlugin) · [使用说明](examples/ClockPlugin/README.md)
+- 获取方式：[下载插件 ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/example.clock-1.0.1.zip) · [插件源码](examples/ClockPlugin) · [使用说明](examples/ClockPlugin/README.md)
 
 ---
 

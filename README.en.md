@@ -10,9 +10,9 @@ This is the `plugins` branch. The [main application](https://github.com/l-egend/
 
 ## Get plugins
 
-This branch currently provides **source code**; installable plugin ZIPs have not been published as GitHub Releases. The source download below requires building and cannot be installed directly. Each entry links to its own source and instructions.
+Download **installable plugin ZIPs** from the [plugin release](https://github.com/l-egend/alpha-island/releases/tag/plugins-v0.2.32). Choose an individual package or the complete optional bundle. Source archives are for development and cannot be installed directly.
 
-[Download all plugin sources](https://github.com/l-egend/alpha-island/archive/refs/heads/plugins.zip) · [Browse this branch](https://github.com/l-egend/alpha-island/tree/plugins)
+[Download all optional plugins](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/AlphaIsland-optional-plugins-0.2.32.zip) · [Download all plugin sources](https://github.com/l-egend/alpha-island/archive/refs/heads/plugins.zip) · [Browse this branch](https://github.com/l-egend/alpha-island/tree/plugins)
 
 <a id="install"></a>
 
@@ -50,7 +50,7 @@ Chat with a compatible API model in Alpha Island, with streamed replies, TXT per
 - Version: **0.1.41**
 - Plugin ID: `ai.api-chat`
 - Requirements: A working service URL, model name and API key. Voice input also needs a configured speech recognition service.
-- Get it: [source](examples/ApiChatPlugin) · [instructions](examples/ApiChatPlugin/README.en.md)
+- Get it: [plugin ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/ai.api-chat-0.1.41.zip) · [source](examples/ApiChatPlugin) · [instructions](examples/ApiChatPlugin/README.en.md)
 
 ---
 
@@ -63,7 +63,7 @@ Send tasks to an available local Codex, DeepSeek Harness or Antigravity CLI and 
 - Version: **0.1.30**
 - Plugin ID: `ai.local-agents`
 - Requirements: The selected tool must be installed, signed in and usable. Detecting its executable does not verify the account or access permissions.
-- Get it: [source](examples/LocalAgentsPlugin) · [instructions](examples/LocalAgentsPlugin/README.en.md)
+- Get it: [plugin ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/ai.local-agents-0.1.30.zip) · [source](examples/LocalAgentsPlugin) · [instructions](examples/LocalAgentsPlugin/README.en.md)
 
 ---
 
@@ -76,7 +76,7 @@ Show per-part battery readings and controls for supported earbuds, with options 
 - Version: **0.1.6**
 - Plugin ID: `oppo.pods`
 - Requirements: Usually requires pairing and an audio connection in Windows first. Controls depend on the brand, model, firmware and backend.
-- Get it: [source](examples/OppoPodsPlugin) · [instructions](examples/OppoPodsPlugin/README.en.md)
+- Get it: [plugin ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/oppo.pods-0.1.6.zip) · [source](examples/OppoPodsPlugin) · [instructions](examples/OppoPodsPlugin/README.en.md)
 
 Reference project: [OppoPodsManager](https://github.com/Zhaoyi-ya/OppoPodsManager)
 
@@ -91,7 +91,7 @@ Read existing vivo Office Suite connection records to show the device, connectio
 - Version: **0.1.3**
 - Plugin ID: `vivo.office`
 - Requirements: vivo Office Suite must be installed and have written connection records. Current online status requires the suite to be running with matching device information.
-- Get it: [source](examples/VivoOfficePlugin) · [instructions](examples/VivoOfficePlugin/README.en.md)
+- Get it: [plugin ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/vivo.office-0.1.3.zip) · [source](examples/VivoOfficePlugin) · [instructions](examples/VivoOfficePlugin/README.en.md)
 
 ---
 
@@ -104,7 +104,7 @@ Read battery information from supported receivers, standard HID devices and cont
 - Version: **1.1.4**
 - Plugin ID: `alpha.device-battery`
 - Requirements: A supported query protocol or battery field from the device or driver. Python and a separate vendor manager are not required.
-- Get it: [source](examples/DeviceBatteryPlugin) · [instructions](examples/DeviceBatteryPlugin/README.en.md)
+- Get it: [plugin ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/alpha.device-battery-1.1.4.zip) · [source](examples/DeviceBatteryPlugin) · [instructions](examples/DeviceBatteryPlugin/README.en.md)
 
 ---
 
@@ -117,11 +117,13 @@ Use TrafficMonitor’s network speeds and available daily totals in Alpha Island
 - Version: **1.0.2**
 - Plugin ID: `alpha.trafficmonitor`
 - Requirements: Requires both the Alpha Island plugin and the TrafficMonitor native bridge, with TrafficMonitor running.
-- Get it: [source](examples/TrafficMonitorPlugin) · [instructions](examples/TrafficMonitorPlugin/README.en.md)
+- Get it: [plugin ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/alpha.trafficmonitor-1.0.2.zip) · [source](examples/TrafficMonitorPlugin) · [instructions](examples/TrafficMonitorPlugin/README.en.md)
 
 Upstream project: [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor)
 
 ---
+
+[Download the optional x64 native bridge](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/TrafficMonitor-integration-0.2.32.zip). This is separate from the Alpha Island plugin; follow the [bridge instructions](Plugins/TrafficMonitorBridge/README.en.md).
 
 <a id="clock"></a>
 
@@ -132,7 +134,7 @@ Show the time and date with a custom title, seconds, 12/24-hour format and font 
 - Version: **1.0.1**
 - Plugin ID: `example.clock`
 - Requirements: No account, network access or extra application is required. It uses the current Windows local time.
-- Get it: [source](examples/ClockPlugin) · [instructions](examples/ClockPlugin/README.en.md)
+- Get it: [plugin ZIP](https://github.com/l-egend/alpha-island/releases/download/plugins-v0.2.32/example.clock-1.0.1.zip) · [source](examples/ClockPlugin) · [instructions](examples/ClockPlugin/README.en.md)
 
 ---
 
