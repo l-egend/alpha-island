@@ -673,7 +673,7 @@ internal sealed class VivoManager : BrandManagerBase, IBrandManager
             ApplicationLog.Current?.Debug("Vivo", $"内置音效查询失败：{exception.Message}");
         }
     }
-    // 噪声控制当前模式切换：payload = [mode, 0x03, 0x01]（GAIA v4，官方 App HCI 抓包逐字节协议记录）。
+    // 噪声控制当前模式切换：payload = [mode, 0x03, 0x01]（GAIA v4，官方 App HCI 抓包记录）。
     // 第二、三字节为固定后缀，非降噪档位；旧工程误用档位发 2 字节载荷，耳机忽略 → 软件内无法切模式。
     private async Task<bool> SetNoiseModeCoreAsync(NoiseMode mode, CancellationToken cancellationToken)
     {
@@ -682,7 +682,7 @@ internal sealed class VivoManager : BrandManagerBase, IBrandManager
         // 当前生效降噪模式走 set_noise_mode（0x0130），帧版本取型号画像 GAIA 版本（TWS 4 = v4 / TWS 3e = Air3 Pro = v3）。
         // SET 载荷按型号覆盖点（VivoNoiseModeMap.NoiseSetSuffix）生成，对齐官方 App（Windows 逆向参考 [(byte)mode, ..NoiseSetSuffix]）：
         //   · 非 null（当前全部型号）→ 固定后缀：payload = [mode, ..NoiseSetSuffix]
-        //       - TWS 4 系 / TWS Air3 / iQOO TWS 2：[mode, 0x03, 0x01]（官方 App 抓包逐字节协议记录）
+        //       - TWS 4 系 / TWS Air3 / iQOO TWS 2：[mode, 0x03, 0x01]（官方 App 抓包记录）
         //       - TWS 3e：[mode, 0x03]；Air3 Pro 系：[mode, 0x04, 0x00]（Windows 参考 Tws3eV3 / Air3ProV3）
         //   · null（保留的 legacy fallback，当前无型号使用）→ 按模式取降噪档位 [mode, ReduceForMode(mode)]
         // 0x010C(set_anc_mode) 仅改 ancModeConfig、不切出声模式——真机已验证 ACK 但不出声，故改走 0x0130。
@@ -1063,7 +1063,7 @@ internal sealed class VivoManager : BrandManagerBase, IBrandManager
             ApplicationLog.Current?.Debug("Vivo", $"佩戴检测开关查询失败：{exception.Message}");
         }
     }
-    // ---- 听力保护（SET 0x0152 / QUERY 0x0252 / REPORT 0x8252，APK 逆向协议记录；开关型，payload [enable]）----
+    // ---- 听力保护（SET 0x0152 / QUERY 0x0252 / REPORT 0x8252，APK 协议分析；开关型，payload [enable]）----
     // 能力由 DeviceModels.json 的 hearing_protection 精确声明（49 机型支持）；DeviceModels 无独立 WearDetection 键，故佩戴检测走另一路径。
     private void OnHearingProtectionReport(ProtocolFrame frame)
     {
@@ -1327,7 +1327,7 @@ internal sealed class VivoManager : BrandManagerBase, IBrandManager
             ApplicationLog.Current?.Debug("Vivo", "忽略非法 ANC 生效模式回包：空。");
             return;
         }
-        // 0x010C(set_anc_mode) 诊断系使用经典约定（APK 协议记录）：mode 0=关闭 / 1=降噪 / 2=通透，与 0x0130 系字节相反，故单独映射。
+        // 0x010C(set_anc_mode) 诊断系使用经典约定（APK 协议分析）：mode 0=关闭 / 1=降噪 / 2=通透，与 0x0130 系字节相反，故单独映射。
         var mode = payload.Length >= 2 ? payload[1] : payload[0];
         var mapped = MapFromAncMode(mode);
         _noiseMode = mode;
@@ -1335,7 +1335,7 @@ internal sealed class VivoManager : BrandManagerBase, IBrandManager
             $"ANC 生效模式更新：mode=0x{mode:X2}({mapped})，payload={Convert.ToHexString(payload)}。");
         State.SetNoise(new NoiseSnapshot(mapped, null));
     }
-    // 0x010C(set_anc_mode) 诊断系使用经典约定（APK 协议记录）：0=关闭 / 1=降噪 / 2=通透。
+    // 0x010C(set_anc_mode) 诊断系使用经典约定（APK 协议分析）：0=关闭 / 1=降噪 / 2=通透。
     private static NoiseMode MapFromAncMode(byte vivoMode) => vivoMode switch
     {
         0 => NoiseMode.Off,

@@ -112,7 +112,7 @@ Read battery information from supported receivers, standard HID devices and cont
 
 ### TrafficMonitor Network Data
 
-Use TrafficMonitor’s network speeds and available daily totals in Alpha Island when both applications are already in use.
+Integrate TrafficMonitor's network speeds and valid daily totals as a network data source in Alpha Island.
 
 - Version: **1.0.2**
 - Plugin ID: `alpha.trafficmonitor`

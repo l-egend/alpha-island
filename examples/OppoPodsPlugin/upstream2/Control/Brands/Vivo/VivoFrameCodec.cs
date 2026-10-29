@@ -25,7 +25,7 @@ internal sealed class VivoFrameCodec : IFrameCodec
     }
     public byte[] Encode(ushort command, ReadOnlySpan<byte> payload)
     {
-        // GAIA 版本是「按命令」而非「按型号」——两套真实抓包已协议记录：
+        // GAIA 版本是「按命令」而非「按型号」——两组抓包记录：
         //   · 握手 0x0300：恒 GAIA 厂商(0x000A) + version 4（版本协商帧）。
         //   · 电量 0x0207：恒 version 4。TWS 4 抓包(FF040000001B0207) 与 Air3 Pro 真机抓包(FF040000001B0207)
         //     均为 v4，而 Air3 Pro 的噪声等控制帧是 v3 —— 证明电量查询不随型号代际变化，必须恒 v4，

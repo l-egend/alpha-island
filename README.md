@@ -112,7 +112,7 @@ TrafficMonitor 需要安装到**两个不同应用中的两部分**，请按下�
 
 ### TrafficMonitor 网络数据
 
-把 TrafficMonitor 提供的网速和可用的当日流量接入 Alpha Island，适合已同时运行两者、希望复用网络读数的情况。
+将 TrafficMonitor 提供的网速和有效的当日流量接入 Alpha Island 的网络数据源。
 
 - 版本：**1.0.2**
 - 插件 ID：`alpha.trafficmonitor`

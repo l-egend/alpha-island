@@ -69,7 +69,7 @@ public static class VivoDeviceModelData
         }
 
         model = new VivoModelDefinition(modelId, name, projectName, deviceType, features);
-        // 按 ModelId 应用 per-model 噪声模式覆盖；未登记的型号使用 Canonical（APK 逆向证实全 vivo 型号统一）。
+        // 按 ModelId 应用 per-model 噪声模式覆盖；未登记的型号使用 Canonical（APK 逆向证实当前实现采用）。
         model = model with
         {
             NoiseMap = NoiseModeOverrides.TryGetValue(modelId, out var overrideMap)

@@ -30,7 +30,7 @@ Follow the [common installation steps](../../README.en.md#install) first, then:
 
 - An inserted receiver does not prove the peripheral is powered on or connected. Missing readings remain unavailable.
 - Voltage-based estimates are labeled, and controller battery levels are not presented as exact percentages.
-- K5 Ultra, Logitech and other devices have model and protocol limits. The dedicated Flydigi DInput query has not completed local hardware verification. Queries do not change DPI, lighting, pairing or firmware.
+- K5 Ultra, Logitech and other devices have model and protocol limits. Hardware compatibility of the dedicated Flydigi DInput query remains unverified. Queries do not change DPI, lighting, pairing or firmware.
 
 Protocol and interface references: [SOURCES.md](SOURCES.md).
 

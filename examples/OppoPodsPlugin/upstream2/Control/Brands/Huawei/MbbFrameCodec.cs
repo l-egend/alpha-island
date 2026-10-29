@@ -5,7 +5,7 @@ namespace AlphaIsland.EarbudsV2.Control.Brands.Huawei;
 
 // 华为新 HarmonyOS 智慧音频（MBB）私有帧编解码器，实现项目统一的 IFrameCodec 契约。
 //
-// 帧格式（对照 C:\ExampleDocuments\逆向\results\MBB_PROTOCOL_FULL.md，已与 mbb_codec.py 自测向量逐字节对齐）：
+// 帧格式；下方示例给出可用于校验编解码器的测试向量：
 //   [SOF=5A][LEN 2B 大端 = payloadLen+1][CTRL 0单/1首/2中/3末][SID][CID][TLV...][CRC16]
 //   - LEN = (SID + CID + TLV) 字节数 + 1 = TLV 长度 + 3；不含末尾 2 字节 CRC
 //   - CTRL：0=单帧；1/2/3=分片首/中/末（>~1017B 触发，FSN 写入偏移 4）
