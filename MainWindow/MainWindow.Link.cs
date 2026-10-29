@@ -37,8 +37,8 @@ namespace alpha_island
             _trafficSummary = _trafficFake
                 ? new TrafficMonitorSummary(
                     Found: true,
-                    Path: @"C:\ExampleTools\TrafficMonitor\history_traffic.dat",
-                    // 故意用一眼能认出来的非真实值：这样日志里一眼能分清「读到了真文件」还是「走了合成数据」。
+                    Path: System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AlphaIsland-Samples", "TrafficMonitor", "history_traffic.dat"),
+                    // 固定样例值用于区分合成预览与实际采样。
                     TodayUp: 1_111_111,
                     TodayDown: 2_222_222,
                     TotalUp: 1_111_111_111,

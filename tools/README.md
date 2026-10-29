@@ -20,3 +20,5 @@
 本机检阅安装、旧版迁移核验、实机探针、开发签名及批量插件打包命令保存在源码目录之外，不进入仓库。可选的实机通知回归需另行提供本机工具；默认离线回归不依赖它们。
 
 `packaging/` 中的维护脚本、`examples/` 中的助手适配器属于产品构建或运行所需文件，继续保留。可选插件源码位于同级独立目录 `alpha-island-plugins/`，发布产物和本地工具均不属于源码。
+
+`--background-window-live-check` 为只读实机检查，需通过 `ALPHA_ISLAND_TEST_INSTALL_DIRECTORY` 指定待检查的安装目录。

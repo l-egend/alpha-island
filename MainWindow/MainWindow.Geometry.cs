@@ -111,8 +111,7 @@ namespace alpha_island
             if (next != IslandState.Card) _componentCardAwaitingPointer = false;
             _state = next;
 
-            // 卡片页级置顶（本轮 ④）只在"停在卡片态"时成立：一旦离开卡片（显式下滑、被更高优先级的
-            // 形态顶掉、收回细条），这个 pin 自动释放 —— 否则它会留在字段里，下次进卡片又"悄悄"生效。
+            // 离开卡片视图时释放页面置顶，避免再次展开时恢复过期的置顶状态。
             if (prev == IslandState.Card && next != IslandState.Card && _pinnedCardPage != null && !BrowserCompactBlocking)
             {
                 IslandLog.Debug("Pin", $"卡片置顶：离开卡片态（{prev} → {next}）→ 取消（{_pinnedCardPage}）[pin=card-off reason=state]");
@@ -157,9 +156,7 @@ namespace alpha_island
                 ResetCardDrawers();
 
                 // 选页按 Id 而不是序号：页集合唯一真源是 IslandPageHost，将来加/删页不用改这里。
-                // 第一优先：**此刻正弹着的通知**对应哪一页就落到哪一页。老实现完全没看通知图层，
-                // 下面那条"剪切板有历史就用剪切板"的兜底又永远成立，于是不管弹的是下载/系统/agent，
-                // 点开岛都是剪切板页（用户报的就是这个）。没有对应卡片的通知（欢迎/蓝牙/电池）返回 null。
+                // 优先打开当前通知对应的页面；无对应卡片的通知返回 null。
                 string? notifyPage = preferredPage != null && _pages.IndexOf(preferredPage) >= 0
                     ? preferredPage : CardPageForNotifyLayer();
                 string targetPage = notifyPage ?? IslandPageIds.Music;
@@ -179,9 +176,7 @@ namespace alpha_island
                     }
                     else if (_pages.ActiveId is { Length: > 0 } currentPage && _pages.IndexOf(currentPage) >= 0)
                     {
-                        // 什么都没弹：**留在用户上一张卡片**（点开就是刚才看的那张）。
-                        // 这里原来是 `_clipboard?.History.Count > 0 → 剪切板` 的兜底 ——
-                        // 剪贴板历史几乎永远非空，于是所有入口都被它抢走（用户报的"展开后都是剪切板"）。
+                        // 无通知时保留最近访问的卡片，避免历史记录覆盖当前页面选择。
                         targetPage = currentPage;
                     }
                 }

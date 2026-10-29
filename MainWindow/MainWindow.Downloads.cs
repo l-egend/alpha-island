@@ -104,7 +104,7 @@ namespace alpha_island
                             Kind: DownloadSourceKind.Steam,
                             Source: L.T("Steam（合成）"),
                             Name: L.T("合成游戏包（调试）"),
-                            PathOnDisk: @"C:\ExampleGames\SteamLibrary\steamapps\downloading\appmanifest_999999.acf",
+                            PathOnDisk: SyntheticDownloadPath,
                             TotalBytes: total,
                             ReceivedBytes: received,
                             IsActive: received < total,
@@ -255,6 +255,9 @@ namespace alpha_island
         internal bool IsDownloadCardVisible =>
             _state == IslandState.Card && _pages.ActiveId == IslandPageIds.Download;
 
+        private static string SyntheticDownloadPath => System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "AlphaIsland-Samples", "SteamLibrary", "steamapps", "downloading", "appmanifest_999999.acf");
+
         internal void SetDownloadCardLayerHeight(double height)
         {
             if (DownloadCardLayer != null) DownloadCardLayer.Height = height;
@@ -273,7 +276,7 @@ namespace alpha_island
                 long total = 300L * 1024 * 1024;
                 long received = (long)(total * Math.Min(1.0, _dlFakeTicks * 0.08));
                 tasks.Add(new DownloadTask(DownloadSourceKind.Steam, L.T("Steam（合成）"), L.T("合成游戏包（调试）"),
-                    @"C:\ExampleGames\SteamLibrary\steamapps\downloading\appmanifest_999999.acf",
+                    SyntheticDownloadPath,
                     total, received, received < total, DateTime.Now.AddMinutes(-3), ProgressReliable: true));
             }
             else if (service != null)

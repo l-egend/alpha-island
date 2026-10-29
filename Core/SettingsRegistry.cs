@@ -552,20 +552,17 @@ namespace alpha_island.Core
                 "电池供电时，放电功率持续高于阈值就提示一次（10 分钟内只提示一次；插着电源不提示）", false, SettingsPageIds.System,
                 controlName: "PowerNotifyToggle"));
             list.Add(ExtraDouble("PowerNotifyWatts", "功耗提示阈值",
-                "笔记本整机放电功率通常在 8~45 W 之间，按自己的机型调", 25, 1, 200, "W", "0.###", SettingsPageIds.System,
+                "电池供电时的放电功率提醒阈值，可按设备功耗设置", 25, 1, 200, "W", "0.###", SettingsPageIds.System,
                 controlName: "PowerNotifyWattsBox"));
             list.Add(ExtraBool("PrivacyIndicatorEnabled", "麦克风 / 摄像头占用灯",
-                "有应用在用麦克风或摄像头时，细条上亮小圆点并弹一条提示（只读系统记录，免提权免授权）", false, SettingsPageIds.System,
+                "显示麦克风和摄像头占用状态；只读系统记录，不采集音视频", false, SettingsPageIds.System,
                 controlName: "PrivacyIndicatorToggle"));
 
             list.Add(ExtraBool("DailyTrafficEnabled", "每日流量", "在本机保存每日上传和下载总量，重启后继续统计", true, SettingsPageIds.System, controlName: "DailyTrafficToggle"));
 
             // ===== 下载状态：Steam 客户端日志 + 清单、浏览器下载记录（全部只读） =====
             list.Add(ExtraBool("DownloadMonitorEnabled", "下载状态（浏览器 / Steam）",
-                "只读 Steam 清单与客户端日志，区分下载、暂停、排队、校验和文件更新。"
-                + "浏览器通过临时文件与下载记录提供进行中和完成提示。"
-                + "卡片页「下载状态」列出任务；没有可信的实时进度时不显示进度条、百分比、速度与剩余时间。"
-                + "Firefox 与 Epic / 战网等启动器此来源尚未验证支持", true, SettingsPageIds.System,
+                "读取支持的浏览器下载记录和游戏平台任务；进度、速率与预计剩余时间取决于来源可提供的数据", true, SettingsPageIds.System,
                 controlName: "DownloadMonitorToggle"));
 
             // ===== AI 接入与 agent（设置页 ai） =====

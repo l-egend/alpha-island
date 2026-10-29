@@ -795,7 +795,7 @@ namespace alpha_island
 
             IslandLog.Debug("Privacy", $"使用中：麦克风 = {micApp ?? "—"}，摄像头 = {camApp ?? "—"}，" +
                                        $"角落灯 = 麦克风:{(micNow ? "亮" : "灭")} 摄像头:{(camNow ? "亮" : "灭")}" +
-                                       $"（细条内容按用户要求整体关闭，见 BarIndicatorsEnabled）");
+                                       "（状态条显示由 BarIndicatorsEnabled 控制）");
         }
 
         /// <summary>

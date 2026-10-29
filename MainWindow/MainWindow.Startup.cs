@@ -392,7 +392,7 @@ namespace alpha_island
                 else
                 {
                     // 调试定态还支持 tray（文件中转站）—— 它是"非胶囊态里唯一能收阻塞型通知"的形态，
-                    // 审批层在 Tray 态被 ScopeAllows 挡掉是协议记录过的回归点，留个可复现入口。
+                    // 保留 Tray 状态下审批层被 ScopeAllows 过滤的回归复现入口。
                     IslandState forced = _forcedState.Equals("card", StringComparison.OrdinalIgnoreCase)
                         ? IslandState.Card
                         : _forcedState.Equals("tray", StringComparison.OrdinalIgnoreCase)

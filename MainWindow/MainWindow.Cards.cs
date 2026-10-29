@@ -42,8 +42,7 @@ namespace alpha_island
             bool pageChanged = targetPage != _pages.ActiveIndex;
             if (pageChanged) EndVolumeDrag();
 
-            // 翻页时抽屉必须收回：它撑高的岛体不会自己缩回去
-            // （用户报"展开过输出设备/音量合成器之后切到别的卡片，岛还是那么大，只有点收起才恢复"）。
+            // 切换卡片前关闭抽屉，避免沿用输出设备或音量合成器的展开高度。
             if (pageChanged) ResetCardDrawers();
 
             // 生命周期与内容刷新交给页自己（剪切板历史 / 音量卡内容）；重切同一页也会再刷一次。

@@ -25,13 +25,13 @@ namespace alpha_island.Services
     ///   - <c>LastUsedTimeStop</c> ：本次结束时刻；**还在用就是 0**（或小于 Start）
     /// 所以「正在使用」= <c>Stop == 0 || Stop &lt; Start</c>。
     ///
-    /// 子键形状（本机实测 2026-09-29）：
-    ///   - `microphone\NonPackaged\C:#Program Files#Tencent#QQNT#QQ.exe`（非打包应用，路径里的 `\` 写成 `#`）
+    /// 子键格式示例：
+    ///   - `microphone\NonPackaged\C:#Program Files#ExampleApp#example.exe`（非打包应用，路径里的 `\` 写成 `#`）
     ///   - `microphone\Microsoft.WindowsSoundRecorder_8wekyb3d8bbwe`（打包应用，直接挂在能力键下面）
     ///   - 某些系统/版本上打包应用会挂在 `Packaged\` 子键里 —— 两种都认
-    ///   - **`camera` 键可能整个不存在**（本机就没用过摄像头）→ 当作"无人使用"，不报错
+    ///   - `camera` 键不存在时按无使用记录处理。
     ///
-    /// 只读注册表，**免提权、免用户授权**（不碰 UserNotificationListener 那套）。
+    /// 只读系统使用记录，不请求麦克风或摄像头采集权限。
     /// 自己不开定时器：节拍由 <c>IslandTicker</c> 给。
     /// </summary>
     public sealed class PrivacyIndicatorService

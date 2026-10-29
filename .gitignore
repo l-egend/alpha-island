@@ -381,6 +381,10 @@ integrations.json
 diagnostics-*.zip
 diagnostic-exports/
 
+# Unreviewed screenshots and local media; public sample images live in docs/images.
+/docs/screens/
+/docs/material/
+
 # Workstation-only commands are maintained outside this repository.
 /local-tools/
 /.local/

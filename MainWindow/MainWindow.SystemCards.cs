@@ -209,7 +209,7 @@ namespace alpha_island
             return string.Join("｜", parts);
         }
 
-        /// <summary>SamplePrivacy 把本轮占用麦克风/摄像头的应用名记下来（卡片页的详情行要显示是谁）。</summary>
+        /// <summary>记录本次采样中占用麦克风或摄像头的应用名称，供卡片详情显示。</summary>
         private void RecordPrivacyApps(string? micApp, string? camApp)
         {
             _privacyMicApp = micApp;

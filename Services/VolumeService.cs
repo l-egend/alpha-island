@@ -88,9 +88,8 @@ namespace alpha_island.Services
 
         /// <summary>当前默认端点的 ID / 友好名（绑定瞬间缓存下来）。</summary>
         /// <remarks>
-        /// UI 线程只读这两个字符串，永远不碰 <c>MMDevice</c> 对象：设备对象的重绑 / 释放都发生在
-        /// 后台刷新线程上，UI 若同时去读 <c>FriendlyName</c>（COM 调用）就会撞上"对象正在被
-        /// Dispose"的窗口 —— 轻则异常，重则整条 UI 线程卡在跨单元调用里（用户报的"点一下就卡死"）。
+        /// UI 线程仅读取缓存字符串，设备对象的重新绑定与释放均在后台刷新线程上执行，
+        /// 避免读取 <c>FriendlyName</c> 的 COM 调用与设备释放并发而造成异常或阻塞。
         /// </remarks>
         private volatile string? _currentDeviceId;
         private volatile string? _currentDeviceName;
@@ -98,7 +97,7 @@ namespace alpha_island.Services
         /// <summary>
         /// 待由后台线程落地的写入请求。UI 线程只写这几个变量（Interlocked / volatile，无锁无 COM），
         /// 真正的 COM 写入全部在后台刷新线程上执行 —— 这样调音量时 UI 永远不会被枚举 / 重绑阻塞，
-        /// 数值先用乐观值立刻显示（用户报的"音量延迟"就是 UI 在等锁 + 等 COM 往返）。
+        /// 数值先显示待写入值，避免等待锁和 COM 调用完成后再更新界面。
         /// </summary>
         private int _pendingVolumePercent = -1;
         private int _pendingMuteToggle;

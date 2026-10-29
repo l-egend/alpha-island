@@ -42,7 +42,7 @@ namespace alpha_island.Services
                 path = Locate();
                 if (path == null)
                 {
-                    DegradedReason = "没找到 TrafficMonitor 的 history_traffic.dat（没装，或换了目录）";
+                    DegradedReason = "未找到 TrafficMonitor 流量记录文件。";
                     Current = default;
                     return Current;
                 }

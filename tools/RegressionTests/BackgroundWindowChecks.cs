@@ -29,8 +29,11 @@ internal static partial class Program
     private static void BackgroundWindowLiveCheck()
     {
         var processes = Process.GetProcessesByName("alpha-island");
+        string? installDirectory = Environment.GetEnvironmentVariable("ALPHA_ISLAND_TEST_INSTALL_DIRECTORY");
+        Check(!string.IsNullOrWhiteSpace(installDirectory), "通过 ALPHA_ISLAND_TEST_INSTALL_DIRECTORY 指定实机检查的安装目录");
+        string expectedExecutable = System.IO.Path.Combine(System.IO.Path.GetFullPath(installDirectory!), "alpha-island.exe");
         Check(processes.Length == 1 && string.Equals(processes[0].MainModule!.FileName,
-            @"C:\ExampleInstall\Alpha Island\alpha-island.exe", StringComparison.OrdinalIgnoreCase), "唯一运行实例来自指定测试安装");
+            expectedExecutable, StringComparison.OrdinalIgnoreCase), "唯一运行实例来自指定测试安装");
         var titles = new StringBuilder(256);
         IntPtr main = IntPtr.Zero;
         NativeMethods.EnumWindowProc callback = (window, _) =>

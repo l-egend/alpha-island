@@ -127,8 +127,8 @@ test('Native approval is the default and invalid modes are rejected', () => {
 });
 
 test('Windows extended paths retain project scope without accepting sibling projects', { skip: process.platform !== 'win32' }, () => {
-  assert.equal(inScope('\\\\?\\X:\\FixtureWorkspace\\alpha-island', 'X:\\FixtureWorkspace'), true);
-  assert.equal(inScope('X:\\FixtureWorkspace\\alpha-island', '\\\\?\\X:\\FixtureWorkspace'), true);
+  assert.equal(inScope('\\\\?\\X:\\FixtureWorkspace\\Project', 'X:\\FixtureWorkspace'), true);
+  assert.equal(inScope('X:\\FixtureWorkspace\\Project', '\\\\?\\X:\\FixtureWorkspace'), true);
   assert.equal(inScope('\\\\?\\X:\\FixtureWorkspace-other', 'X:\\FixtureWorkspace'), false);
   assert.equal(inScope('\\\\?\\UNC\\server\\share\\project\\src', '\\\\server\\share\\project'), true);
 });
