@@ -7,7 +7,7 @@ namespace alpha_island.Plugins.Isolation;
 
 internal sealed record PluginPacket(long Id, string Kind, JsonElement Data, string? Error = null);
 internal sealed record PluginStart(string Directory, string Assembly, string EntryType, string PluginId,
-    string DataRoot, Dictionary<string, JsonElement> Configuration, bool SettingsOnly = false);
+    string DataRoot, Dictionary<string, JsonElement> Configuration, bool SettingsOnly = false, string InterfaceLanguage = "zh-CN");
 internal sealed record RemotePage(string Key, string Title, string Glyph, double Height, int Order);
 internal sealed record RemoteAction(string Key, string Title, bool Available);
 internal sealed record RemoteNetwork(string Key, string Title, int Priority);
@@ -28,7 +28,8 @@ internal sealed record RemoteVisual(int Id, string Kind, string Name, double X, 
     bool ReadOnly = false, bool Multiline = false, string[]? Choices = null, int Selected = -1,
     double Minimum = 0, double Maximum = 100, double Value = 0, bool? Checked = null,
     double ClipX = 0, double ClipY = 0, double ClipWidth = 0, double ClipHeight = 0,
-    bool Bold = false, bool Wrap = false, string Alignment = "Left", string Artwork = "", string ToolTip = "", double Viewport = 0, bool Editable = false);
+    bool Bold = false, bool Wrap = false, string Alignment = "Left", string Artwork = "", string ToolTip = "", double Viewport = 0, bool Editable = false,
+    double LineHeight = 0);
 internal sealed record RemoteFrame(double Width, double Height, string Background, RemoteVisual[] Elements, long Revision);
 internal sealed record RemoteEvent(string Name, string Key = "", string Text = "", string Detail = "",
     double Seconds = 6, JsonElement? Value = null, PluginBluetoothBattery? Battery = null, PluginDeviceBattery[]? DeviceBatteries = null);

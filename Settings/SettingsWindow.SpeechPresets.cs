@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using System.Windows.Controls;
 using AlphaIsland.PluginSdk;
@@ -42,6 +43,6 @@ public partial class SettingsWindow
         }
         ApplyChanges(); _refreshSpeechKeyStatus?.Invoke();
         if (_speechSetupStatus != null && preset is { BaseUrl.Length: > 0 })
-            _speechSetupStatus.Text = "已填入接口与模型，可修改后测试。";
+            _speechSetupStatus.Text = L.T("已填入接口与模型，可修改后测试。");
     }
 }

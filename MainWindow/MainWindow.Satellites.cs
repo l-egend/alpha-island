@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -185,7 +186,7 @@ namespace alpha_island
                     SyncVolumeCardContent();
                     int vol = _volumeService?.CurrentPercent ?? 50;
                     bool muted = _volumeService?.IsMuted ?? false;
-                    if (VolumeText != null) VolumeText.Text = muted ? "静音" : $"{vol}%";
+                    if (VolumeText != null) VolumeText.Text = muted ? L.T("静音") : $"{vol}%";
                     if (VolumeIcon != null)
                     {
                         if (muted || vol == 0) VolumeIcon.Text = "\uE74F";
@@ -218,7 +219,7 @@ namespace alpha_island
                 case "download":
                     if (DownloadNotifyTitle != null && string.IsNullOrEmpty(DownloadNotifyTitle.Text))
                     {
-                        DownloadNotifyTitle.Text = "下载任务";
+                        DownloadNotifyTitle.Text = L.T("下载任务");
                     }
                     break;
 
@@ -329,7 +330,7 @@ namespace alpha_island
         /// </summary>
         private void SyncSatelliteOrbs()
         {
-            if (GameDoNotDisturbActive) { HideAllSatellites(immediate: true); return; }
+            if (GameDoNotDisturbActive || BrowserCompactBlocking) { HideAllSatellites(immediate: true); return; }
             // 欢迎界面期间，绝不显示任何卫星小岛
             bool greetingAny = _layers.IsShowing(IslandLayerHost.GreetingKey) || _layers.IsActive(IslandLayerHost.GreetingKey);
             if (greetingAny)
@@ -610,8 +611,8 @@ namespace alpha_island
                 ClipToBounds = true,
                 Opacity = 1.0,
                 ToolTip = key is ChargingIslandKey or ChargingPreviewIslandKey
-                    ? "电池电量（左键查看系统状态，右键置顶或取消置顶）"
-                    : $"{GetSatelliteDisplayName(key)}（左键展开为主岛，右键切换置顶）"
+                    ? L.T("电池电量（左键查看系统状态，右键置顶或取消置顶）")
+                    : L.F($"{GetSatelliteDisplayName(key)}（左键展开为主岛，右键切换置顶）")
             };
 
             // Rounded material layers provide depth without pixels outside the island outline.
@@ -749,7 +750,7 @@ namespace alpha_island
                 orb.Width = SatelliteWidth(key); orb.Height = enlarged ? 44 : 36;
                 orb.CornerRadius = new CornerRadius(orb.Height / 2);
                 orb.Margin = new Thickness(0, (36 - orb.Height) / 2, 0, 0);
-                orb.ToolTip = AgentLabel(key) + " · " + AgentStateTitle(AgentStateFor(key)) + "（左键打开助手，右键置顶）";
+                orb.ToolTip = AgentLabel(key) + " · " + AgentStateTitle(AgentStateFor(key)) + L.T("（左键打开助手，右键置顶）");
                 if (orb.Child is Grid agentGrid && agentGrid.Children.OfType<TextBlock>().FirstOrDefault(t => t.Name == "AgentSessionBadge") is { } badge)
                     badge.Visibility = AgentSession(key)?.Icon.Source != null ? Visibility.Collapsed : Visibility.Visible;
             }
@@ -776,7 +777,7 @@ namespace alpha_island
                 if (key is ChargingIslandKey or ChargingPreviewIslandKey)
                 {
                     if (grid.Children.OfType<BatteryChargePill>().FirstOrDefault() is { } charging) SetChargingIslandContent(charging, key);
-                    if (key == ChargingPreviewIslandKey) orb.ToolTip = isPinned ? "充电提示测试已置顶（右键取消）" : "充电提示测试（右键置顶，默认 8 秒后收回）";
+                    if (key == ChargingPreviewIslandKey) orb.ToolTip = isPinned ? L.T("充电提示测试已置顶（右键取消）") : L.T("充电提示测试（右键置顶，默认 8 秒后收回）");
                     return;
                 }
                 if (string.Equals(key, "netspeed", StringComparison.Ordinal))
@@ -816,7 +817,7 @@ namespace alpha_island
                         {
                             counter.Content = NotificationStackCount >= 50 ? "50+" : NotificationStackCount.ToString();
                             counter.Visibility = NotificationStackCount > 1 ? Visibility.Visible : Visibility.Collapsed;
-                            counter.ToolTip = $"展开 {NotificationStackCount} 条堆叠通知";
+                            counter.ToolTip = L.F($"展开 {NotificationStackCount} 条堆叠通知");
                         }
                         var appLogo = grid.Children.OfType<System.Windows.Controls.Image>().FirstOrDefault(i => i.Name == "OrbAppLogo");
                         if (appLogo != null)
@@ -858,8 +859,8 @@ namespace alpha_island
 
             orb.ToolTip = key == DesktopToastKey && _desktopCurrent is { CanOpenApp: true } notice
                 && MessengerIdentity.FromNotification(notice) is { } messenger
-                ? $"{MessengerIdentity.Name(messenger)}（左键打开应用，右键切换置顶）"
-                : $"{GetSatelliteDisplayName(key)}（{(isPinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）";
+                ? L.F($"{MessengerIdentity.Name(messenger)}（左键打开应用，右键切换置顶）")
+                : L.F($"{GetSatelliteDisplayName(key)}（{(isPinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）");
         }
 
         private ActionIconAnimation SatelliteIconAnimation(string key) => IsAgentIslandKey(key) ? AgentMotion(key) : key switch
@@ -947,7 +948,7 @@ namespace alpha_island
                 MusicOrbPinIcon.Visibility = _isPinned ? Visibility.Visible : Visibility.Collapsed;
             }
 
-            MusicOrbBubble.ToolTip = $"媒体播放器（{(_isPinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）";
+            MusicOrbBubble.ToolTip = L.F($"媒体播放器（{(_isPinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）");
         }
 
         /// <summary>
@@ -975,7 +976,7 @@ namespace alpha_island
             {
                 CollapseToBar(force: true);
             }
-            ShowPinBubble(pinned, "媒体播放器");
+            ShowPinBubble(pinned, L.T("媒体播放器"));
         }
 
         private void AnimateHideSatelliteOrb(Border orb)
@@ -1066,20 +1067,20 @@ namespace alpha_island
 
         private string GetSatelliteDisplayName(string key) => IsAgentIslandKey(key) ? AgentLabel(key) : key switch
         {
-            "music" => "媒体播放器",
-            "volume" => "系统音量",
-            "download" => "下载任务",
-            "battery" => "电池状态",
-            "bluetooth" => "蓝牙设备",
-            "netspeed" => "实时网速",
-            "status" => "系统状态",
-            "charging" => "充电电量",
-            ChargingPreviewIslandKey => "充电提示测试",
-            "system" => !string.IsNullOrWhiteSpace(SysNotifyTitle.Text) ? SysNotifyTitle.Text : "系统事件",
+            "music" => L.T("媒体播放器"),
+            "volume" => L.T("系统音量"),
+            "download" => L.T("下载任务"),
+            "battery" => L.T("电池状态"),
+            "bluetooth" => L.T("蓝牙设备"),
+            "netspeed" => L.T("实时网速"),
+            "status" => L.T("系统状态"),
+            "charging" => L.T("充电电量"),
+            ChargingPreviewIslandKey => L.T("充电提示测试"),
+            "system" => !string.IsNullOrWhiteSpace(SysNotifyTitle.Text) ? SysNotifyTitle.Text : L.T("系统事件"),
             DesktopToastKey => _notificationSummary.Title.Text,
-            "clipboard" => "剪贴板",
-            "approval" => "权限审批",
-            "agentstatus" => "AI 助手",
+            "clipboard" => L.T("剪贴板"),
+            "approval" => L.T("权限审批"),
+            "agentstatus" => L.T("AI 助手"),
             _ => CardPinDisplayName(key) ?? key
         };
     }

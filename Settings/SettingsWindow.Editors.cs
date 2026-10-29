@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -63,6 +64,9 @@ public partial class SettingsWindow
     }
     private void AddConsolidatedEditors()
     {
+        var browserRow = CreateRegisteredSettingRow(SettingsRegistry.Find("BrowserAutoCompactEnabled")!);
+        browserRow.Margin = new Thickness(0);
+        BrowserBehaviorSettingsRows.Children.Add(browserRow);
         ReduceEffectsRows.Children.Add(CreateRegisteredSettingRow(SettingsRegistry.Find("ReduceEffectsEnabled")!));
         ClipboardSettingsRows.Children.Add(CreateRegisteredSettingRow(SettingsRegistry.Find("ClipboardSensitiveGuardEnabled")!));
         Closed += (_, _) => { _saveStatusTimer?.Stop(); _clipboardHistoryEditTimer?.Stop(); };
@@ -80,7 +84,7 @@ public partial class SettingsWindow
         if (!TryReadSettingNumber(descriptor, box.Text, out _))
         {
             box.BorderBrush = Brushes.OrangeRed;
-            box.ToolTip = $"请输入 {descriptor.Min:0.###}～{descriptor.Max:0.###} {descriptor.Unit}";
+            box.ToolTip = L.F($"请输入 {descriptor.Min:0.###}～{descriptor.Max:0.###} {descriptor.Unit}");
             return;
         }
         box.ClearValue(Control.BorderBrushProperty); box.ToolTip = null;
@@ -90,13 +94,13 @@ public partial class SettingsWindow
     {
         _savePending = true;
         SettingsSaveStatus.Tag = null;
-        SettingsSaveStatusText.Text = "正在保存…"; SettingsSaveStatus.Visibility = Visibility.Visible;
+        SettingsSaveStatusText.Text = L.T("正在保存…"); SettingsSaveStatus.Visibility = Visibility.Visible;
         _saveStatusTimer?.Stop();
     }
     internal void ReportSettingsSaved(bool success)
     {
         SettingsSaveStatus.Tag = success ? "saved" : null;
-        SettingsSaveStatusText.Text = success ? "已保存" : "保存失败，请重试";
+        SettingsSaveStatusText.Text = success ? L.T("已保存") : L.T("保存失败，请重试");
         if (success) { CleanupRetiredGreetingAssets(); CleanupRetiredNotificationSounds(); }
         SettingsSaveStatus.Visibility = Visibility.Visible;
         _saveStatusTimer ??= new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromSeconds(2) };

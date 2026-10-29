@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using System.Windows.Controls;
 using alpha_island.Core;
@@ -52,8 +53,8 @@ public partial class MainWindow
         summary.ColumnDefinitions.Add(new ColumnDefinition());
         summary.ColumnDefinitions.Add(new ColumnDefinition { Width = System.Windows.GridLength.Auto });
         var summaryText = new StackPanel();
-        _weatherTitle = UtilityText("天气 · " + _weatherCity.Name, 14);
-        _weatherTitle.ToolTip = "天气来源：Open-Meteo 预报 · 城市定位：Windows / BigDataCloud"; summaryText.Children.Add(_weatherTitle);
+        _weatherTitle = UtilityText(L.T("天气 · ") + _weatherCity.Name, 14);
+        _weatherTitle.ToolTip = L.T("天气来源：Open-Meteo 预报 · 城市定位：Windows / BigDataCloud"); summaryText.Children.Add(_weatherTitle);
         _weatherValue = UtilityText("—", 26); summaryText.Children.Add(_weatherValue);
         summary.Children.Add(summaryText);
         _weatherArtwork = new SemanticIcon { Width = 60, Height = 60, Shape = IconShape.Weather,
@@ -61,20 +62,20 @@ public partial class MainWindow
             VerticalAlignment = System.Windows.VerticalAlignment.Center };
         Grid.SetColumn(_weatherArtwork, 1); summary.Children.Add(_weatherArtwork); weather.Children.Add(summary);
         ActionIconMotion.SetKind(_weatherArtwork, ActionIconAnimation.Pulse);
-        _weatherDetail = UtilityText(_weatherConfirmed ? "正在获取天气…" : "搜索城市或使用定位。");
+        _weatherDetail = UtilityText(_weatherConfirmed ? L.T("正在获取天气…") : L.T("搜索城市或使用定位。"));
         var details = new ScrollViewer { Content = _weatherDetail, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new System.Windows.Thickness(0, 4, 0, 0) };
         Grid.SetRow(details, 1); weather.Children.Add(details);
         var actions = new StackPanel(); Grid.SetRow(actions, 2); weather.Children.Add(actions);
         _weatherQuery = new TextBox { Text = _weatherCity.Name, FontSize = 11 };
-        var search = WeatherActionRow(_weatherQuery, UtilityButton("搜索城市", async () => await SearchWeatherCitiesAsync()),
-            UtilityButton("使用定位", async () => { if (_weatherBusy) return; _weatherAuto = true; _weatherLocated = false; await RefreshWeatherAsync(true, requestLocation: true); }),
-            UtilityButton("刷新", async () => await RefreshWeatherAsync(true)));
+        var search = WeatherActionRow(_weatherQuery, UtilityButton(L.T("搜索城市"), async () => await SearchWeatherCitiesAsync()),
+            UtilityButton(L.T("使用定位"), async () => { if (_weatherBusy) return; _weatherAuto = true; _weatherLocated = false; await RefreshWeatherAsync(true, requestLocation: true); }),
+            UtilityButton(L.T("刷新"), async () => await RefreshWeatherAsync(true)));
         actions.Children.Add(search);
         _weatherCities = new ComboBox { FontSize = 11, DisplayMemberPath = "Display" };
-        var cityRow = WeatherActionRow(_weatherCities, UtilityButton("选择", async () => await UseWeatherCityAsync()), UtilityButton("设置", () => { ShowSettings(); _settingsWindow?.OpenWeatherSettings(); })); actions.Children.Add(cityRow);
-        RegisterUtility("weather", "天气", 8, weather, () => _ = RefreshWeatherAsync(false, requestLocation: !_weatherConfirmed), preferredHeight: 260);
-        if (_weatherSnapshot != null) ShowWeather(_weatherSnapshot, "缓存 · " + _weatherSnapshot.UpdatedUtc.ToLocalTime().ToString("HH:mm"));
+        var cityRow = WeatherActionRow(_weatherCities, UtilityButton(L.T("选择"), async () => await UseWeatherCityAsync()), UtilityButton(L.T("设置"), () => { ShowSettings(); _settingsWindow?.OpenWeatherSettings(); })); actions.Children.Add(cityRow);
+        RegisterUtility("weather", L.T("天气"), 8, weather, () => _ = RefreshWeatherAsync(false, requestLocation: !_weatherConfirmed), preferredHeight: 260);
+        if (_weatherSnapshot != null) ShowWeather(_weatherSnapshot, L.T("缓存 · ") + _weatherSnapshot.UpdatedUtc.ToLocalTime().ToString("HH:mm"));
     }
 
     private static Grid WeatherActionRow(System.Windows.FrameworkElement field, params System.Windows.Controls.Button[] buttons)
@@ -122,10 +123,10 @@ public partial class MainWindow
             var cities = await _weatherService.SearchAsync(_weatherQuery.Text, _utilitiesLifetime.Token);
             if (_exiting) return;
             _weatherCities.ItemsSource = cities; _weatherCities.SelectedIndex = cities.Count > 0 ? 0 : -1;
-            _weatherDetail.Text = cities.Count > 0 ? "选择城市后点击“选择”。" : "没有找到城市，可尝试城市拼音或英文名称。";
+            _weatherDetail.Text = cities.Count > 0 ? L.T("选择城市后点击“选择”。") : L.T("没有找到城市，可尝试城市拼音或英文名称。");
         }
-        catch (OperationCanceledException) { if (!_exiting) _weatherDetail.Text = "搜索超时，请重试。"; }
-        catch (Exception ex) { if (!_exiting) _weatherDetail.Text = "城市搜索失败：" + ex.Message; }
+        catch (OperationCanceledException) { if (!_exiting) _weatherDetail.Text = L.T("搜索超时，请重试。"); }
+        catch (Exception ex) { if (!_exiting) _weatherDetail.Text = L.T("城市搜索失败：") + ex.Message; }
         finally { _weatherBusy = false; }
     }
     private async Task UseWeatherCityAsync()
@@ -154,11 +155,11 @@ public partial class MainWindow
         _weatherBusy = true;
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(_utilitiesLifetime.Token);
         cts.CancelAfter(TimeSpan.FromSeconds(35));
-        string source = _weatherAuto ? "系统定位" : "手选城市";
+        string source = _weatherAuto ? L.T("系统定位") : L.T("手选城市");
         string previousCityName = _weatherCity.Name;
         try
         {
-            if (!background) _weatherDetail.Text = "正在更新天气…";
+            if (!background) _weatherDetail.Text = L.T("正在更新天气…");
             // 只有用户明确操作才申请权限；后台每 6 小时尝试更新已授权的坐标，失败继续使用已确认的城市。
             if (_weatherAuto && (requestLocation || _weatherConfirmed && (!_weatherLocated || DateTime.UtcNow - _weatherLastLocationCheck > TimeSpan.FromHours(6))))
             {
@@ -176,29 +177,29 @@ public partial class MainWindow
                         var position = await new Geolocator { DesiredAccuracyInMeters = 1000 }.GetGeopositionAsync(
                             TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(8)).AsTask(cts.Token);
                         var point = position.Coordinate.Point.Position;
-                        var located = new WeatherCity("系统定位地区", point.Latitude, point.Longitude);
-                        if (!WeatherService.ValidCity(located)) throw new InvalidOperationException("定位坐标无效");
+                        var located = new WeatherCity(L.T("系统定位地区"), point.Latitude, point.Longitude);
+                        if (!WeatherService.ValidCity(located)) throw new InvalidOperationException(L.T("定位坐标无效"));
                         if (WeatherService.SameCity(located, _weatherCity)) located = _weatherCity;
                         else try { located = await _weatherService.NameCurrentLocationAsync(point.Latitude, point.Longitude, cts.Token); }
                             catch (Exception ex) when (ex is not OperationCanceledException) { IslandLog.Warn("Weather", "城市名称读取失败: " + ex.Message); }
                         _weatherCity = located; _weatherConfirmed = true;
                         SaveWeatherChoice();
                     }
-                    else source = _weatherConfirmed ? "定位不可用，保留上次城市" : "定位不可用，请选择城市";
+                    else source = _weatherConfirmed ? L.T("定位不可用，保留上次城市") : L.T("定位不可用，请选择城市");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
-                { source = _weatherConfirmed ? "定位不可用，保留上次城市" : "定位不可用，请选择城市"; IslandLog.Warn("Weather", "定位失败: " + ex.Message); }
+                { source = _weatherConfirmed ? L.T("定位不可用，保留上次城市") : L.T("定位不可用，请选择城市"); IslandLog.Warn("Weather", "定位失败: " + ex.Message); }
                 // 本次后台不再重复尝试；下一次 6 小时检查允许重新定位。
                 _weatherLocated = true;
             }
             if (!_weatherConfirmed)
-            { _weatherDetail.Text = "搜索城市或使用定位。"; return; }
+            { _weatherDetail.Text = L.T("搜索城市或使用定位。"); return; }
             var snapshot = await _weatherService.GetAsync(_weatherCity, cts.Token);
             if (_exiting) return;
             _weatherSnapshot = snapshot; _weatherLastUpdate = snapshot.UpdatedUtc;
             _weatherNextAttempt = DateTime.UtcNow.AddMinutes(5);
             if (_weatherQuery.Text == previousCityName) _weatherQuery.Text = _weatherCity.Name;
-            ShowWeather(snapshot, source + " · 更新 " + snapshot.UpdatedUtc.ToLocalTime().ToString("HH:mm"));
+            ShowWeather(snapshot, source + L.T(" · 更新 ") + snapshot.UpdatedUtc.ToLocalTime().ToString("HH:mm"));
             options = WeatherReminderOptions.From(_options);
             if (background && !options.AutoRefresh) return;
             var reminders = _weatherReminders.Evaluate(snapshot, options, DateTimeOffset.Now, allowEvening: !_sessionLocked);
@@ -215,23 +216,23 @@ public partial class MainWindow
             if (_exiting) return;
             _weatherNextAttempt = DateTime.UtcNow.AddMinutes(5);
             var cached = _weatherService.Cached(_weatherCity);
-            if (cached != null) ShowWeather(cached, "离线缓存 · " + cached.UpdatedUtc.ToLocalTime().ToString("MM-dd HH:mm"));
-            else { _weatherTitle.Text = "天气 · " + _weatherCity.Name; _weatherValue.Text = "—"; _weatherDetail.Text = "天气暂不可用，将稍后重试。"; }
+            if (cached != null) ShowWeather(cached, L.T("离线缓存 · ") + cached.UpdatedUtc.ToLocalTime().ToString("MM-dd HH:mm"));
+            else { _weatherTitle.Text = L.T("天气 · ") + _weatherCity.Name; _weatherValue.Text = "—"; _weatherDetail.Text = L.T("天气暂不可用，将稍后重试。"); }
             IslandLog.Warn("Weather", "更新失败: " + ex.Message);
         }
         finally { _weatherBusy = false; }
     }
     private void ShowWeather(WeatherSnapshot weather, string source)
     {
-        _weatherTitle.Text = "天气 · " + weather.City.Name;
+        _weatherTitle.Text = L.T("天气 · ") + weather.City.Name;
         _weatherValue.Text = $"{weather.Temperature:0.#}° · {weather.Description}";
         bool conditionChanged = _weatherArtwork.WeatherCode != weather.Code;
         _weatherArtwork.WeatherCode = weather.Code;
         if (conditionChanged) ActionIconMotion.Play(_weatherArtwork);
         var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromSeconds(weather.UtcOffsetSeconds)).DateTime);
         var tomorrow = (weather.Days ?? []).FirstOrDefault(x => x.Date == today.AddDays(1));
-        _weatherDetail.Text = $"{weather.Low:0}°～{weather.High:0}° · 体感 {weather.FeelsLike:0}°" +
-            (tomorrow == null ? "" : $"\n明天 {WeatherService.Describe(tomorrow.Code)} · {tomorrow.Low:0}°～{tomorrow.High:0}°") + $"\n{source}";
+        _weatherDetail.Text = L.F($"{weather.Low:0}°～{weather.High:0}° · 体感 {weather.FeelsLike:0}°") +
+            (tomorrow == null ? "" : L.F($"\n明天 {WeatherService.Describe(tomorrow.Code)} · {tomorrow.Low:0}°～{tomorrow.High:0}°")) + $"\n{source}";
         UpdateCardPinSummary("weather");
     }
 }

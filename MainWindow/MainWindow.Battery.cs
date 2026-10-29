@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -80,7 +81,7 @@ namespace alpha_island
             {
                 if (info.SmartCharging == SmartChargingState.Active || info.ChargeType == BatteryChargeType.ConservationMode)
                 {
-                    statusDesc = info.SmartCharging == SmartChargingState.Active ? "已连接电源 · 智能充电" : $"已连接电源 · 电池保养中 ({info.Percent}%)";
+                    statusDesc = info.SmartCharging == SmartChargingState.Active ? L.T("已连接电源 · 智能充电") : L.F($"已连接电源 · 电池保养中 ({info.Percent}%)");
                     accentColor = Color.FromRgb(0x00, 0xE5, 0xFF);
                     BatteryBoltIcon.Visibility = Visibility.Visible;
                 }
@@ -88,9 +89,9 @@ namespace alpha_island
                 {
                     statusDesc = info.ChargeType switch
                     {
-                        BatteryChargeType.PD => "已连接电源 · USB-C PD",
-                        BatteryChargeType.StandardAC => "已连接电源 · 普通 AC 适配器",
-                        _ => "已连接电源 · 充电器类型未知"
+                        BatteryChargeType.PD => L.T("已连接电源 · USB-C PD"),
+                        BatteryChargeType.StandardAC => L.T("已连接电源 · 普通 AC 适配器"),
+                        _ => L.T("已连接电源 · 充电器类型未知")
                     };
                     accentColor = Color.FromRgb(0x00, 0xFF, 0x88);
                     BatteryBoltIcon.Visibility = Visibility.Visible;
@@ -98,25 +99,25 @@ namespace alpha_island
             }
             else if (info.EventType == BatteryPowerEvent.Unplugged)
             {
-                statusDesc = "已拔出电源 · 电池供电中";
+                statusDesc = L.T("已拔出电源 · 电池供电中");
                 accentColor = Color.FromRgb(0xFF, 0x91, 0x00);
                 BatteryBoltIcon.Visibility = Visibility.Collapsed;
             }
             else if (info.EventType == BatteryPowerEvent.FullyCharged)
             {
-                statusDesc = "电池已充满";
+                statusDesc = L.T("电池已充满");
                 accentColor = Color.FromRgb(0x00, 0xFF, 0x88);
                 BatteryBoltIcon.Visibility = Visibility.Collapsed;
             }
             else if (info.EventType == BatteryPowerEvent.CriticalBattery)
             {
-                statusDesc = "⚠ 电池电量严重不足";
+                statusDesc = L.T("⚠ 电池电量严重不足");
                 accentColor = Color.FromRgb(0xFF, 0x33, 0x33);
                 BatteryBoltIcon.Visibility = Visibility.Collapsed;
             }
             else if (info.EventType == BatteryPowerEvent.LowBattery)
             {
-                statusDesc = "电池电量不足";
+                statusDesc = L.T("电池电量不足");
                 accentColor = Color.FromRgb(0xFF, 0x91, 0x00);
                 BatteryBoltIcon.Visibility = Visibility.Collapsed;
             }
@@ -124,13 +125,13 @@ namespace alpha_island
             {
                 if (info.ChargeType == BatteryChargeType.ConservationMode)
                 {
-                    statusDesc = $"已连接电源 · 电池保养中 ({info.Percent}%)";
+                    statusDesc = L.F($"已连接电源 · 电池保养中 ({info.Percent}%)");
                     accentColor = Color.FromRgb(0x00, 0xE5, 0xFF);
                     BatteryBoltIcon.Visibility = Visibility.Visible;
                 }
                 else
                 {
-                    statusDesc = info.IsCharging ? "正在充电" : "电池供电中";
+                    statusDesc = info.IsCharging ? L.T("正在充电") : L.T("电池供电中");
                     accentColor = info.IsCharging ? Color.FromRgb(0x00, 0xFF, 0x88) : Color.FromRgb(0xE0, 0xE0, 0xE0);
                     BatteryBoltIcon.Visibility = info.IsCharging ? Visibility.Visible : Visibility.Collapsed;
                 }
@@ -138,8 +139,8 @@ namespace alpha_island
 
             if (!preview && (info.EventType is BatteryPowerEvent.LowBattery or BatteryPowerEvent.CriticalBattery) && BatteryContextDescription() is { Length: > 0 } context)
                 statusDesc += " · " + context;
-            BatteryStatusText.Text = preview ? statusDesc + " · 测试" : statusDesc;
-            BatteryPercentText.Text = info.Percent >= 0 ? $"{info.Percent}%" : "未知";
+            BatteryStatusText.Text = preview ? statusDesc + L.T(" · 测试") : statusDesc;
+            BatteryPercentText.Text = info.Percent >= 0 ? $"{info.Percent}%" : L.T("未知");
             ActionIconMotion.Stop(BatteryIcon);
             BatteryIcon.Shape = IconShape.Battery;
             BatteryIcon.Active = info.EventType switch

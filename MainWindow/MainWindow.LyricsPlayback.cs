@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -127,7 +128,7 @@ namespace alpha_island
         {
             _lyricsDoc = doc;
             SetLyricRestVisible(false);
-            _settingsWindow?.UpdateLyricsSource(_options.LyricsEnabled ? doc?.Source ?? "尚未命中" : "未启用");
+            _settingsWindow?.UpdateLyricsSource(_options.LyricsEnabled ? doc?.Source ?? L.T("尚未命中") : L.T("未启用"));
             _lyricIndex = -2;
             _lyricWipe.Rect = Rect.Empty;
             ResetLyricPresentation();

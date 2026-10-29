@@ -155,9 +155,9 @@ internal static partial class Program
         var options = new IslandOptions();
         string data = Path.Combine(root, "api-worker-input-data"), target = Path.Combine(root, "api-worker-input-plugin");
         Directory.CreateDirectory(target);
-        foreach (string file in Directory.GetFiles(Path.GetFullPath($"examples/ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows"))
+        foreach (string file in Directory.GetFiles(ExternalPluginSource($"ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows"))
             .Where(file => file.EndsWith(".dll") || file.EndsWith(".deps.json"))) File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
-        File.Copy(Path.GetFullPath("examples/ApiChatPlugin/plugin.json"), Path.Combine(target, "plugin.json"));
+        File.Copy(ExternalPluginSource("ApiChatPlugin/plugin.json"), Path.Combine(target, "plugin.json"));
         var manifest = PluginManifest.Read(Path.Combine(target, "plugin.json"));
         string secret = Path.Combine(data, "config", "ai", "secrets.dat");
         Check(AiSecretStore.TrySave(secret, TestApiKey), "真实隔离输入回归不读取用户密钥");

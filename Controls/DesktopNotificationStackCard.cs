@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -61,7 +62,7 @@ internal sealed partial class DesktopNotificationStackCard : Grid
         Children.Add(face);
         ToggleButton = new Button { Padding = new Thickness(12), BorderThickness = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Stretch, Background = Brushes.Transparent,
-            ToolTip = "展开这叠通知", Cursor = System.Windows.Input.Cursors.Hand };
+            ToolTip = L.T("展开这叠通知"), Cursor = System.Windows.Input.Cursors.Hand };
         ToggleButton.SetResourceReference(StyleProperty, "NotificationStackButton");
         ToggleButton.Click += (_, args) => { args.Handled = true; SetExpanded(!IsExpanded); };
         face.Child = ToggleButton;
@@ -94,9 +95,9 @@ internal sealed partial class DesktopNotificationStackCard : Grid
         Grid.SetColumn(TimestampText, 1); top.Children.Add(TimestampText); text.Children.Add(top);
         var summary = new Grid { Margin = new Thickness(0, 3, 0, 0) };
         summary.ColumnDefinitions.Add(new ColumnDefinition()); summary.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        CountText = Label($"{group.Items.Length} 个通知", 12.5, "TextPrimary"); summary.Children.Add(CountText);
+        CountText = Label(L.F($"{group.Items.Length} 个通知"), 12.5, "TextPrimary"); summary.Children.Add(CountText);
         var affordance = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
-        _toggleHint = Label("展开", 10.5, "TextSecondary"); affordance.Children.Add(_toggleHint);
+        _toggleHint = Label(L.T("展开"), 10.5, "TextSecondary"); affordance.Children.Add(_toggleHint);
         _chevron = new GlyphIcon { Text = "\uE70D", Width = 11, Height = 11, Margin = new Thickness(5, 2, 0, 0) };
         _chevron.SetResourceReference(GlyphIcon.ForegroundProperty, "TextSecondary"); affordance.Children.Add(_chevron);
         Grid.SetColumn(affordance, 1); summary.Children.Add(affordance); Grid.SetRow(summary, 1); text.Children.Add(summary);
@@ -151,11 +152,11 @@ internal sealed partial class DesktopNotificationStackCard : Grid
         };
     }
     private void UpdateAccessibility() => AutomationProperties.SetName(ToggleButton,
-        $"{Group.Latest.AppName}，{Group.Items.Length} 个通知，{(IsExpanded ? "收起" : "展开")}");
+        L.F($"{Group.Latest.AppName}，{Group.Items.Length} 个通知，{(IsExpanded ? "收起" : "展开")}"));
     internal void RefreshTimestamp(DateTimeOffset now)
     {
         TimestampText.Text = NotificationTimestamp.Format(Group.Latest.Created, now);
-        TimestampText.ToolTip = Group.Latest.Created.ToLocalTime().ToString("yyyy年M月d日 HH:mm:ss");
+        TimestampText.ToolTip = Group.Latest.Created.ToLocalTime().ToString(L.T("yyyy年M月d日 HH:mm:ss"));
         foreach (var card in Cards) card.RefreshTimestamp(now);
     }
 }

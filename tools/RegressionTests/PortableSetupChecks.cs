@@ -11,8 +11,8 @@ internal static partial class Program
         Check(IslandOptions.Load(path).IsFreshInstallation, "没有设置文件时识别首次安装");
         var fresh = IslandOptions.Load(path);
         Check(SettingsRegistry.GetBool(fresh, "AgentBridgeEnabled", false), "未安装外部 Agent 的首次运行也准备好桥接，稍后安装无需手动打开");
-        Check(alpha_island.Plugins.PluginHost.IsEnabled(fresh, "oppo.pods") && alpha_island.Plugins.PluginHost.IsEnabled(fresh, "vivo.office"), "首次安装启用随包设备插件");
-        Check(fresh.Extras["plugin/oppo.pods/setting/auto-connect"].GetBoolean(), "首次安装自动连接唯一在线的兼容耳机");
+        Check(!fresh.Extras.Keys.Any(key => key.StartsWith("plugin/", StringComparison.Ordinal)), "首次安装不预置插件配置");
+        Check(!alpha_island.Plugins.PluginHost.IsEnabled(fresh, "oppo.pods") && !alpha_island.Plugins.PluginHost.IsEnabled(fresh, "vivo.office"), "首次安装不自动启用未安装的设备插件");
         fresh.Save(path);
         Check(SettingsRegistry.GetBool(IslandOptions.Load(path), "AgentBridgeEnabled", false), "重启后保留首次安装准备的桥接");
         var options = new IslandOptions();

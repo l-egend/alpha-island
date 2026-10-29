@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using alpha_island.Core;
@@ -102,9 +103,9 @@ internal sealed class FocusViewModel : ObservableObject
 {
     internal PomodoroTimer Timer { get; } = new();
     public string Remaining => Timer.DisplayRemaining();
-    public string ButtonText => Timer.Running ? "暂停" : Timer.CycleFinished ? "重新开始" : Timer.IsBreak ? "开始休息" : "开始专注";
-    public string Detail => $"{(Timer.IsLongBreak ? "长休息" : Timer.IsBreak ? "短休息" : "专注阶段")} · 已完成 {Timer.CompletedFocus} 轮"
-        + (Timer.Options.AutoCycle ? $" / {Timer.Options.CycleCount} 轮计划" : "");
+    public string ButtonText => Timer.Running ? L.T("暂停") : Timer.CycleFinished ? L.T("重新开始") : Timer.IsBreak ? L.T("开始休息") : L.T("开始专注");
+    public string Detail => L.F($"{(Timer.IsLongBreak ? "长休息" : Timer.IsBreak ? "短休息" : "专注阶段")} · 已完成 {Timer.CompletedFocus} 轮")
+        + (Timer.Options.AutoCycle ? L.F($" / {Timer.Options.CycleCount} 轮计划") : "");
     public bool Running => Timer.Running;
     public IRelayCommand ToggleCommand { get; }
     public IRelayCommand ResetCommand { get; }

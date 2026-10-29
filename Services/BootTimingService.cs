@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Diagnostics.Eventing.Reader;
 using System.Globalization;
 using System.Security.Principal;
@@ -9,12 +10,12 @@ internal sealed record BootTimingReading(DateTimeOffset? BootStartedUtc, TimeSpa
     bool Waiting = false, bool IsEstimate = false)
 {
     internal string DisplayText => DesktopDuration is TimeSpan duration
-        ? IsEstimate ? $"桌面启动参考 {Format(duration)}" : $"进入桌面用时 {Format(duration)}"
-        : Waiting ? "正在读取本次开机时间…"
-        : BootStartedUtc is { } started ? $"本次开机 {started.ToLocalTime():HH:mm:ss}（暂无耗时）"
-        : "暂时无法读取本次开机记录";
-    private static string Format(TimeSpan duration) => duration.TotalSeconds < 60 ? $"{duration.TotalSeconds:0.0} 秒"
-        : $"{(int)duration.TotalMinutes} 分 {duration.Seconds} 秒";
+        ? IsEstimate ? L.F($"桌面启动参考 {Format(duration)}") : L.F($"进入桌面用时 {Format(duration)}")
+        : Waiting ? L.T("正在读取本次开机时间…")
+        : BootStartedUtc is { } started ? L.F($"本次开机 {started.ToLocalTime():HH:mm:ss}（暂无耗时）")
+        : L.T("暂时无法读取本次开机记录");
+    private static string Format(TimeSpan duration) => duration.TotalSeconds < 60 ? L.F($"{duration.TotalSeconds:0.0} 秒")
+        : L.F($"{(int)duration.TotalMinutes} 分 {duration.Seconds} 秒");
 }
 
 /// <summary>Bounded read only. No WMI, admin helper, tracing session, or persistent listener.</summary>
@@ -24,24 +25,24 @@ internal static class BootTimingService
     internal static BootTimingReading Read()
     {
         DateTimeOffset? started = null;
-        string reason = "系统没有提供本次启动记录";
+        string reason = L.T("系统没有提供本次启动记录");
         try
         {
             using var record = Latest("System", "*[System[Provider[@Name='Microsoft-Windows-Kernel-General'] and EventID=12]]");
             if (record != null) started = Date(Data(record.ToXml()), "StartTime");
         }
         catch (Exception ex) when (LogUnavailable(ex))
-        { reason = "系统启动记录不可读取：" + ex.Message; }
-        if (started == null || started > DateTimeOffset.UtcNow) return new(null, null, reason, "Windows 启动事件");
+        { reason = L.T("系统启动记录不可读取：") + ex.Message; }
+        if (started == null || started > DateTimeOffset.UtcNow) return new(null, null, reason, L.T("Windows 启动事件"));
 
         try
         {
             using var record = Latest(BootLogAccess.Channel, "*[System[EventID=100]]");
             if (record != null && FromPerformanceXml(record.ToXml(), started.Value) is { } exact) return exact;
-            reason = "没有与本次启动匹配的精确性能记录";
+            reason = L.T("没有与本次启动匹配的精确性能记录");
         }
         catch (Exception ex) when (LogUnavailable(ex))
-        { reason = "精确启动性能记录不可读取：" + ex.Message; }
+        { reason = L.T("精确启动性能记录不可读取：") + ex.Message; }
 
         // Some Windows installations stop producing Event 100 even though the log is enabled.
         // AllLogonTasks is a desktop initialization marker, not the official MainPath measurement.
@@ -60,8 +61,8 @@ internal static class BootTimingService
             }
         }
         catch (Exception ex) when (LogUnavailable(ex))
-        { reason += "；桌面初始化记录不可读取：" + ex.Message; }
-        return new(started, null, reason, "Windows 启动事件（仅启动时间，未估算耗时）");
+        { reason += L.T("；桌面初始化记录不可读取：") + ex.Message; }
+        return new(started, null, reason, L.T("Windows 启动事件（仅启动时间，未估算耗时）"));
     }
 
     internal static async Task<BootTimingReading> ReadWhenReadyAsync(Func<bool> stopping, Action<BootTimingReading>? onAvailable = null)
@@ -107,7 +108,7 @@ internal static class BootTimingService
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var finished)) return null;
         var duration = finished - currentBoot;
         if (duration <= TimeSpan.Zero || duration > TimeSpan.FromMinutes(10)) return null;
-        return new(currentBoot, duration, "", "Windows 桌面登录初始化完成记录（参考，不含 BIOS，不等同完整进入桌面耗时）", IsEstimate: true);
+        return new(currentBoot, duration, "", L.T("Windows 桌面登录初始化完成记录（参考，不含 BIOS，不等同完整进入桌面耗时）"), IsEstimate: true);
     }
 
     internal static BootTimingReading? FromPerformanceXml(string xml, DateTimeOffset currentBoot)
@@ -117,7 +118,7 @@ internal static class BootTimingService
         if (start == null || Math.Abs((start.Value - currentBoot).TotalSeconds) > 30 ||
             !data.TryGetValue("MainPathBootTime", out string? value) || !long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long ms)
             || ms is <= 0 or > 600_000) return null;
-        return new(currentBoot, TimeSpan.FromMilliseconds(ms), "", "Windows 主启动路径性能记录（不含 BIOS 与桌面后台收尾）");
+        return new(currentBoot, TimeSpan.FromMilliseconds(ms), "", L.T("Windows 主启动路径性能记录（不含 BIOS 与桌面后台收尾）"));
     }
 
     private static bool LogUnavailable(Exception ex) => ex is EventLogException or UnauthorizedAccessException or System.Security.SecurityException;

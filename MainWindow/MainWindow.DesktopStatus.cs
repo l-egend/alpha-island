@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using alpha_island.Animation;
 using System;
 using System.Windows;
@@ -55,7 +56,7 @@ public partial class MainWindow
     {
         view.SetDisplayItems(StatusDisplayOptions.ResourcesSelected(_options));
         view.SetResources(_resourceSnapshot.CpuPercent, _resourceSnapshot.MemoryPercent);
-        view.SetPower(_resourceSnapshot.TotalWatts, _resourceSnapshot.PowerDetail ?? "等待功耗采样");
+        view.SetPower(_resourceSnapshot.TotalWatts, _resourceSnapshot.PowerDetail ?? L.T("等待功耗采样"));
     }
     private void UpdateCombinedStatus(NetworkSpeedPill view, NetworkSpeedSample sample)
     {

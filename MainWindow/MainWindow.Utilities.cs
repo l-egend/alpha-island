@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -54,30 +55,30 @@ public partial class MainWindow
     {
         RegisterWeatherPage();
 
-        var focus = new StackPanel(); focus.Children.Add(UtilityText("番茄钟", 15));
+        var focus = new StackPanel(); focus.Children.Add(UtilityText(L.T("番茄钟"), 15));
         _workspace.Focus.Configure(PomodoroOptions.From(_options));
         if (_runtimeEnabled && _pomodoro.Options.AutoStart) _pomodoro.Start(DateTime.UtcNow);
         _focusValue = UtilityText("25:00", 36); focus.Children.Add(_focusValue);
-        _focusDetail = UtilityText("专注 · 已完成 0 轮"); focus.Children.Add(_focusDetail);
-        _focusButton = UtilityButton("开始专注", ToggleFocus);
-        focus.Children.Add(UtilityButtons(_focusButton, UtilityButton("重置", () => _workspace.Focus.ResetCommand.Execute(null)),
-            UtilityButton("设置", OpenFocusSettings)));
+        _focusDetail = UtilityText(L.T("专注 · 已完成 0 轮")); focus.Children.Add(_focusDetail);
+        _focusButton = UtilityButton(L.T("开始专注"), ToggleFocus);
+        focus.Children.Add(UtilityButtons(_focusButton, UtilityButton(L.T("重置"), () => _workspace.Focus.ResetCommand.Execute(null)),
+            UtilityButton(L.T("设置"), OpenFocusSettings)));
         focus.MouseLeftButtonDown += (_, e) =>
         {
             if (e.ClickCount != 2 || IsFocusControl(e.OriginalSource)) return;
             e.Handled = true;
             if (_pomodoro.Options.DoubleClickOpensSettings) OpenFocusSettings(); else ToggleFocus();
         };
-        RegisterUtility("focus", "番茄钟", 9, focus, SyncFocus);
+        RegisterUtility("focus", L.T("番茄钟"), 9, focus, SyncFocus);
         _focusValue.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(alpha_island.ViewModels.FocusViewModel.Remaining)) { Source = _workspace.Focus });
         _focusDetail.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(alpha_island.ViewModels.FocusViewModel.Detail)) { Source = _workspace.Focus });
         _focusButton.SetBinding(Button.ContentProperty, new System.Windows.Data.Binding(nameof(alpha_island.ViewModels.FocusViewModel.ButtonText)) { Source = _workspace.Focus });
         _workspace.Focus.PhaseCompleted += () =>
         {
-            ShowSystemNotify("\uE916", _pomodoro.CycleFinished ? "番茄钟循环完成" : _pomodoro.IsBreak ? "专注完成" : "休息结束",
-                _pomodoro.CycleFinished ? $"已完成 {_pomodoro.CompletedFocus} 轮专注"
-                    : $"{(_pomodoro.IsLongBreak ? "长休息" : _pomodoro.IsBreak ? "短休息" : "专注")} {Math.Ceiling(_pomodoro.Remaining.TotalMinutes)} 分钟"
-                        + (_pomodoro.Running ? " · 已自动开始" : " · 点击开始"), _pomodoro.IsBreak ? "休息" : "专注");
+            ShowSystemNotify("\uE916", _pomodoro.CycleFinished ? L.T("番茄钟循环完成") : _pomodoro.IsBreak ? L.T("专注完成") : L.T("休息结束"),
+                _pomodoro.CycleFinished ? L.F($"已完成 {_pomodoro.CompletedFocus} 轮专注")
+                    : L.F($"{(_pomodoro.IsLongBreak ? "长休息" : _pomodoro.IsBreak ? "短休息" : "专注")} {Math.Ceiling(_pomodoro.Remaining.TotalMinutes)} 分钟")
+                        + (_pomodoro.Running ? L.T(" · 已自动开始") : L.T(" · 点击开始")), _pomodoro.IsBreak ? L.T("休息") : L.T("专注"));
             if (_pomodoro.Options.PlaySound) PomodoroSound.Play(_pomodoro.Options.Sound);
         };
         _pomodoroTicker = IslandTicker.Shared(Dispatcher).Subscribe("focus", TimeSpan.FromSeconds(1), () => _workspace.Focus.Tick(DateTime.UtcNow));
@@ -99,8 +100,8 @@ public partial class MainWindow
         {
             IslandLog.Error("ScreenTools", ex);
             _screenTools?.Shutdown(); _screenTools = null;
-            if (_externalTranslationHint != null) _externalTranslationHint.Text = "屏幕工具未能打开，请重试或查看诊断日志。";
-            ShowSystemNotify("\uE8B5", "屏幕工具未能打开", "请重试；详细原因已写入诊断日志。", "屏幕工具");
+            if (_externalTranslationHint != null) _externalTranslationHint.Text = L.T("屏幕工具未能打开，请重试或查看诊断日志。");
+            ShowSystemNotify("\uE8B5", L.T("屏幕工具未能打开"), L.T("请重试；详细原因已写入诊断日志。"), L.T("屏幕工具"));
         }
     }
     private ScreenToolsWindow EnsureScreenTools()
@@ -127,7 +128,7 @@ public partial class MainWindow
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             IslandLog.Error("ScreenTools", error); _screenTools?.Shutdown(); _screenTools = null;
-            ShowSystemNotify("\uE8B5", "屏幕工具未能启动", "请重新打开屏幕工具检查配置。", "屏幕工具");
+            ShowSystemNotify("\uE8B5", L.T("屏幕工具未能启动"), L.T("请重新打开屏幕工具检查配置。"), L.T("屏幕工具"));
         }
     }
     private void RefreshExternalTranslation()
@@ -135,12 +136,12 @@ public partial class MainWindow
         var options = ExternalTranslationOptions.From(_options);
         if (_externalTranslationButton != null)
         {
-            _externalTranslationButton.IsEnabled = options.Enabled && !_sendingExternalTranslation;
-            _externalTranslationButton.ToolTip = options.DisplayName + " · " + options.Shortcut;
+            _externalTranslationButton.IsEnabled = options.Enabled && options.IsConfigured && !_sendingExternalTranslation;
+            _externalTranslationButton.ToolTip = options.IsConfigured ? options.DisplayName + " · " + options.Shortcut : L.T("请先配置外部翻译调用");
         }
-        if (_externalTranslationHint != null) _externalTranslationHint.Text = options.Enabled
-            ? $"{options.DisplayName} · {options.Shortcut}\n外部译文在对应软件查看；AI 翻译需配置接口"
-            : "AI 翻译需配置接口；外部快捷键调用已关闭";
+        if (_externalTranslationHint != null) _externalTranslationHint.Text = options.Enabled && options.IsConfigured
+            ? L.F($"{options.DisplayName} · {options.Shortcut}\n外部译文在对应软件查看；AI 翻译需配置接口")
+            : L.T("AI 翻译需配置接口；外部快捷键调用已关闭");
         _screenTools?.RefreshExternalTranslation();
     }
     private async Task InvokeExternalTranslationAsync()
@@ -155,7 +156,7 @@ public partial class MainWindow
             if (_externalTranslationHint != null) _externalTranslationHint.Text = result.Message;
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { if (_externalTranslationHint != null) _externalTranslationHint.Text = "调用失败：" + ex.Message; }
+        catch (Exception ex) { if (_externalTranslationHint != null) _externalTranslationHint.Text = L.T("调用失败：") + ex.Message; }
         finally
         {
             _sendingExternalTranslation = false;

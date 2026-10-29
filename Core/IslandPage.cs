@@ -81,7 +81,7 @@ namespace alpha_island.Core
             Action<double>? viewportChanged = null)
         {
             Id = id;
-            Title = title;
+            _title = title;
             View = view;
             Order = order;
             PreferredHeight = preferredHeight;
@@ -92,7 +92,8 @@ namespace alpha_island.Core
         }
 
         public string Id { get; }
-        public string Title { get; }
+        private readonly string _title;
+        public string Title => AlphaIsland.PluginSdk.Localization.UiText.T(_title);
         public UIElement View { get; }
         public int Order { get; }
         public double PreferredHeight { get; }

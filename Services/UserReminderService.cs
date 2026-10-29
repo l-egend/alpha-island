@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Text.Json;
 using System.Windows.Threading;
 using AlphaIsland.PluginSdk;
@@ -32,16 +33,16 @@ internal sealed class UserReminderService : IDisposable
     }
     internal ToolResult Create(string text)
     {
-        if (_disposed || !_enabled) return ToolResult.Fail("自然语言提醒已关闭，可在智能助手设置中开启。");
+        if (_disposed || !_enabled) return ToolResult.Fail(L.T("自然语言提醒已关闭，可在智能助手设置中开启。"));
         var now = DateTimeOffset.Now;
         var parsed = ReminderTextParser.Parse(text, now, _zone);
-        if (parsed.Draft == null) return ToolResult.Fail(parsed.Error.Length > 0 ? parsed.Error : "请写明时间和事项，例如：30分钟后提醒我喝水。");
+        if (parsed.Draft == null) return ToolResult.Fail(parsed.Error.Length > 0 ? parsed.Error : L.T("请写明时间和事项，例如：30分钟后提醒我喝水。"));
         try
         {
             var job = _queue.Add(parsed.Draft, now); Save(); Pace(); Changed?.Invoke();
-            string repeat = job.IntervalMinutes > 0 ? $" · 每隔{job.IntervalMinutes}分钟" : job.Weekdays.Length == 7 ? " · 每天" : job.Weekdays.SequenceEqual(new[] {1,2,3,4,5}) ? " · 工作日" : job.Weekdays.Length > 0 ? " · 每周指定日期" : "";
+            string repeat = job.IntervalMinutes > 0 ? L.F($" · 每隔{job.IntervalMinutes}分钟") : job.Weekdays.Length == 7 ? L.T(" · 每天") : job.Weekdays.SequenceEqual(new[] {1,2,3,4,5}) ? L.T(" · 工作日") : job.Weekdays.Length > 0 ? L.T(" · 每周指定日期") : "";
             string due = TimeZoneInfo.ConvertTime(job.Due, _zone).ToString("yyyy-MM-dd HH:mm:ss");
-            return ToolResult.Ok($"已设置：{due}{repeat}，提醒你「{SensitiveTextDetector.Inspect(job.Title).Redacted}」。提醒保存在本机，程序需保持运行；休眠或退出期间错过的提醒会在恢复运行后补入通知中心。", new { id = job.Id, due = job.Due, repeat });
+            return ToolResult.Ok(L.F($"已设置：{due}{repeat}，提醒你「{SensitiveTextDetector.Inspect(job.Title).Redacted}」。提醒保存在本机，程序需保持运行；休眠或退出期间错过的提醒会在恢复运行后补入通知中心。"), new { id = job.Id, due = job.Due, repeat });
         }
         catch (ArgumentException ex) { return ToolResult.Fail(ex.Message); }
     }
@@ -49,24 +50,24 @@ internal sealed class UserReminderService : IDisposable
     {
         var jobs = Jobs.Where(job => job.Active).Take(100).ToArray();
         string Title(UserReminder job) { var text=SensitiveTextDetector.Inspect(job.Title).Redacted;return text.Length>80?text[..80]+"…":text; }
-        return ToolResult.Ok(jobs.Length == 0 ? "目前没有待办提醒。" : string.Join("\n", jobs.Take(10).Select(job =>
-            $"{job.Id} · {TimeZoneInfo.ConvertTime(job.Due, _zone):MM-dd HH:mm} · {Title(job)}"))+(jobs.Length>10?"\n更多提醒请打开管理提醒查看。":""),
+        return ToolResult.Ok(jobs.Length == 0 ? L.T("目前没有待办提醒。") : string.Join("\n", jobs.Take(10).Select(job =>
+            $"{job.Id} · {TimeZoneInfo.ConvertTime(job.Due, _zone):MM-dd HH:mm} · {Title(job)}"))+(jobs.Length>10?L.T("\n更多提醒请打开管理提醒查看。"):""),
             jobs.Take(10).Select(job => new { id = job.Id, title = Title(job), due = job.Due }).ToArray());
     }
     internal ToolResult Cancel(string id)
     {
-        if (_disposed || !_queue.Cancel(id)) return ToolResult.Fail("未找到这条提醒，请先查看提醒列表。");
-        Save(); Pace(); Cancelled?.Invoke(id); Changed?.Invoke(); return ToolResult.Ok("已取消这条提醒。");
+        if (_disposed || !_queue.Cancel(id)) return ToolResult.Fail(L.T("未找到这条提醒，请先查看提醒列表。"));
+        Save(); Pace(); Cancelled?.Invoke(id); Changed?.Invoke(); return ToolResult.Ok(L.T("已取消这条提醒。"));
     }
     internal ToolResult CancelByTitle(string title)
     {
         var matches = Jobs.Where(job => job.Active && job.Title == title).ToArray();
-        return matches.Length == 1 ? Cancel(matches[0].Id) : ToolResult.Fail(matches.Length == 0 ? "未找到完全同名的待办提醒。可打开管理提醒查看。" : "有多条同名提醒，请在管理提醒中选择具体一条，或提供提醒ID。");
+        return matches.Length == 1 ? Cancel(matches[0].Id) : ToolResult.Fail(matches.Length == 0 ? L.T("未找到完全同名的待办提醒。可打开管理提醒查看。") : L.T("有多条同名提醒，请在管理提醒中选择具体一条，或提供提醒ID。"));
     }
     internal ToolResult Snooze(string id, int minutes)
     {
-        if (_disposed || !_enabled) return ToolResult.Fail("提醒已关闭。");
-        try { _queue.Snooze(id, minutes, DateTimeOffset.Now); Save(); Pace(); Changed?.Invoke(); return ToolResult.Ok($"已设为{Math.Clamp(minutes,1,1440)}分钟后再提醒。"); }
+        if (_disposed || !_enabled) return ToolResult.Fail(L.T("提醒已关闭。"));
+        try { _queue.Snooze(id, minutes, DateTimeOffset.Now); Save(); Pace(); Changed?.Invoke(); return ToolResult.Ok(L.F($"已设为{Math.Clamp(minutes,1,1440)}分钟后再提醒。")); }
         catch (ArgumentException ex) { return ToolResult.Fail(ex.Message); }
     }
     internal async void TickNow()

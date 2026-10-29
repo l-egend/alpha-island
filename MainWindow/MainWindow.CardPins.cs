@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -90,11 +91,11 @@ public partial class MainWindow
         }
         string detail = pageId switch
         {
-            "focus" => (_pomodoro.CycleFinished ? "循环完成" : _pomodoro.IsLongBreak ? "长休息" : _pomodoro.IsBreak ? "短休息" : "专注")
-                + (_pomodoro.Running ? "" : " · 已暂停"),
-            "weather" => _weatherValue?.Text ?? "点击查看天气",
-            "screen-tools" => "识字 · 取色 · 翻译 · 字幕 · 扫码",
-            _ => (_pages.Pages.FirstOrDefault(p => p.Id == pageId) as PluginIslandPage)?.ReadSummary() ?? "点击打开卡片"
+            "focus" => (_pomodoro.CycleFinished ? L.T("循环完成") : _pomodoro.IsLongBreak ? L.T("长休息") : _pomodoro.IsBreak ? L.T("短休息") : L.T("专注"))
+                + (_pomodoro.Running ? "" : L.T(" · 已暂停")),
+            "weather" => _weatherValue?.Text ?? L.T("点击查看天气"),
+            "screen-tools" => L.T("识字 · 取色 · 翻译 · 字幕 · 扫码"),
+            _ => (_pages.Pages.FirstOrDefault(p => p.Id == pageId) as PluginIslandPage)?.ReadSummary() ?? L.T("点击打开卡片")
         };
         if (view.MotionDetail != detail && pageId == "focus")
         {

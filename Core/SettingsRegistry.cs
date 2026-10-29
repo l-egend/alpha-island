@@ -273,6 +273,14 @@ namespace alpha_island.Core
         private static List<SettingDescriptor> Build()
         {
             var list = new List<SettingDescriptor>();
+            list.Add(new SettingDescriptor
+            {
+                Key = "InterfaceLanguage", Kind = SettingKind.Text, Label = "界面语言", Hint = "重启后应用于全部界面与插件",
+                PageId = SettingsPageIds.General, ControlName = "InterfaceLanguageBox", StoredInExtras = true, NeedsRestart = true,
+                DefaultValue = "system", Get = o => GetText(o, "InterfaceLanguage", "system"),
+                Set = (o, v) => SetExtra(o, "InterfaceLanguage", AlphaIsland.PluginSdk.Localization.UiText.NormalizeSelection(v as string))
+            });
+            list.Add(ExtraBool("BrowserAutoCompactEnabled", "浏览器自动收起", "浏览器最大化或全屏时收为细条，点击可临时展开", true, SettingsPageIds.Behavior, controlName: "BrowserAutoCompactToggle"));
             list.Add(ExtraBool("ReduceEffectsEnabled", "削减动效", "关闭液态玻璃、液态拉伸、3D 封面与逐帧装饰，并降低后台刷新频率", false, SettingsPageIds.Appearance, controlName: "ReduceEffectsToggle"));
             list.Add(ExtraBool("NotificationMessengerEnabled", "QQ / 微信新消息提醒", "显示已登录应用的新消息与未读数", true, SettingsPageIds.Notifications, controlName: "NotificationMessengerToggle"));
 
@@ -314,7 +322,7 @@ namespace alpha_island.Core
             list.Add(ExtraInt("AssistantDailyReviewHour", "每日回顾时间：时", "本机时间，0～23；锁屏或免打扰期间延后", 21, 0, 23, "时", SettingsPageIds.Assistant, controlName: "AssistantDailyReviewHourBox"));
             list.Add(ExtraInt("AssistantDailyReviewMinute", "每日回顾时间：分", "本机时间，0～59；每天最多一条", 0, 0, 59, "分", SettingsPageIds.Assistant, controlName: "AssistantDailyReviewMinuteBox"));
             list.Add(ExtraBool("ClipboardSensitiveGuardEnabled", "剪贴板敏感内容保护", "本地检测身份证、银行卡和常见访问密钥；隐藏预览并跳过历史，保留系统剪贴板原文", true, SettingsPageIds.Behavior, controlName: "ClipboardSensitiveGuardEnabledToggle"));
-            list.Add(ExtraBool("LauncherEnabled", "快速启动器快捷键", "全局呼出应用、岛内组件和 Agent 搜索", true,
+            list.Add(ExtraBool("LauncherEnabled", "快速启动器快捷键", "搜索应用、alpha island 组件和 Agent", true,
                 SettingsPageIds.Behavior, controlName: "LauncherEnabledToggle"));
             list.Add(ExtraText("LauncherShortcut", "快速启动组合键", "默认 Ctrl+Alt+Space；与其他程序冲突时显示提示", "Ctrl+Alt+Space",
                 SettingsPageIds.Behavior, controlName: "LauncherShortcutBox"));
@@ -333,7 +341,7 @@ namespace alpha_island.Core
                 "分钟", SettingsPageIds.Focus, "PomodoroUseLongBreak", controlName: "PomodoroLongBreakMinutesBox"));
             list.Add(ExtraInt("PomodoroLongBreakEvery", "长休息间隔", "每完成多少轮专注使用一次长休息", 4, 1, 20,
                 "轮", SettingsPageIds.Focus, "PomodoroUseLongBreak", controlName: "PomodoroLongBreakEveryBox"));
-            list.Add(ExtraBool("PomodoroAutoStart", "启动时自动开始", "下次启动岛时开始一轮专注", false,
+            list.Add(ExtraBool("PomodoroAutoStart", "启动时自动开始", "下次启动 alpha island 时开始一轮专注", false,
                 SettingsPageIds.Focus, controlName: "PomodoroAutoStartToggle"));
             list.Add(ExtraBool("PomodoroShowSeconds", "剩余时间显示秒", "关闭后显示向上取整的剩余分钟", true,
                 SettingsPageIds.Focus, controlName: "PomodoroShowSecondsToggle"));
@@ -377,7 +385,7 @@ namespace alpha_island.Core
                 Key = "VolumeNotifyEnabled",
                 Kind = SettingKind.Bool,
                 Label = "音量调节提示",
-                Hint = "调节系统主音量时由岛接管系统音量浮层，展示动态音量条与数字；关闭后恢复系统提示",
+                Hint = "使用 alpha island 显示音量变化；关闭后恢复系统音量提示",
                 PageId = SettingsPageIds.Notifications,
                 ControlName = "VolumeNotifyToggle",
                 DefaultValue = true,
@@ -492,7 +500,7 @@ namespace alpha_island.Core
             list.Add(ExtraText("GreetingSoundPath", "启动音效文件", "支持 WAV、MP3 等系统可解码音效；最长 10 秒，留空使用内置轻柔启动音", "", SettingsPageIds.Notifications));
             list.Add(ExtraInt("GreetingSoundVolume", "音效音量", "只调整欢迎音效，不改变系统音量", 35, 0, 100, "%",
                 SettingsPageIds.Notifications, controlName: "GreetingSoundVolumeBox", enabledBy: "GreetingSoundEnabled"));
-            list.Add(ExtraBool("ClipboardLinkDetectionEnabled", "识别剪贴板链接", "复制网页链接后点击岛使用默认浏览器打开", true,
+            list.Add(ExtraBool("ClipboardLinkDetectionEnabled", "识别剪贴板链接", "复制网页链接后，点击 alpha island 使用默认浏览器打开", true,
                 SettingsPageIds.Behavior, controlName: "ClipboardLinkToggle", enabledBy: "ClipboardNotifyEnabled"));
 
             // ===== 系统状态（设置页 system，随各功能落地再补 UI） =====
@@ -561,19 +569,19 @@ namespace alpha_island.Core
                 controlName: "DownloadMonitorToggle"));
 
             // ===== AI 接入与 agent（设置页 ai） =====
-            list.Add(ExtraBool("ExternalTranslationEnabled", "快捷键调用外部翻译软件",
-                "从屏幕翻译工具或岛卡片发送软件的全局快捷键；译文在外部软件中查看", true, SettingsPageIds.Ai,
+            list.Add(ExtraBool("ExternalTranslationEnabled", "快捷键调用外部翻译",
+                "填写应用名称与快捷键后启用，译文在对应应用中查看", false, SettingsPageIds.Ai,
                 controlName: "ExternalTranslationToggle"));
             list.Add(ExtraText("ExternalTranslationName", "翻译软件名称",
-                "网易有道翻译会自动检测并在调用时启动；其他软件请先运行，再填写名称与快捷键", ExternalTranslationOptions.DefaultName,
+                "填写需要调用的应用名称，使用前请先运行该应用", ExternalTranslationOptions.DefaultName,
                 SettingsPageIds.Ai, controlName: "ExternalTranslationNameBox"));
             list.Add(ExtraText("ExternalTranslationShortcut", "外部翻译快捷键",
-                "须与翻译软件设置的全局快捷键一致；有道默认 Ctrl+Alt+D，可手动填写或录制", ExternalTranslationOptions.DefaultShortcut,
+                "须与目标应用的全局快捷键一致，可手动填写或录制", ExternalTranslationOptions.DefaultShortcut,
                 SettingsPageIds.Ai, controlName: "ExternalTranslationShortcutBox"));
             list.Add(ExtraBool("AiEnabled", "AI 对话",
-                "密钥保存且接口连接成功时自动开启；没有密钥或连接失败时关闭，关闭时隐藏岛内入口，历史仍可在插件设置管理", false, SettingsPageIds.Ai));
+                "连接验证通过后启用，可在对应设置中管理历史记录", false, SettingsPageIds.Ai));
             list.Add(ExtraText("AiBaseUrl", "接口地址",
-                "OpenAI 兼容的 Base URL，例如 https://api.deepseek.com/v1（本地 Ollama 可填 http://127.0.0.1:11434/v1）", "https://api.deepseek.com/v1",
+                "填写兼容接口的服务地址，可使用本地或远程服务", "https://api.deepseek.com/v1",
                 SettingsPageIds.Ai));
             list.Add(ExtraText("AiApiKey", "API Key",
                 "输入完整密钥后点击保存；Windows DPAPI 加密存于 config\\ai\\secrets.dat，设置 JSON 不保存明文（本地模型可留空）", "",

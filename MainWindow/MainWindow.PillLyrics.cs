@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -562,19 +563,19 @@ namespace alpha_island
                 {
                     PillUpNextIcon.Text = "\uE769"; // 暂停图标
                     PillUpNextIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xAA, 0x00)); // 柔和橙黄
-                    PillUpNextText.Text = "已暂停";
+                    PillUpNextText.Text = L.T("已暂停");
                 }
                 else if (_upNextKind == "play")
                 {
                     PillUpNextIcon.Text = "\uE768"; // 播放图标
                     PillUpNextIcon.Foreground = (System.Windows.Media.Brush)FindResource("AccentCyan");
-                    PillUpNextText.Text = "正在播放";
+                    PillUpNextText.Text = L.T("正在播放");
                 }
                 else
                 {
                     PillUpNextIcon.Text = "\uE893"; // 下一曲图标
                     PillUpNextIcon.Foreground = (System.Windows.Media.Brush)FindResource("AccentCyan");
-                    PillUpNextText.Text = "接下来";
+                    PillUpNextText.Text = L.T("接下来");
                 }
                 ApplyPillLyricText(_upNextTitle);
 

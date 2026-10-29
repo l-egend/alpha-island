@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -26,6 +27,7 @@ internal sealed class SubtitleIslandWindow : Window
         string caption = "区域翻译", bool translation = true)
     {
         _anchor = anchor; _belowSelection = belowSelection;
+        caption = L.T(caption);
         Title = "Alpha Island · " + caption; ShowInTaskbar = false; ShowActivated = false; Topmost = true;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true;
         Background = Brushes.Transparent; Width = 960; SizeToContent = SizeToContent.Height;
@@ -34,7 +36,7 @@ internal sealed class SubtitleIslandWindow : Window
         var header = new Grid { Margin = new Thickness(0, 0, 0, 5) };
         header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         header.Children.Add(new TextBlock { Text = caption, Foreground = Brushes.White, Opacity = .7, FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
-        string stopLabel = translation ? "停止区域翻译" : "停止语音识别";
+        string stopLabel = translation ? L.T("停止区域翻译") : L.T("停止语音识别");
         var stopButton = new System.Windows.Controls.Button { Content = "×", Width = 28, Height = 26, Padding = new Thickness(0),
             Foreground = Brushes.White, Background = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)), ToolTip = stopLabel };
@@ -44,7 +46,7 @@ internal sealed class SubtitleIslandWindow : Window
         Content = new Border { Background = new SolidColorBrush(Color.FromArgb(225, 20, 24, 32)), CornerRadius = new CornerRadius(20),
             Padding = new Thickness(22, 10, 22, 12), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromArgb(65, 255, 255, 255)), Child = body };
         var menu = new ContextMenu();
-        var copyItem = new MenuItem { Header = translation ? "复制译文" : "复制识别文字" }; copyItem.Click += (_, _) => { try { copy(_text.Text); } catch (ExternalException) { } };
+        var copyItem = new MenuItem { Header = translation ? L.T("复制译文") : L.T("复制识别文字") }; copyItem.Click += (_, _) => { try { copy(_text.Text); } catch (ExternalException) { } };
         var stopItem = new MenuItem { Header = stopLabel }; stopItem.Click += (_, _) => stop();
         menu.Items.Add(copyItem); menu.Items.Add(stopItem); ContextMenu = menu;
         MouseLeftButtonDown += (_, _) => { try { DragMove(); _positioned = true; } catch (InvalidOperationException) { } };

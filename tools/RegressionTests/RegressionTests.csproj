@@ -10,20 +10,27 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AlphaIsland.RegressionTests</AssemblyName>
+    <ExternalPluginSourceRoot Condition="'$(ExternalPluginSourceRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\alpha-island-plugins'))</ExternalPluginSourceRoot>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App;Microsoft.WindowsDesktop.App.WPF;Microsoft.WindowsDesktop.App.WindowsForms"
                              RuntimeFrameworkVersion="$(InstallerRuntimeVersion)" Condition="'$(InstallerRuntimeVersion)' != ''" />
     <ProjectReference Include="..\..\alpha-island.csproj" />
-    <ProjectReference Include="..\..\examples\ApiChatPlugin\ApiChatPlugin.csproj" />
-    <ProjectReference Include="..\..\examples\LocalAgentsPlugin\LocalAgentsPlugin.csproj" />
-    <ProjectReference Include="..\..\examples\ClockPlugin\ClockPlugin.csproj" ReferenceOutputAssembly="false" AdditionalProperties="DeployPlugin=false" />
-    <ProjectReference Include="..\..\examples\TrafficMonitorPlugin\TrafficMonitorPlugin.csproj" AdditionalProperties="DeployPlugin=false" />
-    <ProjectReference Include="..\..\examples\OppoPodsPlugin\OppoPodsPlugin.csproj" AdditionalProperties="DeployPlugin=false" />
-    <ProjectReference Include="..\..\examples\VivoOfficePlugin\VivoOfficePlugin.csproj" AdditionalProperties="DeployPlugin=false" />
-    <ProjectReference Include="..\..\examples\DeviceBatteryPlugin\DeviceBatteryPlugin.csproj" AdditionalProperties="DeployPlugin=false" />
+    <ProjectReference Include="$(ExternalPluginSourceRoot)\examples\ApiChatPlugin\ApiChatPlugin.csproj" AdditionalProperties="AlphaIslandHostRoot=$(MSBuildProjectDirectory)\..\..;DeployPlugin=false" />
+    <ProjectReference Include="$(ExternalPluginSourceRoot)\examples\LocalAgentsPlugin\LocalAgentsPlugin.csproj" AdditionalProperties="AlphaIslandHostRoot=$(MSBuildProjectDirectory)\..\..;DeployPlugin=false" />
+    <ProjectReference Include="$(ExternalPluginSourceRoot)\examples\ClockPlugin\ClockPlugin.csproj" ReferenceOutputAssembly="false" AdditionalProperties="AlphaIslandHostRoot=$(MSBuildProjectDirectory)\..\..;DeployPlugin=false" />
+    <ProjectReference Include="$(ExternalPluginSourceRoot)\examples\TrafficMonitorPlugin\TrafficMonitorPlugin.csproj" AdditionalProperties="AlphaIslandHostRoot=$(MSBuildProjectDirectory)\..\..;DeployPlugin=false" />
+    <ProjectReference Include="$(ExternalPluginSourceRoot)\examples\OppoPodsPlugin\OppoPodsPlugin.csproj" AdditionalProperties="AlphaIslandHostRoot=$(MSBuildProjectDirectory)\..\..;DeployPlugin=false" />
+    <ProjectReference Include="$(ExternalPluginSourceRoot)\examples\VivoOfficePlugin\VivoOfficePlugin.csproj" AdditionalProperties="AlphaIslandHostRoot=$(MSBuildProjectDirectory)\..\..;DeployPlugin=false" />
+    <ProjectReference Include="$(ExternalPluginSourceRoot)\examples\DeviceBatteryPlugin\DeviceBatteryPlugin.csproj" AdditionalProperties="AlphaIslandHostRoot=$(MSBuildProjectDirectory)\..\..;DeployPlugin=false" />
     <ProjectReference Include="..\PluginFixture\PluginFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="ExternalPluginSourceRoot" Value="$(ExternalPluginSourceRoot)" />
+  </ItemGroup>
+  <Target Name="CheckExternalPluginSources" BeforeTargets="PrepareForBuild" Condition="!Exists('$(ExternalPluginSourceRoot)\examples\ApiChatPlugin\ApiChatPlugin.csproj')">
+    <Error Text="The extended regression suite requires the separate alpha-island-plugins source directory. Set ExternalPluginSourceRoot, or build alpha-island.sln for the standalone host." />
+  </Target>
   <!-- Fixtures load each plugin from its own project output. Their root-level
        manifests and readmes must not collide in the self-contained test host. -->
   <Target Name="ExcludePluginPackageContentFromRegressionHost" BeforeTargets="_HandleFileConflictsForPublish">

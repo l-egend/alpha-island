@@ -10,7 +10,7 @@ internal static partial class Program
 {
     private static void EarbudIsolatedLiveChecks(alpha_island.MainWindow window, string root)
     {
-        string source=Path.GetFullPath($"examples/OppoPodsPlugin/bin/{TestBuildConfiguration}/net8.0-windows10.0.19041.0");
+        string source=ExternalPluginSource($"OppoPodsPlugin/bin/{TestBuildConfiguration}/net8.0-windows10.0.19041.0");
         string target=Path.Combine(root,"oppo.pods");Directory.CreateDirectory(target);
         foreach(string file in Directory.GetFiles(source).Where(path=>path.EndsWith(".dll")||path.EndsWith(".deps.json")||path.EndsWith("plugin.json")))
             File.Copy(file,Path.Combine(target,Path.GetFileName(file)));

@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.10.35004.147
@@ -7,25 +7,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "alpha-island", "alpha-islan
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AlphaIsland.PluginSdk", "PluginSdk\AlphaIsland.PluginSdk.csproj", "{B0707DBE-5534-47BF-B64A-E15F4CCD64BA}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{C87C5541-3CB8-4B64-A15F-4BB70BD55818}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClockPlugin", "examples\ClockPlugin\ClockPlugin.csproj", "{21A8A5E5-3A66-4A24-86AF-811D031FDECD}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TrafficMonitorPlugin", "examples\TrafficMonitorPlugin\TrafficMonitorPlugin.csproj", "{76D9F54C-159D-45B6-AE19-B98804DD1685}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OppoPodsPlugin", "examples\OppoPodsPlugin\OppoPodsPlugin.csproj", "{66F51E51-87B0-4C33-AB24-6571566236B3}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VivoOfficePlugin", "examples\VivoOfficePlugin\VivoOfficePlugin.csproj", "{F2C4CCCB-AA10-4872-BA4D-6C2712FD8814}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlphaIsland.AgentTools", "AgentTools\AlphaIsland.AgentTools.csproj", "{088C66EA-93B2-4D6B-81B5-4AFA7F1D841E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlphaIsland.ConversationCore", "ConversationCore\AlphaIsland.ConversationCore.csproj", "{937AA0FC-52B9-4F29-8C36-85EEB08C7923}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiChatPlugin", "examples\ApiChatPlugin\ApiChatPlugin.csproj", "{CEA4FD2E-FC46-4082-89D2-0214D95F9D88}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LocalAgentsPlugin", "examples\LocalAgentsPlugin\LocalAgentsPlugin.csproj", "{B39BB7C3-B449-4379-8D2C-69FD95AEF6B5}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeviceBatteryPlugin", "examples\DeviceBatteryPlugin\DeviceBatteryPlugin.csproj", "{355B0D48-94F7-438E-A008-9D21F5078F92}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlphaIsland.SpeechCore", "SpeechCore\AlphaIsland.SpeechCore.csproj", "{F1A39CAB-D919-4D68-87BF-784B81F8F330}"
 EndProject
@@ -43,22 +27,6 @@ Global
 		{B0707DBE-5534-47BF-B64A-E15F4CCD64BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B0707DBE-5534-47BF-B64A-E15F4CCD64BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B0707DBE-5534-47BF-B64A-E15F4CCD64BA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{21A8A5E5-3A66-4A24-86AF-811D031FDECD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{21A8A5E5-3A66-4A24-86AF-811D031FDECD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{21A8A5E5-3A66-4A24-86AF-811D031FDECD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{21A8A5E5-3A66-4A24-86AF-811D031FDECD}.Release|Any CPU.Build.0 = Release|Any CPU
-		{76D9F54C-159D-45B6-AE19-B98804DD1685}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{76D9F54C-159D-45B6-AE19-B98804DD1685}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{76D9F54C-159D-45B6-AE19-B98804DD1685}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{76D9F54C-159D-45B6-AE19-B98804DD1685}.Release|Any CPU.Build.0 = Release|Any CPU
-		{66F51E51-87B0-4C33-AB24-6571566236B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{66F51E51-87B0-4C33-AB24-6571566236B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{66F51E51-87B0-4C33-AB24-6571566236B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{66F51E51-87B0-4C33-AB24-6571566236B3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F2C4CCCB-AA10-4872-BA4D-6C2712FD8814}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F2C4CCCB-AA10-4872-BA4D-6C2712FD8814}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F2C4CCCB-AA10-4872-BA4D-6C2712FD8814}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F2C4CCCB-AA10-4872-BA4D-6C2712FD8814}.Release|Any CPU.Build.0 = Release|Any CPU
 		{088C66EA-93B2-4D6B-81B5-4AFA7F1D841E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{088C66EA-93B2-4D6B-81B5-4AFA7F1D841E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{088C66EA-93B2-4D6B-81B5-4AFA7F1D841E}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -67,18 +35,6 @@ Global
 		{937AA0FC-52B9-4F29-8C36-85EEB08C7923}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{937AA0FC-52B9-4F29-8C36-85EEB08C7923}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{937AA0FC-52B9-4F29-8C36-85EEB08C7923}.Release|Any CPU.Build.0 = Release|Any CPU
-		{CEA4FD2E-FC46-4082-89D2-0214D95F9D88}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{CEA4FD2E-FC46-4082-89D2-0214D95F9D88}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{CEA4FD2E-FC46-4082-89D2-0214D95F9D88}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{CEA4FD2E-FC46-4082-89D2-0214D95F9D88}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B39BB7C3-B449-4379-8D2C-69FD95AEF6B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B39BB7C3-B449-4379-8D2C-69FD95AEF6B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B39BB7C3-B449-4379-8D2C-69FD95AEF6B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B39BB7C3-B449-4379-8D2C-69FD95AEF6B5}.Release|Any CPU.Build.0 = Release|Any CPU
-		{355B0D48-94F7-438E-A008-9D21F5078F92}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{355B0D48-94F7-438E-A008-9D21F5078F92}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{355B0D48-94F7-438E-A008-9D21F5078F92}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{355B0D48-94F7-438E-A008-9D21F5078F92}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F1A39CAB-D919-4D68-87BF-784B81F8F330}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F1A39CAB-D919-4D68-87BF-784B81F8F330}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F1A39CAB-D919-4D68-87BF-784B81F8F330}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -88,13 +44,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{21A8A5E5-3A66-4A24-86AF-811D031FDECD} = {C87C5541-3CB8-4B64-A15F-4BB70BD55818}
-		{76D9F54C-159D-45B6-AE19-B98804DD1685} = {C87C5541-3CB8-4B64-A15F-4BB70BD55818}
-		{66F51E51-87B0-4C33-AB24-6571566236B3} = {C87C5541-3CB8-4B64-A15F-4BB70BD55818}
-		{F2C4CCCB-AA10-4872-BA4D-6C2712FD8814} = {C87C5541-3CB8-4B64-A15F-4BB70BD55818}
-		{CEA4FD2E-FC46-4082-89D2-0214D95F9D88} = {C87C5541-3CB8-4B64-A15F-4BB70BD55818}
-		{B39BB7C3-B449-4379-8D2C-69FD95AEF6B5} = {C87C5541-3CB8-4B64-A15F-4BB70BD55818}
-		{355B0D48-94F7-438E-A008-9D21F5078F92} = {C87C5541-3CB8-4B64-A15F-4BB70BD55818}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {B2FB0FD5-96B7-4F9A-8E3B-1C29CC84DC5B}

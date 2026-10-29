@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Drawing;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -43,7 +44,7 @@ internal sealed partial class ScreenToolsWindow
         {
             var selected = await PickAsync(token);
             if (generation != _generation || _closed) return;
-            if (selected.HasValue) { _captionRegion = selected; _status.Text = "已选择翻译区域，点击“开始区域翻译”即可开始。"; }
+            if (selected.HasValue) { _captionRegion = selected; _status.Text = L.T("已选择翻译区域，点击“开始区域翻译”即可开始。"); }
         }
         catch (OperationCanceledException) { }
         finally { if (generation == _generation) { _pickingSubtitle = false; RefreshCaptionControls(); } }
@@ -65,12 +66,12 @@ internal sealed partial class ScreenToolsWindow
         {
             if (mode == ScreenCaptionMode.RegionTranslation)
             {
-                if (!_configuration().IsUsable) throw new InvalidOperationException("请先配置区域翻译使用的对话接口和模型。");
+                if (!_configuration().IsUsable) throw new InvalidOperationException(L.T("请先配置区域翻译使用的对话接口和模型。"));
                 if (!_captionRegion.HasValue)
                 {
                     Hide(); await Task.Delay(150, token);
                     var selected = _pickRegion(token);
-                    if (!selected.HasValue) { _status.Text = "已取消区域翻译，未开始读取屏幕。"; return; }
+                    if (!selected.HasValue) { _status.Text = L.T("已取消区域翻译，未开始读取屏幕。"); return; }
                     token.ThrowIfCancellationRequested();
                     if (_closed || generation != _generation) return;
                     _captionRegion = selected;
@@ -80,14 +81,14 @@ internal sealed partial class ScreenToolsWindow
             {
                 var options = _speechConfiguration();
                 if (options.Provider == "windows-local")
-                    throw new InvalidOperationException("持续语音识别请选择 MiMo、兼容接口或本地语音服务；Windows 本机语音仍可用于助手麦克风指令。");
+                    throw new InvalidOperationException(L.T("持续语音识别请选择 MiMo、兼容接口或本地语音服务；Windows 本机语音仍可用于助手麦克风指令。"));
                 SpeechSettings.Validate(options);
                 var capture = _captionCapture = _createSpeechCapture(SpeechRecognizerRegistry.Default.Create(options), _captionSource.SelectedIndex == 0);
                 capture.SegmentRecognized += text => DispatchCaption(() =>
                 {
                     if (generation != _generation || !SpeechRecognitionRunning) return;
                     _original.Text = text; ShowCaptionText(text);
-                    _status.Text = "语音识别中 · " + DateTime.Now.ToString("HH:mm:ss");
+                    _status.Text = L.T("语音识别中 · ") + DateTime.Now.ToString("HH:mm:ss");
                 });
                 capture.Failed += message => DispatchCaption(() => { if (generation == _generation) CaptionFailed(message); });
                 await capture.StartAsync(token);
@@ -99,17 +100,17 @@ internal sealed partial class ScreenToolsWindow
             _pickingSubtitle = false; _subtitleRunning = true; RefreshCaptionControls();
             _subtitleStateChanged?.Invoke(true); Hide();
             if (generation != _generation || !_subtitleRunning || _closed) return;
-            _status.Text = mode == ScreenCaptionMode.RegionTranslation ? "区域翻译中 · 关闭工具窗口后仍继续" : "语音识别中 · 直接显示原文，关闭工具窗口后仍继续";
-            ShowSubtitle(mode == ScreenCaptionMode.RegionTranslation ? "正在读取所选区域…" : _captionSource.SelectedIndex == 0 ? "正在识别系统声音，等待语音…" : "正在识别麦克风，等待语音…");
+            _status.Text = mode == ScreenCaptionMode.RegionTranslation ? L.T("区域翻译中 · 关闭工具窗口后仍继续") : L.T("语音识别中 · 直接显示原文，关闭工具窗口后仍继续");
+            ShowSubtitle(mode == ScreenCaptionMode.RegionTranslation ? L.T("正在读取所选区域…") : _captionSource.SelectedIndex == 0 ? L.T("正在识别系统声音，等待语音…") : L.T("正在识别麦克风，等待语音…"));
             if (mode == ScreenCaptionMode.RegionTranslation) { _timer.Start(); await ReadAndTranslateAsync(); }
         }
         catch (OperationCanceledException)
-        { if (generation == _generation) { StopSubtitles(); _status.Text = "已停止启动"; } }
+        { if (generation == _generation) { StopSubtitles(); _status.Text = L.T("已停止启动"); } }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             if (generation == _generation)
             {
-                StopSubtitles(); _status.Text = error is InvalidOperationException ? error.Message : "启动失败，请检查当前模式所需的接口配置。";
+                StopSubtitles(); _status.Text = error is InvalidOperationException ? error.Message : L.T("启动失败，请检查当前模式所需的接口配置。");
                 showError = true;
             }
         }
@@ -123,10 +124,10 @@ internal sealed partial class ScreenToolsWindow
 
     private void RefreshCaptionControls()
     {
-        _liveButton.Content = _captionMode == ScreenCaptionMode.SpeechRecognition && _pickingSubtitle ? "取消启动语音识别"
-            : SpeechRecognitionRunning ? "停止语音识别" : "开始语音识别";
-        _regionLiveButton.Content = _captionMode == ScreenCaptionMode.RegionTranslation && _pickingSubtitle ? "取消启动区域翻译"
-            : RegionTranslationRunning ? "停止区域翻译" : "开始区域翻译";
+        _liveButton.Content = _captionMode == ScreenCaptionMode.SpeechRecognition && _pickingSubtitle ? L.T("取消启动语音识别")
+            : SpeechRecognitionRunning ? L.T("停止语音识别") : L.T("开始语音识别");
+        _regionLiveButton.Content = _captionMode == ScreenCaptionMode.RegionTranslation && _pickingSubtitle ? L.T("取消启动区域翻译")
+            : RegionTranslationRunning ? L.T("停止区域翻译") : L.T("开始区域翻译");
         _captionSource.IsEnabled = !_pickingSubtitle && !SpeechRecognitionRunning;
     }
 
@@ -155,9 +156,9 @@ internal sealed partial class ScreenToolsWindow
             if (generation != _generation || !RegionTranslationRunning || string.IsNullOrWhiteSpace(text) || text == _lastText) return;
             _original.Text = text; _nextCaption = text; await TranslateCaptionQueueAsync(generation, token);
         }
-        catch (OperationCanceledException) { if (!token.IsCancellationRequested && generation == _generation) CaptionFailed("屏幕文字读取超时，请重新框选区域后开始。"); }
+        catch (OperationCanceledException) { if (!token.IsCancellationRequested && generation == _generation) CaptionFailed(L.T("屏幕文字读取超时，请重新框选区域后开始。")); }
         catch (Exception error) when (error is not OutOfMemoryException)
-        { if (generation == _generation && !token.IsCancellationRequested) CaptionFailed(error is InvalidOperationException ? error.Message : "屏幕文字读取失败，请重新框选区域。"); }
+        { if (generation == _generation && !token.IsCancellationRequested) CaptionFailed(error is InvalidOperationException ? error.Message : L.T("屏幕文字读取失败，请重新框选区域。")); }
         finally { if (_captionReadGeneration == generation) _readingCaptionRegion = false; }
     }
 
@@ -175,12 +176,12 @@ internal sealed partial class ScreenToolsWindow
                 string translated = await _translateCaption(text, _configuration(), timeout.Token, _subtitleLanguage());
                 token.ThrowIfCancellationRequested();
                 if (!RegionTranslationRunning || generation != _generation || _closed) return;
-                _lastText = text; ShowCaptionText(translated); _status.Text = "区域翻译已更新 · " + DateTime.Now.ToString("HH:mm:ss");
+                _lastText = text; ShowCaptionText(translated); _status.Text = L.T("区域翻译已更新 · ") + DateTime.Now.ToString("HH:mm:ss");
             }
         }
-        catch (OperationCanceledException) { if (!token.IsCancellationRequested && generation == _generation) CaptionFailed("区域翻译超时，请检查翻译接口后重新开始。"); }
+        catch (OperationCanceledException) { if (!token.IsCancellationRequested && generation == _generation) CaptionFailed(L.T("区域翻译超时，请检查翻译接口后重新开始。")); }
         catch (Exception error) when (error is not OutOfMemoryException)
-        { if (generation == _generation && !token.IsCancellationRequested) CaptionFailed(error is InvalidOperationException ? error.Message : "区域翻译连接中断，请检查翻译接口。"); }
+        { if (generation == _generation && !token.IsCancellationRequested) CaptionFailed(error is InvalidOperationException ? error.Message : L.T("区域翻译连接中断，请检查翻译接口。")); }
         finally
         {
             if (_captionTranslationGeneration == generation) _translatingCaption = false;
@@ -198,7 +199,7 @@ internal sealed partial class ScreenToolsWindow
         _captionCapture?.Dispose(); _captionCapture = null; _nextCaption = null; _captionSegments.Clear(); _readingCaptionRegion = false;
         RefreshCaptionControls();
         var subtitle = _subtitle; _subtitle = null; subtitle?.Close();
-        if (wasRunning || wasStarting) _status.Text = _captionMode == ScreenCaptionMode.SpeechRecognition ? "语音识别已停止" : "区域翻译已停止";
+        if (wasRunning || wasStarting) _status.Text = _captionMode == ScreenCaptionMode.SpeechRecognition ? L.T("语音识别已停止") : L.T("区域翻译已停止");
         if (wasRunning) _subtitleStateChanged?.Invoke(false);
     }
 }

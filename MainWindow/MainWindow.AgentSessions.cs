@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -48,29 +49,29 @@ public partial class MainWindow
     {
         "codex" => "Codex", "antigravity" => "Antigravity", "deepseek-harness" or "dsh" => "DSH",
         "claude-code" => "Claude Code",
-        "internal" => "AI 助手", _ => source
+        "internal" => L.T("AI 助手"), _ => source
     };
-    private string AgentLabel(string key) => AgentSession(key) is { } view ? AgentSourceName(view.Source) + " · 会话 " + view.Number : "AI 助手";
+    private string AgentLabel(string key) => AgentSession(key) is { } view ? AgentSourceName(view.Source) + L.T(" · 会话 ") + view.Number : L.T("AI 助手");
     private AgentRunState AgentStateFor(string? key) => AgentSession(key) is { } view ? view.Activity?.State ?? AgentRunState.Idle : key == AgentTickerKey ? AgentStatus.State : AgentRunState.Idle;
     private Brush AgentBrush(string key) => AgentStateFor(key) == AgentRunState.Idle ? ResolveAccentBrush()
         : new SolidColorBrush(ParseAgentColor(AgentStatus.ColorHexFor(AgentStateFor(key))));
-    private int AgentSessionPriority(string key) => AgentStateFor(key) == AgentRunState.ToolWait ? 84 : 48;
+    private int AgentSessionPriority(string key) => AgentStateFor(key) is AgentRunState.ToolWait or AgentRunState.InputWait ? 84 : 48;
     private string AgentGlyph(string key) => AgentStateFor(key) switch
     {
         AgentRunState.Working => "\uE713", AgentRunState.Thinking => "\uE945", AgentRunState.Streaming => "\uE895", AgentRunState.ToolWait => "\uE73E",
-        AgentRunState.Error => "\uE783", _ => "\uE99A"
+        AgentRunState.InputWait => "\uE897", AgentRunState.Error => "\uE783", _ => "\uE99A"
     };
     private static string AgentStateTitle(AgentRunState state) => state switch
     {
-        AgentRunState.Working => "正在执行", AgentRunState.Thinking => "正在思考", AgentRunState.Streaming => "正在输出", AgentRunState.ToolWait => "等待工具授权",
-        AgentRunState.Error => "出错了", _ => "空闲"
+        AgentRunState.Working => L.T("正在执行"), AgentRunState.Thinking => L.T("正在思考"), AgentRunState.Streaming => L.T("正在输出"), AgentRunState.ToolWait => L.T("等待工具授权"),
+        AgentRunState.InputWait => L.T("等待回复"), AgentRunState.Error => L.T("出错了"), _ => L.T("空闲")
     };
     private bool AgentHasDefaultAvatar(string key) => AgentSession(key) is { } avatar
         && AgentAvatarMotion.UsesDefaultAvatar(AvatarSource(avatar), _agentSessionArtworks.GetValueOrDefault(avatar.Owner));
     private ActionIconAnimation AgentMotion(string key) => AgentHasDefaultAvatar(key)
         ? ActionIconAnimation.None : AgentStateFor(key) switch
     {
-        AgentRunState.Thinking => ActionIconAnimation.Spin, AgentRunState.ToolWait or AgentRunState.Idle => ActionIconAnimation.Tick,
+        AgentRunState.Thinking => ActionIconAnimation.Spin, AgentRunState.ToolWait or AgentRunState.InputWait or AgentRunState.Idle => ActionIconAnimation.Tick,
         AgentRunState.Error => ActionIconAnimation.Disconnect, _ => ActionIconAnimation.Pulse
     };
     private bool AgentSessionHidden(AgentSessionView view) => MediaWindowHandoffEnabled
@@ -150,7 +151,7 @@ public partial class MainWindow
                 bool up = view.Activity != null && !hidden;
                 long activityId = view.Activity?.ActivityId ?? 0;
                 var state = view.Activity?.State ?? AgentRunState.Idle;
-                bool enteredWait = state == AgentRunState.ToolWait && view.LastState != state;
+                bool enteredWait = state is AgentRunState.ToolWait or AgentRunState.InputWait && view.LastState != state;
                 bool stateChanged = view.LastState != state;
                 bool newActivity = activityId != 0 && activityId != view.LastActivityId;
                 WriteAgentSession(view);
@@ -173,7 +174,7 @@ public partial class MainWindow
             BarAgentDot.Visibility = _barAgentVisible ? Visibility.Visible : Visibility.Collapsed;
             if (_barAgentVisible)
             {
-                var activity = _agentSessions.Values.Where(v => v.Up).OrderByDescending(v => v.Activity!.State == AgentRunState.ToolWait ? 4 : v.Activity.State == AgentRunState.Error ? 3 : v.Activity.State is AgentRunState.Working or AgentRunState.Streaming ? 2 : 1).First().Activity!;
+                var activity = _agentSessions.Values.Where(v => v.Up).OrderByDescending(v => v.Activity!.State == AgentRunState.ToolWait ? 5 : v.Activity.State == AgentRunState.InputWait ? 4 : v.Activity.State == AgentRunState.Error ? 3 : v.Activity.State is AgentRunState.Working or AgentRunState.Streaming ? 2 : 1).First().Activity!;
                 BarAgentDot.Fill = new SolidColorBrush(ParseAgentColor(AgentStatus.ColorHexFor(activity.State)));
             }
             SyncNotificationLayers(); CollapseSuppressedAgentIsland(); RestorePinnedIdleAgentIsland();
@@ -187,10 +188,11 @@ public partial class MainWindow
         string title = AgentStateTitle(state);
         view.Title.Text = _agentSessions.Count > 1 || view.Key != AgentTickerKey
             ? AgentSourceName(view.Source) + " " + view.Number + " · " + (state switch
-            { AgentRunState.Working => "执行中", AgentRunState.Thinking => "思考中", AgentRunState.Streaming => "输出中", AgentRunState.ToolWait => "等待授权", AgentRunState.Error => "出错了", _ => "空闲" })
+            { AgentRunState.Working => L.T("执行中"), AgentRunState.Thinking => L.T("思考中"), AgentRunState.Streaming => L.T("输出中"), AgentRunState.ToolWait => L.T("等待授权"), AgentRunState.InputWait => L.T("等待回复"), AgentRunState.Error => L.T("出错了"), _ => L.T("空闲") })
             : title;
         view.Detail.Text = view.Activity?.Detail is { Length: > 0 } detail ? detail
-            : view.Activity == null ? "当前没有运行中的任务" : "agent 运行中";
+            : view.Activity == null ? L.T("当前没有运行中的任务") : L.T("agent 运行中");
+        if (state == AgentRunState.InputWait) view.Detail.Text = L.T("请在原对话中回复");
         view.Value.Text = view.Activity == null ? "—" : state == AgentRunState.Error ? "⚠"
             : Math.Max(0, (DateTime.UtcNow - view.Activity.SinceUtc).TotalSeconds).ToString("0.0") + "s";
         view.Icon.Text = AgentGlyph(view.Key); view.Icon.Active = view.Activity != null; view.Icon.Foreground = AgentBrush(view.Key);

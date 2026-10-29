@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Media;
 using Brush = System.Windows.Media.Brush;
@@ -23,7 +24,7 @@ public sealed class LyricBeatDots : FrameworkElement
     public LyricBeatDots()
     {
         IsHitTestVisible = false;
-        System.Windows.Automation.AutomationProperties.SetName(this, "前奏或间奏");
+        System.Windows.Automation.AutomationProperties.SetName(this, L.T("前奏或间奏"));
     }
 
     internal void SetFrame(TimeSpan position, bool moving, float energy = 0)

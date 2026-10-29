@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
@@ -9,7 +10,7 @@ namespace alpha_island.Services;
 public sealed record WeatherCity(string Name, double Latitude, double Longitude, string Region = "")
 {
     public string Display => Region.Length == 0 ? Name : Name + " · " + Region;
-    public static WeatherCity Beijing { get; } = new("北京", 39.9042, 116.4074, "中国");
+    public static WeatherCity Beijing { get; } = new(L.T("北京"), 39.9042, 116.4074, L.T("中国"));
 }
 
 public sealed record WeatherSnapshot(WeatherCity City, double Temperature, double FeelsLike,
@@ -44,7 +45,7 @@ public sealed class WeatherService : IDisposable
 
     public async Task<IReadOnlyList<WeatherCity>> SearchAsync(string query, CancellationToken ct)
     {
-        string url = "https://geocoding-api.open-meteo.com/v1/search?count=5&language=zh&format=json&name=" + Uri.EscapeDataString(query.Trim());
+        string url = $"https://geocoding-api.open-meteo.com/v1/search?count=5&language={(L.IsEnglish ? "en" : "zh")}&format=json&name=" + Uri.EscapeDataString(query.Trim());
         using var json = JsonDocument.Parse(await _http.GetStringAsync(url, ct).ConfigureAwait(false));
         if (!json.RootElement.TryGetProperty("results", out var results)) return Array.Empty<WeatherCity>();
         return results.EnumerateArray().Select(x => new WeatherCity(x.GetProperty("name").GetString() ?? query,
@@ -60,12 +61,12 @@ public sealed class WeatherService : IDisposable
             "&longitude=" + Number(longitude), ct).ConfigureAwait(false));
         string name = Text(json.RootElement, "city");
         if (name.Length == 0) name = Text(json.RootElement, "locality");
-        return new WeatherCity(name.Length == 0 ? "系统定位地区" : name, latitude, longitude);
+        return new WeatherCity(name.Length == 0 ? L.T("系统定位地区") : name, latitude, longitude);
     }
 
     public async Task<WeatherSnapshot> GetAsync(WeatherCity city, CancellationToken ct)
     {
-        if (!ValidCity(city)) throw new ArgumentException("城市坐标无效");
+        if (!ValidCity(city)) throw new ArgumentException(L.T("城市坐标无效"));
         string url = "https://api.open-meteo.com/v1/forecast?latitude=" + Number(city.Latitude) + "&longitude=" + Number(city.Longitude) +
             "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m" +
             "&hourly=temperature_2m,weather_code,precipitation_probability,precipitation,wind_speed_10m,wind_gusts_10m" +
@@ -108,13 +109,13 @@ public sealed class WeatherService : IDisposable
         var current = root.GetProperty("current");
         var daily = root.GetProperty("daily");
         int offset = root.TryGetProperty("utc_offset_seconds", out var zone) ? zone.GetInt32() : 0;
-        if (offset is < -43200 or > 50400) throw new JsonException("天气时区无效");
+        if (offset is < -43200 or > 50400) throw new JsonException(L.T("天气时区无效"));
         double temperature = current.GetProperty("temperature_2m").GetDouble();
         double feels = current.GetProperty("apparent_temperature").GetDouble();
         double low = daily.GetProperty("temperature_2m_min")[0].GetDouble();
         double high = daily.GetProperty("temperature_2m_max")[0].GetDouble();
         if (!double.IsFinite(temperature) || !double.IsFinite(feels) || !double.IsFinite(low) || !double.IsFinite(high))
-            throw new JsonException("天气数据无效");
+            throw new JsonException(L.T("天气数据无效"));
         var days = new List<WeatherDay>();
         if (daily.TryGetProperty("time", out var dates))
             for (int i = 0; i < Math.Min(3, dates.GetArrayLength()); i++)
@@ -157,10 +158,10 @@ public sealed class WeatherService : IDisposable
     private static string Text(JsonElement x, string key) => x.TryGetProperty(key, out var value) ? value.GetString() ?? "" : "";
     internal static string Describe(int code) => code switch
     {
-        0 => "晴", 1 => "大部晴朗", 2 => "多云", 3 => "阴", 45 or 48 => "雾",
-        51 or 53 or 55 => "毛毛雨", 56 or 57 or 66 or 67 => "冻雨",
-        61 or 63 or 65 => "雨", 71 or 73 or 75 or 77 => "雪",
-        80 or 81 or 82 => "阵雨", 85 or 86 => "阵雪", 95 or 96 or 97 or 99 => "雷雨", _ => "天气状态未知"
+        0 => L.T("晴"), 1 => L.T("大部晴朗"), 2 => L.T("多云"), 3 => L.T("阴"), 45 or 48 => L.T("雾"),
+        51 or 53 or 55 => L.T("毛毛雨"), 56 or 57 or 66 or 67 => L.T("冻雨"),
+        61 or 63 or 65 => L.T("雨"), 71 or 73 or 75 or 77 => L.T("雪"),
+        80 or 81 or 82 => L.T("阵雨"), 85 or 86 => L.T("阵雪"), 95 or 96 or 97 or 99 => L.T("雷雨"), _ => L.T("天气状态未知")
     };
     public void Dispose() { if (_ownsClient) _http.Dispose(); }
 }

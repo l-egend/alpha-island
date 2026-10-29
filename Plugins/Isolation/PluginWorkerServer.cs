@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
@@ -131,6 +132,8 @@ internal sealed class PluginWorkerServer : IDisposable
     private RemoteRegistry Initialize(PluginStart start)
     {
         if (_plugin != null) throw new InvalidOperationException("插件已经启动");
+        AlphaIsland.PluginSdk.Localization.UiText.Initialize(start.InterfaceLanguage);
+        _owner.Language = System.Windows.Markup.XmlLanguage.GetLanguage(AlphaIsland.PluginSdk.Localization.UiText.Language);
         _settingsOnly = start.SettingsOnly;
         string directory = Path.GetFullPath(start.Directory);
         string assembly = Path.GetFullPath(Path.Combine(directory, start.Assembly));
@@ -226,7 +229,7 @@ internal sealed class PluginWorkerServer : IDisposable
         if (_settingsOnly && key != "$settings") throw new InvalidOperationException("当前进程仅用于插件设置");
         if (_surfaces.TryGetValue(key, out var existing)) return existing;
         FrameworkElement view = key == "$settings"
-            ? new C.ScrollViewer { Content = Context.SettingsView?.Invoke() ?? throw new InvalidOperationException("插件没有设置界面"), VerticalScrollBarVisibility = C.ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = C.ScrollBarVisibility.Disabled }
+            ? new C.ScrollViewer { Content = Context.SettingsView?.Invoke() ?? throw new InvalidOperationException(L.T("插件没有设置界面")), VerticalScrollBarVisibility = C.ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = C.ScrollBarVisibility.Disabled }
             : Context.Pages.FirstOrDefault(page => page.Key == key)?.CreateView() ?? throw new InvalidDataException("插件页面不存在");
         if (view.Parent != null) throw new InvalidDataException("插件页面已经属于另一个容器");
         var surface = new PluginWorkerSurface(view);

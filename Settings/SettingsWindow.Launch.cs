@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using alpha_island.Core;
@@ -14,7 +15,7 @@ public partial class SettingsWindow
     private TextBlock _startupHint = null!;
     private bool _startupUpdating;
     private bool _startupActual;
-    private const string StartupHint = "登录 Windows 时自动启动；首次启用会申请开机日志只读权限";
+    private static string StartupHint => L.T("登录 Windows 时自动启动；首次启用会申请开机日志只读权限");
 
     private Grid LaunchSettingRow(string glyph, string title, string hint, CheckBox toggle, out TextBlock description)
     {
@@ -37,13 +38,13 @@ public partial class SettingsWindow
     private void AddLaunchSettings()
     {
         var startup = new StackPanel();
-        startup.Children.Add(new TextBlock { Text = "启动", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
+        startup.Children.Add(new TextBlock { Text = L.T("启动"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         _startupToggle = new CheckBox { Name = "StartupEnabledToggle", IsEnabled = _startupRegistration != null };
-        var row = LaunchSettingRow("\uE7E8", "开机自启动", StartupHint, _startupToggle, out _startupHint);
+        var row = LaunchSettingRow("\uE7E8", L.T("开机自启动"), StartupHint, _startupToggle, out _startupHint);
         _startupToggle.Checked += Startup_Changed; _startupToggle.Unchecked += Startup_Changed;
         var startupRows = new StackPanel(); startupRows.Children.Add(SettingCard(row));
         var bootToggle = new CheckBox { Name = "StartupBootTimeToggle" };
-        startupRows.Children.Add(SettingCard(LaunchSettingRow("\uE916", "开机耗时提醒", "显示开机耗时；缺少精确记录时提供参考值", bootToggle, out _)));
+        startupRows.Children.Add(SettingCard(LaunchSettingRow("\uE916", L.T("开机耗时提醒"), L.T("显示开机耗时；缺少精确记录时提供参考值"), bootToggle, out _)));
         bootToggle.Checked += Setting_Changed; bootToggle.Unchecked += Setting_Changed;
         startup.Children.Add(startupRows);
         Page_General.Children.Insert(1, startup);
@@ -52,7 +53,7 @@ public partial class SettingsWindow
         var clipboardRows = ClipboardSettingsRows;
         int index = clipboardRows.Children.IndexOf((UIElement)clipboardRow.Parent) + 1;
         var linkToggle = new CheckBox { Name = "ClipboardLinkToggle" };
-        var linkRow = LaunchSettingRow("\uE71B", "识别剪贴板链接", "复制单个网页链接后，点击岛用默认浏览器打开", linkToggle, out _);
+        var linkRow = LaunchSettingRow("\uE71B", L.T("识别剪贴板链接"), L.T("复制网页链接后，点击 alpha island 使用默认浏览器打开"), linkToggle, out _);
         linkToggle.Checked += Setting_Changed; linkToggle.Unchecked += Setting_Changed;
         clipboardRows.Children.Insert(index, SettingCard(linkRow));
     }
@@ -67,12 +68,12 @@ public partial class SettingsWindow
             _startupToggle.IsChecked = _startupActual;
             _startupToggle.IsEnabled = true;
             _startupHint.Text = _startupRegistration.IsDisabledByWindows
-                ? "已在 Windows 启动应用中禁用，请到 Windows 设置 → 应用 → 启动中重新开启" : StartupHint;
+                ? L.T("已在 Windows 启动应用中禁用，请到 Windows 设置 → 应用 → 启动中重新开启") : StartupHint;
         }
         catch (Exception ex)
         {
             _startupActual = false; _startupToggle.IsChecked = false;
-            _startupToggle.IsEnabled = true; _startupHint.Text = "自启动尚未恢复：" + ex.Message;
+            _startupToggle.IsEnabled = true; _startupHint.Text = L.T("自启动尚未恢复：") + ex.Message;
             IslandLog.Warn("Startup", "恢复自启动失败：" + ex.Message);
         }
     }
@@ -88,7 +89,7 @@ public partial class SettingsWindow
         {
             if (enabled)
             {
-                _startupHint.Text = "正在申请开机日志读取权限，请完成 Windows 授权…";
+                _startupHint.Text = L.T("正在申请开机日志读取权限，请完成 Windows 授权…");
                 await _authorizeBootLog();
             }
             _startupRegistration.SetEnabled(enabled);
@@ -102,7 +103,7 @@ public partial class SettingsWindow
             _startupToggle.IsChecked = _startupActual;
             SettingsRegistry.Write(_options, "StartupEnabled", previousPreference);
             _startupHint.Text = ex is System.ComponentModel.Win32Exception { NativeErrorCode: 1223 }
-                ? "已取消 Windows 授权，自启动未启用" : "修改自启动失败：" + ex.Message;
+                ? L.T("已取消 Windows 授权，自启动未启用") : L.T("修改自启动失败：") + ex.Message;
             IslandLog.Warn("Startup", "修改自启动失败：" + ex.Message);
         }
         finally { _startupUpdating = false; _startupToggle.IsEnabled = true; }

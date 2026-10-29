@@ -6,7 +6,7 @@ using alpha_island.Core;
 namespace alpha_island.Services;
 
 /// <summary>Read only the terminal status of an exact native turn. No messages, log text or account credentials are read.</summary>
-internal sealed class CodexTurnHistory
+internal sealed partial class CodexTurnHistory
 {
     private readonly Dictionary<(string Thread, string Turn), string> _resolvedThreads = new();
     internal bool IgnoreCompletedReport(ExternalAgentRegistry registry, string thread, string turn, DateTime reportedUtc, DateTime receivedUtc)
@@ -130,12 +130,12 @@ internal sealed class CodexTurnHistory
             System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed) ? parsed.UtcDateTime : null;
     }
 
-    private static string ResolveHome()
+    internal static string ResolveHome(string? registrationFile = null)
     {
         if (Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } home && Path.IsPathFullyQualified(home)) return home;
         try
         {
-            var file = new FileInfo(AppPaths.CodexHooksConfigFile);
+            var file = new FileInfo(registrationFile ?? AppPaths.CodexHooksConfigFile);
             if (file.Exists && file.Length <= 64 * 1024)
             {
                 using var config = JsonDocument.Parse(File.ReadAllText(file.FullName));

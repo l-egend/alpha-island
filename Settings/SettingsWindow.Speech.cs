@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using AlphaIsland.PluginSdk;
 using System.Windows;
@@ -14,53 +15,53 @@ public partial class SettingsWindow
     internal string? SpeechSecretRoot { get; set; }
     private static IReadOnlyDictionary<string, string>? SpeechChoices(string key) => key switch
     {
-        "SpeechProvider" => AiServicePresets.Speech.ToDictionary(preset => preset.Id, preset => preset.Name),
-        "SpeechLanguage" => new Dictionary<string, string> { ["auto"] = "自动检测", ["zh"] = "中文", ["en"] = "英文" },
+        "SpeechProvider" => AiServicePresets.Speech.ToDictionary(preset => preset.Id, preset => preset.DisplayName),
+        "SpeechLanguage" => new Dictionary<string, string> { ["auto"] = L.T("自动检测"), ["zh"] = L.T("中文"), ["en"] = L.T("英文") },
         "SubtitleTargetLanguage" => new Dictionary<string, string>
-        { ["zh-CN"] = "简体中文", ["en"] = "英语", ["ja"] = "日语", ["ko"] = "韩语" },
+        { ["zh-CN"] = L.T("简体中文"), ["en"] = L.T("英语"), ["ja"] = L.T("日语"), ["ko"] = L.T("韩语") },
         _ => null
     };
     private void AddSpeechSettings(StackPanel rows)
     {
         var panel = new StackPanel(); _speechSettingsPanel = panel;
-        panel.Children.Add(new TextBlock { Text = "语音识别与区域翻译", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 12, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = L.T("语音识别与区域翻译"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 12, 0, 12) });
         foreach (var descriptor in SettingsRegistry.ByPage(SettingsPageIds.Assistant).Where(d => d.Key.StartsWith("Speech") || d.Key == "SubtitleTargetLanguage"))
             panel.Children.Add(CreateRegisteredSettingRow(descriptor));
         var key = new PasswordBox { Name = "SpeechApiKeyBox", MinHeight = 32, Margin = new Thickness(0, 0, 0, 8), MaxLength = 1024 };
         RegisterName(key.Name, key);
-        System.Windows.Automation.AutomationProperties.SetName(key, "语音识别 API Key");
+        System.Windows.Automation.AutomationProperties.SetName(key, L.T("语音识别 API Key"));
         var status = new TextBlock { Style = (Style)FindResource("W11RowHint"), Margin = new Thickness(0, 6, 0, 0) };
-        void RefreshKeyStatus() => status.Text = !File.Exists(SpeechSettings.SecretPath(SpeechSecretRoot)) ? "未保存密钥；本地服务可留空。"
-            : SpeechSettings.KeyMatches(_options) ? "语音密钥已加密保存。" : "请保存当前服务的密钥。";
+        void RefreshKeyStatus() => status.Text = !File.Exists(SpeechSettings.SecretPath(SpeechSecretRoot)) ? L.T("未保存密钥；本地服务可留空。")
+            : SpeechSettings.KeyMatches(_options) ? L.T("语音密钥已加密保存。") : L.T("请保存当前服务的密钥。");
         _refreshSpeechKeyStatus = RefreshKeyStatus;
         RefreshKeyStatus();
         var actions = new WrapPanel();
-        foreach (var (label, clear) in new[] { ("保存语音密钥", false), ("清除密钥", true) })
+        foreach (var (label, clear) in new[] { (L.T("保存语音密钥"), false), (L.T("清除密钥"), true) })
         {
             var button = new Button { Content = label, Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(0, 0, 8, 0) };
             button.Name = clear ? "SpeechClearKeyButton" : "SpeechSaveKeyButton"; RegisterName(button.Name, button);
             button.Click += (_, _) =>
             {
-                if (!clear && string.IsNullOrWhiteSpace(key.Password)) { status.Text = "请先输入语音识别 API Key。"; return; }
+                if (!clear && string.IsNullOrWhiteSpace(key.Password)) { status.Text = L.T("请先输入语音识别 API Key。"); return; }
                 bool saved = SpeechSettings.SaveKey(clear ? "" : key.Password.Trim(), SpeechSecretRoot);
                 if (saved)
                 {
                     SettingsRegistry.SetExtra(_options, "SpeechSecretEndpoint", clear ? "" : SettingsRegistry.GetText(_options, "SpeechBaseUrl", SpeechSettings.DefaultUrl));
                     ApplyChanges(); key.Clear(); RefreshKeyStatus();
                 }
-                else status.Text = "密钥保存失败，请重试。";
+                else status.Text = L.T("密钥保存失败，请重试。");
                 ReportSettingsSaved(saved);
             };
             actions.Children.Add(button);
         }
         var keyPanel = new StackPanel { Margin = new Thickness(12) };
-        keyPanel.Children.Add(new TextBlock { Text = "语音识别 API Key", Style = (Style)FindResource("W11RowLabel"), Margin = new Thickness(0, 0, 0, 8) });
+        keyPanel.Children.Add(new TextBlock { Text = L.T("语音识别 API Key"), Style = (Style)FindResource("W11RowLabel"), Margin = new Thickness(0, 0, 0, 8) });
         keyPanel.Children.Add(key); keyPanel.Children.Add(actions); keyPanel.Children.Add(status);
         panel.Children.Add(SettingCard(keyPanel));
         panel.Children.Add(CreateSpeechSetupActions());
         panel.Children.Add(new TextBlock
         {
-            Text = "语音识别显示原文；区域翻译需框选。关闭工具窗口后继续运行，点 × 停止。",
+            Text = L.T("语音识别显示原文；区域翻译需框选。关闭工具窗口后继续运行，点 × 停止。"),
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 2, 12, 18), Opacity = .7
         });
         rows.Children.Add(panel);

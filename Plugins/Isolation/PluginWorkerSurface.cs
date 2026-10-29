@@ -92,7 +92,8 @@ internal sealed class PluginWorkerSurface
                         element is C.PasswordBox password ? password.Password.Length > 0 : (element as C.CheckBox)?.IsChecked, clip.X - box.X, clip.Y - box.Y, clip.Width, clip.Height,
                         (control?.FontWeight ?? blockElement?.FontWeight ?? FontWeights.Normal).ToOpenTypeWeight() >= 600,
                         blockElement?.TextWrapping == TextWrapping.Wrap, element is ScrollBar bar ? bar.Orientation.ToString() : blockElement?.TextAlignment.ToString() ?? "Left",
-                        element is C.Button or C.CheckBox ? Snapshot(element, box.Width, box.Height, scale) : "", element.ToolTip as string ?? "", (element as ScrollBar)?.ViewportSize ?? 0, element is C.ComboBox { IsEditable: true }));
+                        element is C.Button or C.CheckBox ? Snapshot(element, box.Width, box.Height, scale) : "", element.ToolTip as string ?? "", (element as ScrollBar)?.ViewportSize ?? 0, element is C.ComboBox { IsEditable: true },
+                        blockElement != null && double.IsFinite(blockElement.LineHeight) ? blockElement.LineHeight : 0));
                     hidden.Add((element, element.Opacity));
                     return; // A control's template is rendered by the host, not duplicated as child controls.
                 }

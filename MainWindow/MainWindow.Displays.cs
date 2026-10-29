@@ -18,6 +18,7 @@ public partial class MainWindow
             if (_exiting) return;
             CloseComponentSwitcher();
             PositionWindow();
+            _browserWindowMonitor?.RequestRefresh();
             _cachedIslandScreenRect = Rect.Empty;
             PublishIslandRect(Rect.Empty);
             _glassGeneration++;

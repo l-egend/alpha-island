@@ -60,6 +60,8 @@ internal static class ExternalTranslationLauncher
 
     internal static async Task<ShortcutSendResult> SendAsync(ExternalTranslationOptions options, ShortcutSimulationService shortcut, CancellationToken cancellationToken)
     {
+        if (!options.Enabled) return new(false, "外部翻译调用未启用。");
+        if (!options.IsConfigured) return new(false, "请先填写应用名称和快捷键。");
         if (!ShortcutSimulationService.TryParse(options.Shortcut, out _)) return new(false, "快捷键格式无效，请在设置中修改。");
         if (IsYoudao(options.Name))
         {
@@ -68,7 +70,7 @@ internal static class ExternalTranslationLauncher
             if (!running)
             {
                 string? executable = await Task.Run(FindYoudao, cancellationToken).ConfigureAwait(false);
-                if (executable == null) return new(false, "未检测到网易有道翻译。请先安装，或在设置中选择其他翻译软件及其快捷键。");
+                if (executable == null) return new(false, "未找到所配置的应用，请先运行该应用或检查设置。");
                 using var process = Process.Start(new ProcessStartInfo(executable) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden });
                 // 首次启动需要等待软件注册全局热键；已运行时保持原来快速调用路径。
                 if (process != null) await Task.Run(() => { try { process.WaitForInputIdle(4000); } catch (InvalidOperationException) { } }, cancellationToken).ConfigureAwait(false);

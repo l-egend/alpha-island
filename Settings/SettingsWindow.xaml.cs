@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -34,10 +35,6 @@ namespace alpha_island.Settings
         /// <summary>左侧导航栏是否处于展开态（收起时只留图标，不显示文字）。</summary>
         private bool _navExpanded = true;
 
-        /// <summary>「关于」页里异步能力（无线电/出网）还没探完时的有限次补刷。</summary>
-        private DispatcherTimer? _aboutRetryTimer;
-        private int _aboutRetryTicks;
-
         private const double NavWidthExpanded = 196.0;
         private const double NavWidthCollapsed = 48.0;
 
@@ -61,7 +58,8 @@ namespace alpha_island.Settings
             _startupRegistration = startupRegistration ?? (persistSettings ? new StartupRegistrationService() : null);
             _authorizeBootLog = authorizeBootLog ?? (persistSettings ? BootLogAccess.EnsureReadAccessAsync : () => Task.CompletedTask);
             InitializeComponent();
-            AboutVersionText.Text = "版本 " + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "未知");
+            Language = System.Windows.Markup.XmlLanguage.GetLanguage(L.Language);
+            AboutVersionText.Text = L.T("版本 ") + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? L.T("未知"));
             PreviewKeyDown += (_, e) =>
             {
                 if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && !_recordingShortcut)
@@ -79,13 +77,14 @@ namespace alpha_island.Settings
             AddLyricsSourceSettings();
             AddWeatherSettings();
             AddLaunchSettings();
+            AddLanguageSettings();
             AddGreetingMediaSettings();
             AddWorkspaceSettings();
             AddAssistantSettings();
             AddConsolidatedEditors();
             AddExternalTranslationSettings();
             AddAgentIntegrationSettings();
-            AddFirstUseSettings();
+            AddProjectAboutSettings();
 
             _saveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
             {
@@ -372,6 +371,7 @@ namespace alpha_island.Settings
             RefreshLyricsSourceSettings();
             LoadStartupRegistrationState();
             LoadStatusDisplayRows();
+            UpdateLanguageRestartHint();
 
             _suppress = false;
             UpdateEnabledStates();
@@ -668,101 +668,8 @@ namespace alpha_island.Settings
             TransitionSettingsPage(target, pages);
             UpdateNavigationSelection(sender as RadioButton, animate: true);
 
-            // 「关于」页每次切进来都重读一遍：版本/能力/服务/日志都是只读的即时信息。
-            if (tag == SettingsPageIds.About) RefreshDiagnostics();
-
             // 一行可断言的诊断：设置页切换落地了没有（脚本用 ALPHA_ISLAND_SETTINGS_PAGE 验收时看它）。
             IslandLog.Debug("Settings", $"设置页 → {tag}（{target.Name ?? "?"} 可见，其余 {pages.Length - 1} 页收起）");
-        }
-
-        /// <summary>
-        /// 刷新「关于」页的只读诊断区块。幂等；能力探测直接吃 <see cref="CapabilityProbe"/> 的缓存
-        /// （异步能力还没探完就先显示「未探测」，<see cref="CapabilityProbe.Changed"/> 回来时再补一次）。
-        /// </summary>
-        private void RefreshDiagnostics()
-        {
-            if (AboutText != null)
-            {
-                try { AboutText.Text = DiagnosticsReport.EnvironmentText(); }
-                catch (Exception ex) { AboutText.Text = "环境信息读取失败：" + ex.Message; }
-            }
-
-            RefreshCapabilityText();
-            ScheduleCapabilityRetry();
-
-            if (ServiceText != null)
-            {
-                string text = DiagnosticsReport.RegisteredSectionText("服务状态");
-                ServiceText.Text = string.IsNullOrWhiteSpace(text) ? "服务宿主尚未接入（阶段 3.3）。" : text;
-            }
-
-            if (LogText != null)
-            {
-                try { LogText.Text = DiagnosticsReport.RecentLogText(120); }
-                catch (Exception ex) { LogText.Text = "日志读取失败：" + ex.Message; }
-            }
-
-            // 设置窗口没有自动化测试，出问题时只能靠这一行判断「关于」页到底填了多少内容。
-            IslandLog.Debug("Settings",
-                $"关于页刷新 env={AboutText?.Text.Length ?? -1} cap={CapabilityText?.Text.Length ?? -1} " +
-                $"svc={ServiceText?.Text.Length ?? -1} log={LogText?.Text.Length ?? -1}");
-        }
-
-        private void RefreshCapabilityText()
-        {
-            if (CapabilityText == null) return;
-            try { CapabilityText.Text = DiagnosticsReport.CapabilityText(); }
-            catch (Exception ex) { CapabilityText.Text = "能力检测失败：" + ex.Message; }
-        }
-
-        /// <summary>
-        /// 无线电/出网这两项是异步探测，启动后几百毫秒才有结论；这里做有限次补刷（约 6 秒上限）。
-        /// 只在「关于」页可见时跑，且 <see cref="CapabilityProbe.Check"/> 内部有 in-flight 保护不会重复打网络。
-        /// </summary>
-        private void ScheduleCapabilityRetry()
-        {
-            if (!HasUnknownCapability()) return;
-
-            _aboutRetryTimer ??= new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
-            {
-                Interval = TimeSpan.FromMilliseconds(700),
-            };
-
-            _aboutRetryTimer.Tick -= OnAboutRetryTick;
-            _aboutRetryTimer.Tick += OnAboutRetryTick;
-            _aboutRetryTicks = 0;
-            _aboutRetryTimer.Start();
-        }
-
-        private void OnAboutRetryTick(object? sender, EventArgs e)
-        {
-            _aboutRetryTicks++;
-
-            bool onPage = Page_About != null && Page_About.Visibility == Visibility.Visible;
-            if (onPage) RefreshCapabilityText();
-
-            if (_aboutRetryTicks > 9 || !onPage || !HasUnknownCapability())
-            {
-                _aboutRetryTimer?.Stop();
-                _aboutRetryTicks = 0;
-            }
-        }
-
-        private static bool HasUnknownCapability()
-        {
-            try
-            {
-                foreach (CapabilityResult result in CapabilityProbe.CheckAll())
-                {
-                    if (result.Status == CapabilityStatus.Unknown) return true;
-                }
-            }
-            catch
-            {
-                // 探测出问题不该把设置窗口弄崩：当作已探完。
-            }
-
-            return false;
         }
 
         private void CopyDiagnosticsButton_Click(object sender, RoutedEventArgs e)
@@ -770,11 +677,11 @@ namespace alpha_island.Settings
             try
             {
                 System.Windows.Clipboard.SetText(DiagnosticsReport.BuildText());
-                if (DiagnosticsHint != null) DiagnosticsHint.Text = "报告已复制到剪贴板（" + DateTime.Now.ToString("HH:mm:ss") + "）";
+                if (DiagnosticsHint != null) DiagnosticsHint.Text = L.T("报告已复制到剪贴板（") + DateTime.Now.ToString("HH:mm:ss") + "）";
             }
             catch (Exception ex)
             {
-                if (DiagnosticsHint != null) DiagnosticsHint.Text = "复制失败：" + ex.Message;
+                if (DiagnosticsHint != null) DiagnosticsHint.Text = L.T("复制失败：") + ex.Message;
             }
         }
 
@@ -788,11 +695,11 @@ namespace alpha_island.Settings
                     FileName = AppPaths.Root,
                     UseShellExecute = true,
                 });
-                if (DiagnosticsHint != null) DiagnosticsHint.Text = "已打开 " + AppPaths.Root;
+                if (DiagnosticsHint != null) DiagnosticsHint.Text = L.T("已打开 ") + AppPaths.Root;
             }
             catch (Exception ex)
             {
-                if (DiagnosticsHint != null) DiagnosticsHint.Text = "打开目录失败：" + ex.Message;
+                if (DiagnosticsHint != null) DiagnosticsHint.Text = L.T("打开目录失败：") + ex.Message;
             }
         }
 
@@ -803,7 +710,7 @@ namespace alpha_island.Settings
             {
                 string? zip = DiagnosticsReport.Export();
                 if (DiagnosticsHint != null)
-                    DiagnosticsHint.Text = zip == null ? "导出失败，原因见日志。" : "已导出：" + zip;
+                    DiagnosticsHint.Text = zip == null ? L.T("导出失败，原因见日志。") : L.T("已导出：") + zip;
             }
             finally
             {
@@ -906,7 +813,7 @@ namespace alpha_island.Settings
                 NavCollapseButton.Margin = expanded
                     ? new Thickness(10, 4, 0, 12)
                     : new Thickness(0, 4, 0, 12);
-                NavCollapseButton.ToolTip = expanded ? "收起导航栏" : "展开导航栏";
+                NavCollapseButton.ToolTip = expanded ? L.T("收起导航栏") : L.T("展开导航栏");
             }
 
             if (NavPane == null) return;
@@ -955,6 +862,8 @@ namespace alpha_island.Settings
                 if (child is not RadioButton item) continue;
 
                 string hay = (item.Uid ?? string.Empty) + " " + ((item.Tag as string) ?? string.Empty);
+                if (item.Content is System.Windows.Controls.Panel labels)
+                    hay += " " + string.Join(" ", labels.Children.OfType<TextBlock>().Select(text => text.Text));
                 // 注册表里的标题/说明/键一起进索引：搜"网速""内存""API Key"能直接定位到对应设置页，
                 // 不用每个页的导航项自己维护关键词清单。
                 hay += " " + SettingsRegistry.SearchWordsForPage(item.Tag as string);
@@ -1124,9 +1033,9 @@ namespace alpha_island.Settings
             {
                 AppPaths.EnsureConfiguration();
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppPaths.ConfigDir) { UseShellExecute = true });
-                DiagnosticsHint.Text = "已打开 " + AppPaths.ConfigDir;
+                DiagnosticsHint.Text = L.T("已打开 ") + AppPaths.ConfigDir;
             }
-            catch (Exception ex) { DiagnosticsHint.Text = "打开配置目录失败：" + ex.Message; }
+            catch (Exception ex) { DiagnosticsHint.Text = L.T("打开配置目录失败：") + ex.Message; }
         }
     }
 }

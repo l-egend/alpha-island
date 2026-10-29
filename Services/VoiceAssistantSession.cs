@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows.Threading;
 using AlphaIsland.PluginSdk;
 
@@ -54,7 +55,7 @@ internal sealed class VoiceAssistantSession : IDisposable
         try
         {
             if (_disposed || Active) return;
-            if (!_available()) { Publish(VoiceAssistantState.Error, "", "请先配置并启用 API 对话；锁屏、游戏或审批期间无法唤醒。"); return; }
+            if (!_available()) { Publish(VoiceAssistantState.Error, "", L.T("请先配置并启用 API 对话；锁屏、游戏或审批期间无法唤醒。")); return; }
             _feedback.Stop(); _generation++; _heardAudio = false; _lastSpeech = _lastTranscript = _clock();
             _requestId = Guid.NewGuid().ToString("N");
             _session?.Dispose(); _session = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -64,7 +65,7 @@ internal sealed class VoiceAssistantSession : IDisposable
                 if (!ReferenceEquals(_capture, capture) || Snapshot.State is not (VoiceAssistantState.Recording or VoiceAssistantState.Finishing)) return;
                 _lastTranscript = _clock();
                 if (!_heardAudio) Interlocked.Exchange(ref _lastSpeech, _lastTranscript);
-                Publish(Snapshot.State, text, "停顿约 1.6 秒自动发送 · 右侧按钮或 Esc 取消");
+                Publish(Snapshot.State, text, L.T("停顿约 1.6 秒自动发送 · 右侧按钮或 Esc 取消"));
             });
             capture.VoiceActivity += active =>
             {
@@ -74,17 +75,17 @@ internal sealed class VoiceAssistantSession : IDisposable
             capture.SpectrumChanged += frame => { if (ReferenceEquals(_capture, capture)) Spectrum?.Invoke(frame); };
             capture.Failed += message => Dispatch(() => { if (ReferenceEquals(_capture, capture)) _ = FailCaptureAsync(message); });
             capture.Completed += () => Dispatch(() => { if (ReferenceEquals(_capture, capture) && Snapshot.State == VoiceAssistantState.Recording) _ = FinishAsync(); });
-            Publish(VoiceAssistantState.Starting, "", "正在准备麦克风与语音识别…");
+            Publish(VoiceAssistantState.Starting, "", L.T("正在准备麦克风与语音识别…"));
             await capture.StartAsync(_session.Token);
             _session.Token.ThrowIfCancellationRequested(); await _chime();
             _session.Token.ThrowIfCancellationRequested(); _session.CancelAfter(Timeout.InfiniteTimeSpan);
-            Publish(VoiceAssistantState.Recording, "", "请说出指令 · 停顿自动发送，右侧按钮取消"); _limit.Start(); _silence.Start();
+            Publish(VoiceAssistantState.Recording, "", L.T("请说出指令 · 停顿自动发送，右侧按钮取消")); _limit.Start(); _silence.Start();
         }
         catch (OperationCanceledException) { ReleaseCapture(); Publish(VoiceAssistantState.Idle, "", ""); }
         catch (Exception error)
         {
             ReleaseCapture();
-            Publish(VoiceAssistantState.Error, "", error is InvalidOperationException ? error.Message : "无法唤醒语音助手，请检查麦克风与语音设置。",
+            Publish(VoiceAssistantState.Error, "", error is InvalidOperationException ? error.Message : L.T("无法唤醒语音助手，请检查麦克风与语音设置。"),
                 (error as VoiceRecognitionException)?.Problem);
         }
         finally { _gate.Release(); }
@@ -104,18 +105,18 @@ internal sealed class VoiceAssistantSession : IDisposable
         try
         {
             if (_disposed || Snapshot.State != VoiceAssistantState.Recording || _capture == null) return;
-            _limit.Stop(); _silence.Stop(); Publish(VoiceAssistantState.Finishing, Snapshot.Text, "正在结束录音…");
+            _limit.Stop(); _silence.Stop(); Publish(VoiceAssistantState.Finishing, Snapshot.Text, L.T("正在结束录音…"));
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_session!.Token);
             timeout.CancelAfter(_capture.FinishTimeout);
             string text = await _capture.FinishAsync(false, timeout.Token);
             _session.Token.ThrowIfCancellationRequested(); ReleaseCapture();
-            if (string.IsNullOrWhiteSpace(text)) { Publish(VoiceAssistantState.Error, "", "没有识别到内容，未发送任何 API 请求。"); return; }
+            if (string.IsNullOrWhiteSpace(text)) { Publish(VoiceAssistantState.Error, "", L.T("没有识别到内容，未发送任何 API 请求。")); return; }
             generation = _generation;
-            Publish(VoiceAssistantState.Processing, text, "正在处理指令 · 点停止或按 Esc 中止");
+            Publish(VoiceAssistantState.Processing, text, L.T("正在处理指令 · 点停止或按 Esc 中止"));
             pending = _submit(_requestId, text);
         }
         catch (OperationCanceledException) { ReleaseCapture(); Publish(VoiceAssistantState.Idle, "", ""); }
-        catch (Exception error) { ReleaseCapture(); Publish(VoiceAssistantState.Error, Snapshot.Text, error is AlphaIsland.Speech.SpeechRecognitionException ? error.Message : "语音提交失败，请重新唤醒；本次未自动重试。"); }
+        catch (Exception error) { ReleaseCapture(); Publish(VoiceAssistantState.Error, Snapshot.Text, error is AlphaIsland.Speech.SpeechRecognitionException ? error.Message : L.T("语音提交失败，请重新唤醒；本次未自动重试。")); }
         finally { _gate.Release(); }
         if (pending == null) return;
         try
@@ -123,10 +124,10 @@ internal sealed class VoiceAssistantSession : IDisposable
             var result = await pending;
             if (!_disposed && generation == _generation && Snapshot.State == VoiceAssistantState.Processing)
                 Publish(result.Accepted && !result.Failed ? VoiceAssistantState.Complete : VoiceAssistantState.Error,
-                    Snapshot.Text, result.Message.Length > 0 ? result.Message : "已完成，可打开 AI 对话查看。");
+                    Snapshot.Text, result.Message.Length > 0 ? result.Message : L.T("已完成，可打开 AI 对话查看。"));
         }
         catch (Exception)
-        { if (!_disposed && generation == _generation) Publish(VoiceAssistantState.Error, Snapshot.Text, "助手连接中断，没有自动重发指令。"); }
+        { if (!_disposed && generation == _generation) Publish(VoiceAssistantState.Error, Snapshot.Text, L.T("助手连接中断，没有自动重发指令。")); }
     }
     internal async Task CancelAsync()
     {

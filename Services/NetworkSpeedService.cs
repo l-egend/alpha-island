@@ -53,7 +53,7 @@ namespace alpha_island.Services
         private long _lastTimestamp;
         private bool _primed;
         private int _ticksSinceRefresh;
-        private bool _disposed;
+        private volatile bool _disposed;
         private int _adaptersDirty;
 
         public NetworkSpeedService()
@@ -85,7 +85,7 @@ namespace alpha_island.Services
             SessionDownloadedBytes = SessionUploadedBytes = 0; SessionPeakDownload = SessionPeakUpload = 0;
         }
 
-        /// <summary>采一拍。由 ticker 每秒调一次；手动再调一次不会污染速率（见下面的时间间隔保护）。</summary>
+        /// <summary>同步采一拍。常驻界面必须从后台调用；驱动读取可能阻塞。短间隔重复调用不计入速率。</summary>
         public void Sample()
         {
             if (_disposed) return;
@@ -256,8 +256,7 @@ namespace alpha_island.Services
             _disposed = true;
             NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
             NetworkChange.NetworkAvailabilityChanged -= OnAvailabilityChanged;
-            _adapters.Clear();
-            _adapterNames.Clear();
+            // An in-flight driver read owns these lists until it returns.
             Current = default;
         }
     }

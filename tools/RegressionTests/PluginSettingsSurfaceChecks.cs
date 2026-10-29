@@ -18,10 +18,10 @@ internal static partial class Program
     private static void PluginSettingsSurfaceChecks(alpha_island.MainWindow window, string root)
     {
         string target=Path.Combine(root,"local-agent-worker"); Directory.CreateDirectory(target);
-        string source=Path.GetFullPath($"examples/LocalAgentsPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
+        string source=ExternalPluginSource($"LocalAgentsPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach(string file in Directory.GetFiles(source).Where(file=>file.EndsWith(".dll")||file.EndsWith(".deps.json")))
             File.Copy(file,Path.Combine(target,Path.GetFileName(file)));
-        File.Copy(Path.GetFullPath("examples/LocalAgentsPlugin/plugin.json"),Path.Combine(target,"plugin.json"));
+        File.Copy(ExternalPluginSource("LocalAgentsPlugin/plugin.json"),Path.Combine(target,"plugin.json"));
         var manifest=PluginManifest.Read(Path.Combine(target,"plugin.json"));
         using var session=new PluginProcessSession(window.Dispatcher);
         var registry=AwaitPlugin(session.StartAsync(new(target,manifest.Assembly,manifest.EntryType,manifest.Id,

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Threading.Tasks;
 using System.Windows;
@@ -156,7 +157,7 @@ public partial class MainWindow
             _upNextTimer?.Stop(); _upNextShowing = false; _upNextUntil = DateTime.MinValue;
             SyncUpNextContent();
             var notice = new DesktopNotification("game-quiet-" + DateTimeOffset.UtcNow.UtcTicks, "", "Alpha Island",
-                "检测到游戏开启", "免打扰模式已开启 · 即将收起 · " + state.Name, DateTimeOffset.Now, DesktopEventKind.System);
+                L.T("检测到游戏开启"), L.T("免打扰模式已开启 · 即将收起 · ") + state.Name, DateTimeOffset.Now, DesktopEventKind.System);
             _desktopInbox.Add(notice, false);
             _gameQuietNotice.SetNotification(notice);
             _gameQuietNotice.Icon.Shape = IconShape.Auto; _gameQuietNotice.Icon.Text = "\uE7FC";
@@ -181,7 +182,7 @@ public partial class MainWindow
             }
             SyncPausedMediaVisibility();
             _desktopInbox.Add(new("game-quiet-ended-" + DateTimeOffset.UtcNow.UtcTicks, "", "Alpha Island",
-                "游戏免打扰已结束", "已恢复原来的通知设置", DateTimeOffset.Now, DesktopEventKind.System), false);
+                L.T("游戏免打扰已结束"), L.T("已恢复原来的通知设置"), DateTimeOffset.Now, DesktopEventKind.System), false);
             IslandLog.Info("GameQuiet", "自动免打扰结束；手动静默=" + SettingsRegistry.GetBool(_options, "NotificationQuietMode", false));
         }
         OnDesktopNotificationOptionsChanged();

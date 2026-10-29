@@ -60,10 +60,12 @@ namespace alpha_island.Core
         public SettingKind Kind { get; init; } = SettingKind.Bool;
 
         /// <summary>设置页里显示的标题。</summary>
-        public string Label { get; init; } = "";
+        private string _label = "";
+        public string Label { get => AlphaIsland.PluginSdk.Localization.UiText.T(_label); init => _label = value; }
 
         /// <summary>标题下面的说明文字（同时进搜索索引）。</summary>
-        public string Hint { get; init; } = "";
+        private string _hint = "";
+        public string Hint { get => AlphaIsland.PluginSdk.Localization.UiText.T(_hint); init => _hint = value; }
 
         /// <summary>所属设置页（<see cref="SettingsPageIds"/>）。</summary>
         public string PageId { get; init; } = SettingsPageIds.Behavior;
@@ -81,7 +83,8 @@ namespace alpha_island.Core
         public double Step { get; init; } = 1;
 
         /// <summary>数值单位，显示在数值后面（例："秒"、"Mbps"、"W"）。</summary>
-        public string Unit { get; init; } = "";
+        private string _unit = "";
+        public string Unit { get => AlphaIsland.PluginSdk.Localization.UiText.T(_unit); init => _unit = value; }
 
         /// <summary>数值格式（<c>ToString</c> 的格式串），默认去掉多余小数。</summary>
         public string Format { get; init; } = "0.##";
@@ -136,7 +139,7 @@ namespace alpha_island.Core
         /// <summary>显示用文本（含单位）。</summary>
         public string FormatValue(object? value)
         {
-            if (Kind == SettingKind.Bool) return ToBool(value, false) ? "开" : "关";
+            if (Kind == SettingKind.Bool) return AlphaIsland.PluginSdk.Localization.UiText.T(ToBool(value, false) ? "开" : "关");
             if (IsNumeric)
             {
                 double v = ToDouble(value, 0);

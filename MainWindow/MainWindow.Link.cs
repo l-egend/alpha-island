@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using alpha_island.Core;
 using alpha_island.Services;
@@ -13,7 +14,7 @@ namespace alpha_island
         {
             _dailyTraffic ??= new DailyTrafficService(_runtimeEnabled
                 ? System.IO.Path.Combine(AppPaths.ConfigDir, "daily-traffic.json") : null);
-            _dailyTraffic.Observe(DateTimeOffset.Now, _netSpeed?.ObservedDownloadedBytes ?? 0, _netSpeed?.ObservedUploadedBytes ?? 0);
+            _dailyTraffic.Observe(DateTimeOffset.Now, NativeObservedDown, NativeObservedUp);
             SampleTraffic();
         }
         internal void StopTrafficLinkService()
@@ -66,10 +67,10 @@ namespace alpha_island
         {
             if (!SettingsRegistry.GetBool(_options, "DailyTrafficEnabled", true)) return "";
             if (_trafficFake && _trafficSummary.Found)
-                return $" · 今日 ↓{MemoryService.FormatSize(_trafficSummary.TodayDown)} ↑{MemoryService.FormatSize(_trafficSummary.TodayUp)}（预览）";
+                return L.F($" · 今日 ↓{MemoryService.FormatSize(_trafficSummary.TodayDown)} ↑{MemoryService.FormatSize(_trafficSummary.TodayUp)}（预览）");
             if (_dailyTraffic == null) return "";
             var day = _dailyTraffic.Current;
-            return $" · 今日 ↓{MemoryService.FormatSize(day.Down)} ↑{MemoryService.FormatSize(day.Up)}";
+            return L.F($" · 今日 ↓{MemoryService.FormatSize(day.Down)} ↑{MemoryService.FormatSize(day.Up)}");
         }
     }
 }

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -106,7 +107,7 @@ public partial class MainWindow
         },
         Network = _netSpeed != null || _externalNetwork.Active ? CurrentNetworkSample : null,
         DailyTraffic = _dailyTraffic?.Current,
-        NetworkSource = _externalNetwork.Active ? _externalNetwork.Title : "本机采样",
+        NetworkSource = _externalNetwork.Active ? _externalNetwork.Title : L.T("本机采样"),
         Weather = _weatherSnapshot,
         Volume = _volumeService is { IsAvailable: true } volume ? volume.CurrentPercent : null,
         Muted = _volumeService is { IsAvailable: true } output ? output.IsMuted : null,

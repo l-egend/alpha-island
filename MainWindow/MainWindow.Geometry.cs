@@ -86,6 +86,8 @@ namespace alpha_island
             // All entry points, including explicit page requests and manual pins,
             // share the game lock. No notification may reopen the contour.
             if (GameDoNotDisturbActive) next = GameQuietIntroActive ? IslandState.Pill : IslandState.Bar;
+            if (BrowserCompactBlocking && !(next == IslandState.Pill && BrowserVolumeFeedbackActive)) next = IslandState.Bar;
+            if (next == IslandState.Bar) _browserManualReveal = false;
             // 审批操作位于胶囊：不能被普通点击或选页入口切到没有审批按钮的卡片。
             if (_approvalCurrent != null && !GameDoNotDisturbActive && next == IslandState.Card) next = IslandState.Pill;
             // 暂停隐藏只撤下音乐内容；所有自动降级/再展开入口也必须跳过没有载荷的胶囊。
@@ -111,7 +113,7 @@ namespace alpha_island
 
             // 卡片页级置顶（本轮 ④）只在"停在卡片态"时成立：一旦离开卡片（显式下滑、被更高优先级的
             // 形态顶掉、收回细条），这个 pin 自动释放 —— 否则它会留在字段里，下次进卡片又"悄悄"生效。
-            if (prev == IslandState.Card && next != IslandState.Card && _pinnedCardPage != null)
+            if (prev == IslandState.Card && next != IslandState.Card && _pinnedCardPage != null && !BrowserCompactBlocking)
             {
                 IslandLog.Debug("Pin", $"卡片置顶：离开卡片态（{prev} → {next}）→ 取消（{_pinnedCardPage}）[pin=card-off reason=state]");
                 _pinnedCardPage = null;

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using Windows.Media;
 
 namespace alpha_island.Services;
@@ -31,7 +32,7 @@ internal static class MediaPlaybackOrders
     }
 
     internal static string Name(MediaPlaybackOrder mode) => mode switch
-    { MediaPlaybackOrder.Shuffle => "随机播放", MediaPlaybackOrder.RepeatTrack => "单曲循环", _ => "顺序播放" };
+    { MediaPlaybackOrder.Shuffle => L.T("随机播放"), MediaPlaybackOrder.RepeatTrack => L.T("单曲循环"), _ => L.T("顺序播放") };
     internal static string Glyph(MediaPlaybackOrder mode) => mode switch
     { MediaPlaybackOrder.Shuffle => "\uE8B1", MediaPlaybackOrder.RepeatTrack => "\uE8ED", _ => "\uE8EF" };
 

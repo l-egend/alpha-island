@@ -100,10 +100,10 @@ internal static partial class Program
         Check(pages.Pages.All(p => p.Id != "link" && p.Title != "应用联动") && !layers.IsRegistered("vivo"), "旧应用联动卡片与内置提示层已移除");
         Check(!SettingsRegistry.All.Any(s => s.Key == "VivoLinkEnabled") && !IslandServiceIds.All.Contains("vivolink"), "旧 vivo 开关和内置监控已移除");
         string pluginRoot = Path.Combine(testRoot, "vivo-plugins"), folder = Path.Combine(pluginRoot, "vivo.office"); Directory.CreateDirectory(folder);
-        string source = Path.GetFullPath($"examples/VivoOfficePlugin/bin/{TestBuildConfiguration}/net8.0-windows");
+        string source = ExternalPluginSource($"VivoOfficePlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach (string name in new[] { "AlphaIsland.Plugins.VivoOffice.dll", "AlphaIsland.Plugins.VivoOffice.deps.json", "plugin.json" })
             File.Copy(name.EndsWith(".dll") ? typeof(VivoOfficePlugin).Assembly.Location
-                : name == "plugin.json" ? Path.GetFullPath("examples/VivoOfficePlugin/plugin.json") : Path.Combine(source, name),
+                : name == "plugin.json" ? ExternalPluginSource("VivoOfficePlugin/plugin.json") : Path.Combine(source, name),
                 Path.Combine(folder, name), true);
         string history = Path.Combine(testRoot, "vivo-ui-history.json");
         File.WriteAllText(history, "{\"phone\":[],\"last_time_phone\":{\"mobileDeviceName\":\"测试手机\",\"connectFlag\":\"WLAN\",\"ip\":\"192.168.10.42\",\"lastSuccessTime\":1791106200000}}");

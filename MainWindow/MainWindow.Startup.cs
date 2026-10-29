@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -273,7 +274,7 @@ namespace alpha_island
         private void StartAudioSpectrum()
         {
             if (_exiting || !_runtimeEnabled || _smtc?.Current?.HasMedia != true) return;
-            EnsureService(IslandServiceIds.Spectrum, "频谱采集");
+            EnsureService(IslandServiceIds.Spectrum, L.T("频谱采集"));
         }
 
         /// <summary>
@@ -288,7 +289,7 @@ namespace alpha_island
             ShowAutoStartupBootTiming();
 
             // 1. 歌词服务（纯内存/网络客户端，极度轻量无阻塞）
-            EnsureService(IslandServiceIds.Lyrics, "模块 1/8 [歌词服务]");
+            EnsureService(IslandServiceIds.Lyrics, L.T("模块 1/8 [歌词服务]"));
 
             // 说明：原来每个模块之间都插 600/700ms 的固定 await Task.Delay 做"节流"。
             // InitializeServicesDeferred 是 async void 且带 DispatcherSynchronizationContext，
@@ -297,23 +298,23 @@ namespace alpha_island
             if (_exiting) return;
 
             // 2. 全局热键与剪切板服务
-            EnsureService(IslandServiceIds.Clipboard, "模块 2/8 [剪切板与热键]");
+            EnsureService(IslandServiceIds.Clipboard, L.T("模块 2/8 [剪切板与热键]"));
 
             if (_exiting) return;
 
             // 3. 文件中转站
-            EnsureService(IslandServiceIds.FileTransfer, "模块 3/8 [文件中转站]");
+            EnsureService(IslandServiceIds.FileTransfer, L.T("模块 3/8 [文件中转站]"));
 
             if (_exiting) return;
 
             // 4. 系统主音量监听（后台执行 COM 终结点绑定，带超时保护）
             //    重复创建的护栏现在在宿主状态机里：ApplyOptions() 已经拉起来的话，EnsureStarted 直接返回。
-            EnsureService(IslandServiceIds.Volume, "模块 4/8 [系统音量]");
+            EnsureService(IslandServiceIds.Volume, L.T("模块 4/8 [系统音量]"));
 
             if (_exiting) return;
 
             // 5. 电池状态监听（后台线程执行首次硬件电源采样，带超时保护）
-            EnsureService(IslandServiceIds.Battery, "模块 5/8 [电池服务]");
+            EnsureService(IslandServiceIds.Battery, L.T("模块 5/8 [电池服务]"));
 
             if (_exiting) return;
 
@@ -356,7 +357,7 @@ namespace alpha_island
 
             // 8. 蓝牙：设备连接通知（后台线程启动 WinRT DeviceWatchers，带超时保护）
             //    三个事件一次订阅齐、只可能有一个实例 —— 这两条纪律现在都在 StartBluetoothService() 里。
-            EnsureService(IslandServiceIds.Bluetooth, "模块 8/8 [蓝牙服务]");
+            EnsureService(IslandServiceIds.Bluetooth, L.T("模块 8/8 [蓝牙服务]"));
 
             if (_exiting) return;
 
@@ -403,7 +404,7 @@ namespace alpha_island
                     {
                         // 调试定态：一级胶囊 + 换曲提示内容（"接下来"），用于截图核对排版；
                         // 时长仍走真实设置，所以这个状态也会自己收回，可以顺带验证提示生命周期。
-                        _upNextTitle = _smtc?.Current?.DisplayTitle ?? "下一首歌名";
+                        _upNextTitle = _smtc?.Current?.DisplayTitle ?? L.T("下一首歌名");
                         _upNextUntil = DateTime.UtcNow.AddSeconds(_options.UpNextSeconds);
                         _upNextShowing = true;
                         SyncUpNextContent();
@@ -520,7 +521,7 @@ namespace alpha_island
             string? fakeAgent = Environment.GetEnvironmentVariable("ALPHA_ISLAND_AGENT_FAKE");
             if (!string.IsNullOrEmpty(fakeAgent))
             {
-                AgentStatus.Set(ParseFakeAgentState(fakeAgent), "调试注入");
+                AgentStatus.Set(ParseFakeAgentState(fakeAgent), L.T("调试注入"));
                 IslandLog.Debug("AgentStatus", $"调试注入：agent 状态 = {AgentStatus.Describe()}");
 
                 string? cycleAfter = Environment.GetEnvironmentVariable("ALPHA_ISLAND_AGENT_CYCLE");
@@ -538,8 +539,8 @@ namespace alpha_island
                     cycleTimer.Tick += (_, __) =>
                     {
                         cursor = (cursor + 1) % states.Length;
-                        if (states[cursor] == AgentRunState.Idle) AgentStatus.Reset("调试注入");
-                        else AgentStatus.Set(states[cursor], "调试注入");
+                        if (states[cursor] == AgentRunState.Idle) AgentStatus.Reset(L.T("调试注入"));
+                        else AgentStatus.Set(states[cursor], L.T("调试注入"));
                         IslandLog.Debug("AgentStatus", $"调试注入：agent 状态 = {AgentStatus.Describe()}");
                     };
                     cycleTimer.Start();
@@ -688,8 +689,8 @@ namespace alpha_island
 
             var messages = new List<ChatMessage>
             {
-                new(ChatMessage.RoleSystem, "你是连通性自检探针，回答尽量短。"),
-                new(ChatMessage.RoleUser, "只回复两个字：收到")
+                new(ChatMessage.RoleSystem, L.T("你是连通性自检探针，回答尽量短。")),
+                new(ChatMessage.RoleUser, L.T("只回复两个字：收到"))
             };
 
             var sw = System.Diagnostics.Stopwatch.StartNew();

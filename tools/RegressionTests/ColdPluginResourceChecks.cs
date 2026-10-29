@@ -23,8 +23,8 @@ internal static partial class Program
                 foreach(string theme in new[]{"Controls","LiquidGlass","Win11Settings"})
                     app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("pack://application:,,,/alpha-island;component/Themes/"+theme+".xaml")});
                 string plugins=Path.Combine(root,"plugins");string directory=Path.Combine(plugins,"ai.api-chat");Directory.CreateDirectory(directory);
-                File.Copy(Path.GetFullPath("examples/ApiChatPlugin/bin/Release/net8.0-windows/AlphaIsland.Plugins.ApiChat.dll"),Path.Combine(directory,"AlphaIsland.Plugins.ApiChat.dll"));
-                File.Copy(Path.GetFullPath("examples/ApiChatPlugin/plugin.json"),Path.Combine(directory,"plugin.json"));
+                File.Copy(ExternalPluginSource("ApiChatPlugin/bin/Release/net8.0-windows/AlphaIsland.Plugins.ApiChat.dll"),Path.Combine(directory,"AlphaIsland.Plugins.ApiChat.dll"));
+                File.Copy(ExternalPluginSource("ApiChatPlugin/plugin.json"),Path.Combine(directory,"plugin.json"));
                 var options=new IslandOptions();var panel=new Grid();
                 using var host=new PluginHost(Dispatcher.CurrentDispatcher,options,new[]{plugins},p=>panel.Children.Add(p.View),p=>panel.Children.Remove(p.View),_=>{}){DataRoot=Path.Combine(root,"data")};
                 host.Discover();var entry=host.Entries.Single();

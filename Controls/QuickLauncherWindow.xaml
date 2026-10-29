@@ -1,23 +1,23 @@
-<Window x:Class="alpha_island.Controls.QuickLauncherWindow" x:ClassModifier="internal"
+<Window xmlns:loc="clr-namespace:AlphaIsland.PluginSdk.Localization;assembly=AlphaIsland.PluginSdk" x:Class="alpha_island.Controls.QuickLauncherWindow" x:ClassModifier="internal"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:icons="clr-namespace:AlphaIsland.PluginSdk;assembly=AlphaIsland.PluginSdk"
  Width="520" Height="440" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
- ShowInTaskbar="False" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Title="快速启动器"
+ ShowInTaskbar="False" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Title="{loc:Text Key=S3D7495F15D31}"
  Foreground="{DynamicResource ControlTextBrush}" FontFamily="{DynamicResource AppFontFamily}" UseLayoutRounding="True">
  <Border x:Name="LauncherShell" Background="{DynamicResource ControlPopupBrush}" BorderBrush="{DynamicResource ControlBorderBrush}"
          BorderThickness="1" CornerRadius="{DynamicResource WindowCornerRadius}" Padding="18">
   <Grid>
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
    <DockPanel Margin="2,0,2,12">
-    <TextBlock DockPanel.Dock="Right" Text="Esc 关闭" FontSize="11.5" Foreground="{DynamicResource ControlMutedTextBrush}" VerticalAlignment="Center"/>
-    <TextBlock Text="快速启动" FontSize="15" FontWeight="SemiBold"/>
+    <TextBlock DockPanel.Dock="Right" Text="{loc:Text Key=S412BD6BD4B88}" FontSize="11.5" Foreground="{DynamicResource ControlMutedTextBrush}" VerticalAlignment="Center"/>
+    <TextBlock Text="{loc:Text Key=S479947BD2AAB}" FontSize="15" FontWeight="SemiBold"/>
    </DockPanel>
    <Grid Grid.Row="1">
     <TextBox x:Name="SearchBox" Style="{StaticResource ThemedTextBox}" FontSize="15" Padding="34,9,10,9"
-             AutomationProperties.Name="搜索应用、组件或助手" Text="{Binding Query,UpdateSourceTrigger=PropertyChanged}"/>
+             AutomationProperties.Name="{loc:Text Key=SCD37FFF1DAC5}" Text="{Binding Query,UpdateSourceTrigger=PropertyChanged}"/>
     <icons:GlyphIcon Text="" FontSize="15" Foreground="{DynamicResource ControlMutedTextBrush}"
                      HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False"/>
-    <TextBlock x:Name="SearchPlaceholder" Text="搜索应用、组件或助手…" Margin="35,0,10,0" VerticalAlignment="Center"
+    <TextBlock x:Name="SearchPlaceholder" Text="{loc:Text Key=SEAFCEF042FC3}" Margin="35,0,10,0" VerticalAlignment="Center"
                FontSize="13" Foreground="{DynamicResource ControlMutedTextBrush}" IsHitTestVisible="False">
      <TextBlock.Style>
       <Style TargetType="TextBlock">
@@ -33,7 +33,7 @@
      <TextBlock Text="{Binding Detail}" FontSize="11.5" Foreground="{DynamicResource ControlMutedTextBrush}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
    </ListBox>
    <StackPanel Grid.Row="3" Margin="2,0">
-    <TextBlock Text="↑↓ 选择 · Enter 打开" Foreground="{DynamicResource ControlMutedTextBrush}" FontSize="11.5"/>
+    <TextBlock Text="{loc:Text Key=SD2522AB2CDB5}" Foreground="{DynamicResource ControlMutedTextBrush}" FontSize="11.5"/>
     <TextBlock Text="{Binding Status}" Foreground="{DynamicResource ControlTextBrush}" FontSize="11.5" TextWrapping="Wrap" Margin="0,5,0,0">
      <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
       <DataTrigger Binding="{Binding Status}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>

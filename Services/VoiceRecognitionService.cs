@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Globalization;
 using System.IO;
 using System.Speech.Recognition;
@@ -26,6 +27,7 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
     private readonly StringBuilder _confirmed = new();
     private readonly MicrophoneSpectrum _spectrum = new();
     private readonly Stream? _dictationInput;
+    private readonly CultureInfo? _recognitionCulture;
     private readonly TaskCompletionSource<bool> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private SpeechRecognitionEngine? _recognizer;
     private WasapiCapture? _capture;
@@ -34,7 +36,7 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
     private string _partial = "";
     private volatile bool _disposed, _finishing, _uncertain;
     private const float MinimumConfidence = .55f;
-    private const string UnclearSpeech = "没有听清这条指令，未发送给 API。请靠近麦克风重新说一次，尤其是时间和数值。";
+    private static string UnclearSpeech => L.T("没有听清这条指令，未发送给 API。请靠近麦克风重新说一次，尤其是时间和数值。");
     private long _lastFrame;
     public event Action<string>? TranscriptChanged;
     public event Action<float[]>? SpectrumChanged;
@@ -42,9 +44,10 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
     public event Action<string>? Failed;
     public event Action? Completed;
 
-    public VoiceRecognitionService(Stream? dictationInput = null)
+    public VoiceRecognitionService(Stream? dictationInput = null, CultureInfo? culture = null)
     {
         _dictationInput = dictationInput;
+        _recognitionCulture = culture;
         _spectrum.Frame += frame =>
         {
             long now = Environment.TickCount64;
@@ -58,8 +61,8 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
         var installed = SpeechRecognitionEngine.InstalledRecognizers();
         var info = installed.FirstOrDefault(item => item.Culture.Name.Equals(culture.Name, StringComparison.OrdinalIgnoreCase))
             ?? installed.FirstOrDefault(item => item.Culture.TwoLetterISOLanguageName == culture.TwoLetterISOLanguageName);
-        if (info == null) throw new VoiceRecognitionException(new("缺少本机语音组件", "点击安装系统语音组件",
-            $"没有找到 {culture.DisplayName} 的桌面语音识别引擎。请在 Windows 设置的语言选项中安装对应的“语音识别”组件，然后重新唤醒。不需要开启联机语音识别。", VoiceRecognitionProblem.SpeechSettings));
+        if (info == null) throw new VoiceRecognitionException(new(L.T("缺少本机语音组件"), L.T("点击安装系统语音组件"),
+            L.F($"没有找到 {culture.DisplayName} 的桌面语音识别引擎。请在 Windows 设置的语言选项中安装对应的“语音识别”组件，然后重新唤醒。不需要开启联机语音识别。"), VoiceRecognitionProblem.SpeechSettings));
         var recognizer = new SpeechRecognitionEngine(info);
         try
         {
@@ -75,7 +78,7 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
     public async Task StartAsync(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        var culture = CultureInfo.CurrentUICulture;
+        var culture = _recognitionCulture ?? CultureInfo.CurrentUICulture;
         try { await Task.Run(() => StartCapture(culture, token), token); }
         catch (OperationCanceledException) { Dispose(); throw; }
         catch (VoiceRecognitionException) { Dispose(); throw; }
@@ -83,10 +86,10 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
         {
             Dispose();
             var problem = error.HResult is unchecked((int)0x80070005) or unchecked((int)0x80070490)
-                ? new VoiceRecognitionProblem("麦克风暂不可用", "点击检查麦克风与权限",
-                    "请连接并启用默认麦克风，并在 Windows 隐私设置中允许桌面应用访问麦克风。", VoiceRecognitionProblem.MicrophoneSettings)
-                : new VoiceRecognitionProblem("语音启动失败", "点击检查系统语音设置",
-                    $"本机语音识别未能启动（0x{error.HResult:X8}）。请确认已安装当前语言的语音组件，默认麦克风可用且未被其他应用独占。", VoiceRecognitionProblem.SpeechSettings);
+                ? new VoiceRecognitionProblem(L.T("麦克风暂不可用"), L.T("点击检查麦克风与权限"),
+                    L.T("请连接并启用默认麦克风，并在 Windows 隐私设置中允许桌面应用访问麦克风。"), VoiceRecognitionProblem.MicrophoneSettings)
+                : new VoiceRecognitionProblem(L.T("语音启动失败"), L.T("点击检查系统语音设置"),
+                    L.F($"本机语音识别未能启动（0x{error.HResult:X8}）。请确认已安装当前语言的语音组件，默认麦克风可用且未被其他应用独占。"), VoiceRecognitionProblem.SpeechSettings);
             throw new VoiceRecognitionException(problem, error);
         }
     }
@@ -105,8 +108,8 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
                 recognizer.SetInputToDefaultAudioDevice();
                 using var devices = new MMDeviceEnumerator();
                 device = devices.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
-                if (device.AudioEndpointVolume.Mute) throw new VoiceRecognitionException(new("麦克风已静音", "点击检查麦克风静音状态",
-                    "当前默认麦克风已在系统中静音。请取消麦克风静音后重新唤醒，程序不会自动替你打开麦克风。", "ms-settings:sound"));
+                if (device.AudioEndpointVolume.Mute) throw new VoiceRecognitionException(new(L.T("麦克风已静音"), L.T("点击检查麦克风静音状态"),
+                    L.T("当前默认麦克风已在系统中静音。请取消麦克风静音后重新唤醒，程序不会自动替你打开麦克风。"), "ms-settings:sound"));
                 capture = new WasapiCapture(device, false, 40);
                 capture.DataAvailable += OnAudio; capture.RecordingStopped += OnRecordingStopped;
             }
@@ -161,10 +164,10 @@ internal sealed class VoiceRecognitionService : IVoiceCapture
         _recognitionError = args.Error; _ended.TrySetResult(true);
         if (_disposed || _finishing) return;
         if (args.Error == null) Completed?.Invoke();
-        else Failed?.Invoke("本机语音识别中断，请检查默认麦克风后重新唤醒。");
+        else Failed?.Invoke(L.T("本机语音识别中断，请检查默认麦克风后重新唤醒。"));
     }
     private void OnRecordingStopped(object? sender, StoppedEventArgs args)
-    { if (!_disposed && !_finishing && args.Exception != null) Failed?.Invoke("麦克风已断开或被独占，本次录音已停止。"); }
+    { if (!_disposed && !_finishing && args.Exception != null) Failed?.Invoke(L.T("麦克风已断开或被独占，本次录音已停止。")); }
     private void OnAudio(object? sender, WaveInEventArgs args)
     {
         var format = (sender as WasapiCapture)?.WaveFormat;

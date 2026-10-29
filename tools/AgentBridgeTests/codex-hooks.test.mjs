@@ -102,6 +102,24 @@ test('Native approval still reaches Codex when the island is unavailable', async
   assert.deepEqual(await handleHook(hook(), config), {});
 });
 
+test('Codex asking for user input reports a prompt and resumes after the answer without approving tools', async t => {
+  const { config, calls } = await bridge(t, {});
+  config.approvalMode = 'native';
+  const output = await handleHook(hook('PreToolUse', {tool_name:'request_user_input',
+    tool_input:{questions:[{question:'PRIVATE_QUESTION', options:[{label:'PRIVATE_OPTION'}]}]}}), config);
+  assert.deepEqual(output, {});
+  assert.equal(calls.at(-1).body.state, 'input-wait', 'island must announce that Codex needs an answer');
+  assert.equal(calls.at(-1).body.detail, 'Codex · 等待你的回复');
+  assert.equal(calls.filter(c=>c.url==='/approval').length, 0, 'asking a question is not tool approval');
+  assert.ok(!JSON.stringify(calls).includes('PRIVATE_'), 'questions and answers must not be copied into the bridge');
+  await handleHook(hook('PreToolUse', {tool_name:'functions.request_user_input'}), config);
+  assert.equal(calls.at(-1).body.state, 'input-wait', 'namespaced input tools retain the same waiting state');
+  await handleHook(hook('PostToolUse', {tool_name:'request_user_input'}), config);
+  assert.equal(calls.at(-1).body.state, 'thinking');
+  await handleHook(hook('Stop'), config);
+  assert.equal(calls.at(-1).body.state, 'idle');
+});
+
 test('Native approval is the default and invalid modes are rejected', () => {
   const config = { projectRoot: repo, runtimeDir: repo };
   assert.equal(validateConfig(config).approvalMode, 'native');

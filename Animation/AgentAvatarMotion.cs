@@ -88,6 +88,7 @@ internal static class AgentAvatarMotion
     {
         if (_suspended) return SuspendedClip;
         if (state == AgentRunState.Working) return Load(family, AgentRunState.Streaming);
+        if (state == AgentRunState.InputWait) return Load(family, AgentRunState.ToolWait);
         if (Clips.TryGetValue((family, state), out var clip)) { clip.Used = ++_cacheUse; return clip; }
         string name = state switch
         {

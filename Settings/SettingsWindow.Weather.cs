@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,7 +19,7 @@ public partial class SettingsWindow
     private void AddWeatherSettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "天气与提醒", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 24, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = L.T("天气与提醒"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 24, 0, 12) });
         var group = new StackPanel();
         foreach (var descriptor in SettingsRegistry.All.Where(x => x.Key.StartsWith("Weather", StringComparison.Ordinal) && x.ControlName.Length > 0))
         {

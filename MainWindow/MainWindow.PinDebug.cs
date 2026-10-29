@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Globalization;
 using System.Threading.Tasks;
@@ -110,7 +111,7 @@ namespace alpha_island
             IslandLog.Debug("Pin", $"{tag} step=hold-guard ok={held} state={_state}");
 
             // 更高的优先级仍然可以临时打断（系统告警 68 > 下载 66），它自己超时后钉子层必须回来。
-            ShowSystemNotify("\uE950", "置顶自检", "临时打断", "-", 2.0);
+            ShowSystemNotify("\uE950", L.T("置顶自检"), L.T("临时打断"), "-", 2.0);
             await Task.Delay(700);
             bool preempted = _layers.LastWinnerKey == "system";
             IslandLog.Debug("Pin", $"{tag} step=preempt ok={preempted} winner={_layers.LastWinnerKey ?? "-"}");

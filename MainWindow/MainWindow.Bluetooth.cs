@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -86,7 +87,7 @@ namespace alpha_island
 
             if (isConnected)
             {
-                BtStatusText.Text = "已连接";
+                BtStatusText.Text = L.T("已连接");
                 BtStatusText.Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary");
                 BtBatteryIcon.Visibility = Visibility.Visible;
                 BtBatteryText.Visibility = Visibility.Visible;
@@ -94,7 +95,7 @@ namespace alpha_island
             }
             else
             {
-                BtStatusText.Text = "已断开";
+                BtStatusText.Text = L.T("已断开");
                 BtStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x88, 0x55));
                 BtBatteryIcon.Visibility = Visibility.Collapsed;
                 BtBatteryText.Visibility = Visibility.Collapsed;
@@ -331,6 +332,7 @@ namespace alpha_island
 
             IslandState prev = _state;
             RememberOpenCardPage();
+            _browserManualReveal = false;
             _state = IslandState.Bar;
 
             // 开一段形变窗口（S3）：这条路径不走 SetState，得自己告诉宿主"要塌回收细条了"。

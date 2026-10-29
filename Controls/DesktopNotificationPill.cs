@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -133,16 +134,16 @@ internal sealed partial class DesktopNotificationPill : Grid
         Title.Text = OneLine(item.Kind switch
         {
             DesktopEventKind.WifiRadio => "Wi-Fi",
-            DesktopEventKind.BluetoothRadio => "蓝牙",
+            DesktopEventKind.BluetoothRadio => L.T("蓝牙"),
             DesktopEventKind.Message => qqMessage ? OneLine(item.Title) : item.AppName,
             _ => item.Title
         });
-        Detail.Text = OneLine(item.RadioEnabled is bool enabled ? enabled ? "已开启" : "已关闭"
-            : qqMessage ? string.IsNullOrWhiteSpace(item.Body) ? "收到一条消息" : OneLine(item.Body)
+        Detail.Text = OneLine(item.RadioEnabled is bool enabled ? enabled ? L.T("已开启") : L.T("已关闭")
+            : qqMessage ? string.IsNullOrWhiteSpace(item.Body) ? L.T("收到一条消息") : OneLine(item.Body)
             : item.Kind == DesktopEventKind.Message ? item.PreviewText : item.Body);
         ToolTip = item.Title + "\n" + item.Body
             + (item.CanOpenApp && MessengerIdentity.FromNotification(item) is { } messenger
-                ? "\n点击打开" + MessengerIdentity.Name(messenger) : "");
+                ? L.T("\n点击打开") + MessengerIdentity.Name(messenger) : "");
         UpdateContentWidth();
         if (changed)
         {

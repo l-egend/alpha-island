@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using Color = System.Windows.Media.Color;
 using SolidColorBrush = System.Windows.Media.SolidColorBrush;
@@ -55,16 +56,13 @@ namespace alpha_island
             if (_netSpeed != null) return;
 
             var service = new NetworkSpeedService();
-            service.RefreshAdapters();
             _netSpeed = service;
+            _networkSnapshotSource = service; _networkSnapshot = NetworkCounterSnapshot.Capture(service);
 
             // 立即跑第一拍：只为建立字节基线（那一拍速率恒为 0），真正有数字要等第 2 拍
             _ticker.Register("netspeed", TimeSpan.FromSeconds(1), SampleNetworkSpeed, runImmediately: true);
 
-            IslandLog.Debug("NetworkSpeed",
-                service.AdapterNames.Count == 0
-                    ? "网速采样已启动（当前无可用网卡，细条不显示）"
-                    : $"网速采样已启动，统计网卡 {service.AdapterNames.Count} 块：{string.Join("、", service.AdapterNames)}");
+            IslandLog.Debug("NetworkSpeed", "网速后台采样已启动");
         }
 
         private void StopNetworkSpeedService()
@@ -73,6 +71,8 @@ namespace alpha_island
 
             _netSpeed?.Dispose();
             _netSpeed = null;
+            _networkReadTask = null; _networkReadOwner = null;
+            _networkSnapshotSource = null; _networkSnapshot = null;
             _externalNetwork.Reset();
             ClearNetSpeedHistory();
             UpdateNetSpeedPrimary(default);
@@ -92,13 +92,8 @@ namespace alpha_island
             SyncBarIndicators();
         }
 
-        private void SampleNetworkSpeed()
+        private void ApplyNetworkSpeedSample(NetworkSpeedSample sample)
         {
-            NetworkSpeedService? service = _netSpeed;
-            if (service == null) return;
-
-            NetworkSpeedSample sample = ReadNetworkSample(service);
-
             // 调试钩子：ALPHA_ISLAND_FAKE_NETSPEED=<KB/s> 时用合成采样替代真实采样，
             // 这样没有真实下载也能验证「下载期间网速常显」的胶囊与网速卡片曲线。
             if (!_netSpeedFakeParsed)
@@ -219,8 +214,8 @@ namespace alpha_island
             // （实测 20s 能刷 350+ 行，512KB 轮转很快就顶掉别的现场）。
             if (_barMicVisible || _barCamVisible)
             {
-                string privacyDiag = $"细条占用点：点亮={show}（形态={_state}，形变={_reveal:0.00}）"
-                    + $" 麦克风={_barMicVisible} 摄像头={_barCamVisible} 层透明度={BarSpeedLayer.Opacity:0.00}"
+                string privacyDiag = L.F($"细条占用点：点亮={show}（形态={_state}，形变={_reveal:0.00}）")
+                    + L.F($" 麦克风={_barMicVisible} 摄像头={_barCamVisible} 层透明度={BarSpeedLayer.Opacity:0.00}")
                     + $" [bar-privacy show={show} state={_state} reveal={_reveal:0.00} mic={_barMicVisible} cam={_barCamVisible} opacity={BarSpeedLayer.Opacity:0.00}]";
                 if (privacyDiag != _barPrivacyDiagLast)
                 {
@@ -268,11 +263,11 @@ namespace alpha_island
             _netSpeedNextAlertUtc = DateTime.UtcNow + NetSpeedAlertCooldown;
             bool isDown = downMBps >= upMBps;
             bool downHigh = downMBps >= thresholdMBps, upHigh = upMBps >= thresholdMBps;
-            string title = downHigh && upHigh ? "上传、下载偏高" : downHigh ? "下载速度偏高" : "上传速度偏高";
+            string title = downHigh && upHigh ? L.T("上传、下载偏高") : downHigh ? L.T("下载速度偏高") : L.T("上传速度偏高");
             string value = downHigh && upHigh ? $"↓{downMBps:0.#} ↑{upMBps:0.#} MB/s"
                 : NetworkSpeedService.FormatSpeedFull(downHigh ? sample.DownBytesPerSecond : sample.UpBytesPerSecond);
             string glyph = downHigh && upHigh ? "\uE895" : downHigh ? "\uE896" : "\uE898";
-            ShowSystemNotify(glyph, title, $"阈值 {thresholdMBps:0.###} MB/s", value, NetSpeedAlertSeconds,
+            ShowSystemNotify(glyph, title, L.F($"阈值 {thresholdMBps:0.###} MB/s"), value, NetSpeedAlertSeconds,
                 shape: downHigh && !upHigh ? IconShape.Download : IconShape.Auto, compact: true, targetPage: IslandPageIds.NetSpeed);
 
             IslandLog.Debug("NetworkSpeed",
@@ -390,8 +385,8 @@ namespace alpha_island
             _memHighTicks = 0;
             _memNextAlertUtc = DateTime.UtcNow + MemoryAlertCooldown;
 
-            ShowSystemNotify("\uE950", "内存占用偏高",
-                $"超过 {threshold:0}% 的提醒阈值",
+            ShowSystemNotify("\uE950", L.T("内存占用偏高"),
+                L.F($"超过 {threshold:0}% 的提醒阈值"),
                 $"{sample.UsedPercent:0}%", compact: true);
 
             IslandLog.Debug("Memory",
@@ -529,11 +524,11 @@ namespace alpha_island
             _powerNextAlertUtc = now + PowerAlertCooldown;
             _powerHighTicks = 0;
 
-            string detail = $"当前放电 {BatteryService.FormatPower(info.DischargeRateMilliwatts)}" +
-                            $"｜预计剩余 {BatteryService.FormatRemaining(info.RemainingLifeSeconds)}" +
-                            $"｜阈值 {thresholdWatts:0.###} W";
+            string detail = L.F($"当前放电 {BatteryService.FormatPower(info.DischargeRateMilliwatts)}") +
+                            L.F($"｜预计剩余 {BatteryService.FormatRemaining(info.RemainingLifeSeconds)}") +
+                            L.F($"｜阈值 {thresholdWatts:0.###} W");
             IslandLog.Debug("Power", $"放电 {watts:0.#} W 超过阈值 {thresholdWatts:0.###} W，弹出提示");
-            ShowSystemNotify("\uE945", "功耗偏高", detail, BatteryService.FormatPower(info.DischargeRateMilliwatts));
+            ShowSystemNotify("\uE945", L.T("功耗偏高"), detail, BatteryService.FormatPower(info.DischargeRateMilliwatts));
         }
 
         /// <summary>设置页改了功率开关/阈值后立即生效。</summary>
@@ -613,9 +608,9 @@ namespace alpha_island
                 if (!_radioTransitions.Apply(kind, state)) continue;
                 bool wifi = kind == Windows.Devices.Radios.RadioKind.WiFi;
                 if (!SettingsRegistry.GetBool(_options, wifi ? "NotificationWifiRadio" : "NotificationBluetoothRadio", true)) continue;
-                string label = wifi ? "Wi-Fi" : "蓝牙";
-                var item = new DesktopNotification("radio-" + kind + "-" + (++_radioEventSequence), "", "系统状态",
-                    $"{label}已{(state == true ? "开启" : "关闭")}", state == true ? "无线开关已打开" : "无线开关已关闭",
+                string label = wifi ? "Wi-Fi" : L.T("蓝牙");
+                var item = new DesktopNotification("radio-" + kind + "-" + (++_radioEventSequence), "", L.T("系统状态"),
+                    L.F($"{label}已{(state == true ? "开启" : "关闭")}"), state == true ? L.T("无线开关已打开") : L.T("无线开关已关闭"),
                     DateTimeOffset.Now, wifi ? DesktopEventKind.WifiRadio : DesktopEventKind.BluetoothRadio, RadioEnabled: state);
                 _desktopInbox.Add(item, _desktopPolicy.CanPopup(item, _sessionLocked), _desktopPolicy);
                 IslandLog.Info("Radio", item.Title);
@@ -638,9 +633,9 @@ namespace alpha_island
                     _observedRadios.Clear();
                     foreach (var radio in radios) { _observedRadios.Add(radio); radio.StateChanged += OnWirelessRadioChanged; }
                     ApplyWirelessRadioStates(radios.Select(r => (r.Kind, r.State)));
-                    string summary = radios.Count == 0 ? "未检测到无线设备" : string.Join(" / ", radios.Select(r =>
-                        r.Kind + " " + (r.State == Windows.Devices.Radios.RadioState.On ? "开" :
-                            r.State is Windows.Devices.Radios.RadioState.Off or Windows.Devices.Radios.RadioState.Disabled ? "关" : "未知")));
+                    string summary = radios.Count == 0 ? L.T("未检测到无线设备") : string.Join(" / ", radios.Select(r =>
+                        r.Kind + " " + (r.State == Windows.Devices.Radios.RadioState.On ? L.T("开") :
+                            r.State is Windows.Devices.Radios.RadioState.Off or Windows.Devices.Radios.RadioState.Disabled ? L.T("关") : L.T("未知"))));
                     if (summary != _wirelessSummary) IslandLog.Debug("Radio", "无线开关监听：" + summary);
                     _wirelessSummary = summary;
                     SyncBarIndicators();
@@ -652,7 +647,7 @@ namespace alpha_island
                 if (!_radioMonitoring || version != _radioVersion) return;
                 _radioTransitions.Reset();
                 IslandLog.Warn("Radio", "读取无线开关状态失败: " + ex.Message);
-                _wirelessSummary = "无线设备状态读取失败";
+                _wirelessSummary = L.T("无线设备状态读取失败");
                 SyncBarIndicators();
                 if (IsSystemCardVisible) SyncSystemCard();
             }
@@ -765,8 +760,8 @@ namespace alpha_island
                     // 取值：mic / cam / mic+cam / both / all（同时含 mic 与 cam 的字符串都行）
                     bool all = fake.Contains("both", StringComparison.OrdinalIgnoreCase) ||
                                fake.Contains("all", StringComparison.OrdinalIgnoreCase);
-                    if (all || fake.Contains("mic", StringComparison.OrdinalIgnoreCase)) { micApp ??= "调试占用（mic）"; micNow = true; }
-                    if (all || fake.Contains("cam", StringComparison.OrdinalIgnoreCase)) { camApp ??= "调试占用（cam）"; camNow = true; }
+                    if (all || fake.Contains("mic", StringComparison.OrdinalIgnoreCase)) { micApp ??= L.T("调试占用（mic）"); micNow = true; }
+                    if (all || fake.Contains("cam", StringComparison.OrdinalIgnoreCase)) { camApp ??= L.T("调试占用（cam）"); camNow = true; }
                 }
             }
 
@@ -777,14 +772,14 @@ namespace alpha_island
             {
                 _privacyMicNextNotifyUtc = now + PrivacyNotifyCooldown;
                 IslandLog.Debug("Privacy", $"麦克风开始被使用（{micApp}），弹出提示");
-                ShowSystemNotify("\uE720", "麦克风使用中", $"{micApp} 正在使用麦克风", string.Empty);
+                ShowSystemNotify("\uE720", L.T("麦克风使用中"), L.F($"{micApp} 正在使用麦克风"), string.Empty);
             }
 
             if (camNow && !_privacyCamActive && now >= _privacyCamNextNotifyUtc)
             {
                 _privacyCamNextNotifyUtc = now + PrivacyNotifyCooldown;
                 IslandLog.Debug("Privacy", $"摄像头开始被使用（{camApp}），弹出提示");
-                ShowSystemNotify("\uE722", "摄像头使用中", $"{camApp} 正在使用摄像头", string.Empty);
+                ShowSystemNotify("\uE722", L.T("摄像头使用中"), L.F($"{camApp} 正在使用摄像头"), string.Empty);
             }
 
             _privacyMicActive = micNow;

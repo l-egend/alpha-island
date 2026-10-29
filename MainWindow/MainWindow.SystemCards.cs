@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -35,7 +36,7 @@ namespace alpha_island
 
         private string? _privacyMicApp;
         private string? _privacyCamApp;
-        private string _wirelessSummary = "等待无线设备状态";
+        private string _wirelessSummary = L.T("等待无线设备状态");
 
         /// <summary>网速卡是否正显示（翻页 + 卡片态）；只有这时才逐拍重画曲线。</summary>
         internal bool IsNetSpeedCardVisible =>
@@ -111,9 +112,9 @@ namespace alpha_island
 
             NetworkCardIcon.Active = havelService;
             NetSpeedCardStatusText.Text = !havelService
-                ? "网速检测未开启"
-                : _externalNetwork.Active ? "来源：" + _externalNetwork.Title
-                : (string.IsNullOrEmpty(_netSpeed!.DegradedReason) ? "来源：系统" : _netSpeed.DegradedReason);
+                ? L.T("网速检测未开启")
+                : _externalNetwork.Active ? L.T("来源：") + _externalNetwork.Title
+                : (string.IsNullOrEmpty(_netSpeed!.DegradedReason) ? L.T("来源：系统") : _netSpeed.DegradedReason);
 
             NetSpeedCardAdapterText.Text = _externalNetwork.Active ? _externalNetwork.Reading!.Adapter : havelService && _netSpeed!.AdapterNames.Count > 0
                 ? _netSpeed.AdapterNames[0]
@@ -132,14 +133,14 @@ namespace alpha_island
             // Both directions share a time window and scale. Each line keeps its own measured samples.
             double downPeak = _netSpeedDownHistory.Count > 0 ? _netSpeedDownHistory.Max() : 0;
             double upPeak = _netSpeedUpHistory.Count > 0 ? _netSpeedUpHistory.Max() : 0;
-            NetSpeedCardPeakText.Text = havelService ? "↓ 下载 · 峰值 " + NetworkSpeedService.FormatSpeedFull(downPeak) : "↓ 下载 · 峰值 —";
-            NetSpeedCardUpPeakText.Text = havelService ? "↑ 上传 · 峰值 " + NetworkSpeedService.FormatSpeedFull(upPeak) : "↑ 上传 · 峰值 —";
+            NetSpeedCardPeakText.Text = havelService ? L.T("↓ 下载 · 峰值 ") + NetworkSpeedService.FormatSpeedFull(downPeak) : L.T("↓ 下载 · 峰值 —");
+            NetSpeedCardUpPeakText.Text = havelService ? L.T("↑ 上传 · 峰值 ") + NetworkSpeedService.FormatSpeedFull(upPeak) : L.T("↑ 上传 · 峰值 —");
             double axisMax = Math.Max(1, Math.Max(downPeak, upPeak) * 1.1);
             NetSpeedSparkline.FixedMax = axisMax; NetSpeedUpSparkline.FixedMax = axisMax;
             NetSpeedSparkline.SetValues(_netSpeedDownHistory);
             NetSpeedUpSparkline.SetValues(_netSpeedUpHistory);
 
-            NetSpeedCardHintText.Text = "近 60 秒" + BuildTrafficHint();
+            NetSpeedCardHintText.Text = L.T("近 60 秒") + BuildTrafficHint();
 
             IslandLog.Debug("Cards", $"网速卡：下行 {NetworkSpeedService.FormatSpeedFull(down)}" +
                                      $"｜上行 {NetworkSpeedService.FormatSpeedFull(up)}" +
@@ -160,7 +161,7 @@ namespace alpha_island
             SysCardBatteryDetail.Text = ChargingBatteryDescription;
             SystemBatterySummary.SetBattery(_chargingStatus ?? _battery?.Current);
             // --- 无线连接 ---
-            SysCardWirelessValue.Text = _radioMonitoring ? "Wi-Fi / 蓝牙" : "未开启监测";
+            SysCardWirelessValue.Text = _radioMonitoring ? L.T("Wi-Fi / 蓝牙") : L.T("未开启监测");
             SysCardWirelessDetail.Text = _radioMonitoring ? _wirelessSummary : "";
             // --- 隐私 ---
             bool mic = _privacyMicActive;
@@ -168,23 +169,23 @@ namespace alpha_island
             string privacyValue;
             if (_privacy == null)
             {
-                privacyValue = "未开启";
+                privacyValue = L.T("未开启");
             }
             else if (mic && cam)
             {
-                privacyValue = "都在使用";
+                privacyValue = L.T("都在使用");
             }
             else if (mic)
             {
-                privacyValue = "麦克风使用中";
+                privacyValue = L.T("麦克风使用中");
             }
             else if (cam)
             {
-                privacyValue = "摄像头使用中";
+                privacyValue = L.T("摄像头使用中");
             }
             else
             {
-                privacyValue = _privacy.DegradedReason != null ? "状态未知" : "未在使用";
+                privacyValue = _privacy.DegradedReason != null ? L.T("状态未知") : L.T("未在使用");
             }
 
             SysCardPrivacyValue.Text = privacyValue;
@@ -192,7 +193,7 @@ namespace alpha_island
                 ? ""
                 : _privacy.DegradedReason ?? BuildPrivacyDetail(mic, cam);
 
-            SystemCardSummaryText.Text = "CPU · 内存 · CPU＋GPU 总功耗";
+            SystemCardSummaryText.Text = L.T("CPU · 内存 · CPU＋GPU 总功耗");
 
             IslandLog.Debug("Cards",
                 $"系统状态卡：内存 {SysCardMemValue.Text}（{SysCardMemDetail.Text}）｜功耗 {SysCardPowerValue.Text}（{SysCardPowerDetail.Text}）" +
@@ -202,9 +203,9 @@ namespace alpha_island
         private string BuildPrivacyDetail(bool mic, bool cam)
         {
             var parts = new List<string>(2);
-            if (mic) parts.Add("麦克风 " + (_privacyMicApp ?? "未知应用"));
-            if (cam) parts.Add("摄像头 " + (_privacyCamApp ?? "未知应用"));
-            if (parts.Count == 0) return "麦克风 / 摄像头都没有被占用";
+            if (mic) parts.Add(L.T("麦克风 ") + (_privacyMicApp ?? L.T("未知应用")));
+            if (cam) parts.Add(L.T("摄像头 ") + (_privacyCamApp ?? L.T("未知应用")));
+            if (parts.Count == 0) return L.T("麦克风 / 摄像头都没有被占用");
             return string.Join("｜", parts);
         }
 

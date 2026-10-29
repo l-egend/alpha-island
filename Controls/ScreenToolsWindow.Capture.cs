@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -28,7 +29,7 @@ internal sealed partial class ScreenToolsWindow
             {
                 Hide();await Task.Delay(150,token);
                 var selected=_pickRegion(token);
-                if(selected==null){_status.Text="已取消识别，剪贴板未改变。";return;}
+                if(selected==null){_status.Text=L.T("已取消识别，剪贴板未改变。");return;}
                 _region=selected;_lastText="";
                 string text=await _screen.ReadAsync(selected.Value,token);
                 if(!_closed)ApplyRecognizedText(text,copy);
@@ -39,15 +40,15 @@ internal sealed partial class ScreenToolsWindow
     internal void ApplyRecognizedText(string text,bool copy)
     {
         _original.Text=text;_result.Clear();
-        if(text.Length==0){_status.Text="没有识别到文字，请放大文字或重新框选。";return;}
-        if(copy)CopyOriginal();else _status.Text=$"已在本机识别{text.Length}个字符，可复制原文或选择翻译。";
+        if(text.Length==0){_status.Text=L.T("没有识别到文字，请放大文字或重新框选。");return;}
+        if(copy)CopyOriginal();else _status.Text=L.F($"已在本机识别{text.Length}个字符，可复制原文或选择翻译。");
     }
     private void CopyOriginal()
     {
-        if(_original.Text.Length==0){_status.Text="请先识别屏幕文字。";return;}
+        if(_original.Text.Length==0){_status.Text=L.T("请先识别屏幕文字。");return;}
         try{_copyText(_original.Text);}
-        catch(System.Runtime.InteropServices.ExternalException){_status.Text="剪贴板正被其他程序占用，请稍后点“复制原文”。";NotifyCompleted(new("error",_status.Text));return;}
-        _status.Text=$"已复制原文（{_original.Text.Length}个字符）";NotifyCompleted(new("ocr",_original.Text));
+        catch(System.Runtime.InteropServices.ExternalException){_status.Text=L.T("剪贴板正被其他程序占用，请稍后点“复制原文”。");NotifyCompleted(new("error",_status.Text));return;}
+        _status.Text=L.F($"已复制原文（{_original.Text.Length}个字符）");NotifyCompleted(new("ocr",_original.Text));
     }
     internal async Task PickColorAsync(bool returnToWindow=true)
     {
@@ -59,7 +60,7 @@ internal sealed partial class ScreenToolsWindow
             {
                 Hide();await Task.Delay(150,token);
                 var color=ScreenPixelPicker.Pick(token);
-                if(color==null){_status.Text="已取消取色，剪贴板未改变。";return;}
+                if(color==null){_status.Text=L.T("已取消取色，剪贴板未改变。");return;}
                 if(!_closed)ApplyPickedColor(color.Value);
             });
         }
@@ -81,11 +82,11 @@ internal sealed partial class ScreenToolsWindow
     }
     private void CopyColor(string format)
     {
-        if(_color is not {} color){_status.Text="请先使用颜色吸管。";return;}
+        if(_color is not {} color){_status.Text=L.T("请先使用颜色吸管。");return;}
         string text=format=="rgb"?color.Rgb:format=="hsl"?color.Hsl:color.Hex;
         try{_copyText(text);}
-        catch(System.Runtime.InteropServices.ExternalException){_status.Text="剪贴板正被占用，可稍后重新复制颜色。";NotifyCompleted(new("error",_status.Text));return;}
-        _status.Text="已复制 "+text;NotifyCompleted(new("color",text));
+        catch(System.Runtime.InteropServices.ExternalException){_status.Text=L.T("剪贴板正被占用，可稍后重新复制颜色。");NotifyCompleted(new("error",_status.Text));return;}
+        _status.Text=L.T("已复制 ")+text;NotifyCompleted(new("color",text));
     }
     private void NotifyCompleted(ScreenToolOutput output)
     {

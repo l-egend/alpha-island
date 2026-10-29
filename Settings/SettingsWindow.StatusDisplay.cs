@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using alpha_island.Core;
@@ -16,15 +17,15 @@ public partial class SettingsWindow
     internal void UpdateHardwarePowerState(AlphaIsland.Hardware.HardwarePowerReading reading)
     {
         if (FindName("HardwarePowerStatus") is not TextBlock state) return;
-        state.Text = reading.TotalWatts is double watts ? $"硬件读取已就绪：CPU＋GPU {watts:0.0} W" : reading.Reason;
+        state.Text = reading.TotalWatts is double watts ? L.F($"硬件读取已就绪：CPU＋GPU {watts:0.0} W") : reading.Reason;
         state.ToolTip = reading.Description;
     }
     private void AddStatusDisplaySettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "浮窗显示内容", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = L.T("浮窗显示内容"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var group = new StackPanel();
-        group.Children.Add(new TextBlock { Text = "网速与系统状态分别显示。勾选需要的内容，用 ↑ / ↓ 调整显示顺序；浮窗宽度随内容调整。",
+        group.Children.Add(new TextBlock { Text = L.T("网速与系统状态分别显示。勾选需要的内容，用 ↑ / ↓ 调整显示顺序；浮窗宽度随内容调整。"),
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(14, 12, 14, 6) });
         _statusDisplayRows = new StackPanel(); group.Children.Add(_statusDisplayRows);
         foreach (string key in StatusDisplayOptions.All)
@@ -42,19 +43,19 @@ public partial class SettingsWindow
             {
                 var move = new Button { Content = direction < 0 ? "↑" : "↓", Style = (Style)FindResource("W11Button"),
                     Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(2, 0, 0, 0), Tag = direction,
-                    ToolTip = direction < 0 ? "向前显示" : "向后显示" };
+                    ToolTip = direction < 0 ? L.T("向前显示") : L.T("向后显示") };
                 move.Click += (_, _) => MoveStatusDisplayItem(key, direction); controls.Children.Add(move);
             }
             Grid.SetColumn(controls, 1); row.Children.Add(controls); _statusDisplayControls[key] = row; _statusDisplayCards[key] = SettingCard(row);
         }
         panel.Children.Add(group);
-        panel.Children.Add(new TextBlock { Text = "硬件功耗", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 20, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = L.T("硬件功耗"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 20, 0, 12) });
         var power = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
-        power.Children.Add(new TextBlock { Text = "显示 CPU 封装＋独立 GPU 的实际功耗，接通电源也可读取。核显包含在 CPU 封装中。",
+        power.Children.Add(new TextBlock { Text = L.T("显示 CPU 封装＋独立 GPU 的实际功耗，接通电源也可读取。核显包含在 CPU 封装中。"),
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap });
-        power.Children.Add(new TextBlock { Text = "勾选 CPU＋GPU 功耗后自动读取，无需额外安装驱动或管理员授权。设备未提供数据时显示 —W，悬停可查看分项与原因。",
+        power.Children.Add(new TextBlock { Text = L.T("勾选 CPU＋GPU 功耗后自动读取，无需额外安装驱动或管理员授权。设备未提供数据时显示 —W，悬停可查看分项与原因。"),
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 8) });
-        var state = new TextBlock { Name = "HardwarePowerStatus", Text = "等待功耗采样；请先勾选 CPU＋GPU 功耗。", Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 6) };
+        var state = new TextBlock { Name = "HardwarePowerStatus", Text = L.T("等待功耗采样；请先勾选 CPU＋GPU 功耗。"), Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 6) };
         RegisterName(state.Name, state);
         power.Children.Add(state); panel.Children.Add(new Border { Style = (Style)FindResource("W11Card"), Child = power });
         Page_System.Children.Insert(1, panel);
@@ -83,7 +84,7 @@ public partial class SettingsWindow
         {
             _statusDisplayRows.Children.Add(new TextBlock
             {
-                Text = network ? "网速浮窗" : "系统状态浮窗", Style = (Style)FindResource("W11RowHint"),
+                Text = network ? L.T("网速浮窗") : L.T("系统状态浮窗"), Style = (Style)FindResource("W11RowHint"),
                 FontWeight = FontWeights.SemiBold, Margin = new Thickness(14, 14, 14, 4)
             });
             string[] group = _statusDisplayOrder.Where(key => IsNetworkStatusItem(key) == network).ToArray();

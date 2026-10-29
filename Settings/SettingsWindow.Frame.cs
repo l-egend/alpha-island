@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Windows;
 using System.Windows.Interop;
@@ -44,7 +45,7 @@ public partial class SettingsWindow
         SettingsShell.CornerRadius = new CornerRadius(radius);
         RootGrid.Clip = new RectangleGeometry(new Rect(0, 0, RootGrid.ActualWidth, RootGrid.ActualHeight), radius, radius);
         MaximizeButton.Content = maximized ? "\uE923" : "\uE922";
-        MaximizeButton.ToolTip = maximized ? "还原" : "最大化";
+        MaximizeButton.ToolTip = maximized ? L.T("还原") : L.T("最大化");
         var handle = new WindowInteropHelper(this).Handle;
         // Win11 保留 DWM 的原生圆角和阴影；Win10 用窗口区域裁切，避免透明窗口的软件合成开销。
         if (handle != IntPtr.Zero && !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))

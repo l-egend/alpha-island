@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 namespace alpha_island.Core;
 
 internal sealed record HealthReading(DateTimeOffset At, double? Cpu, double? Memory, long? AvailableBytes, bool ExpectedLoad = false);
@@ -30,9 +31,9 @@ internal sealed class SystemHealthMonitor
         double median = Median(_cpu), deviation = Median(_cpu.Select(value=>Math.Abs(value-median)));
         bool cpuHot = !frame.ExpectedLoad && frame.Cpu is double cpu && Valid(cpu)
             && (cpu >= 90 || _cpu.Count >= 30 && cpu >= Math.Max(50, median+Math.Max(20,deviation*6)));
-        if (Trend("cpu",cpuHot,frame.At,90)) alerts.Add(new("cpu",_cpu.Count>=30?"CPU 持续高于近期基线":"CPU 持续高负载",$"CPU 当前约 {frame.Cpu:0}%，已持续至少90秒。可查看当前进程占用；编译、更新等正常任务也可能产生高负载。",frame.At));
+        if (Trend("cpu",cpuHot,frame.At,90)) alerts.Add(new("cpu",_cpu.Count>=30?L.T("CPU 持续高于近期基线"):L.T("CPU 持续高负载"),L.F($"CPU 当前约 {frame.Cpu:0}%，已持续至少90秒。可查看当前进程占用；编译、更新等正常任务也可能产生高负载。"),frame.At));
         bool memoryHot = frame.Memory is double memory && Valid(memory) && (memory>=96 || memory>=90 && frame.AvailableBytes is >=0 and < 1_073_741_824);
-        if (Trend("memory",memoryHot,frame.At,90)) alerts.Add(new("memory","可用内存持续偏低",$"内存占用约 {frame.Memory:0}%，已持续至少90秒。可查看占用排行并自行关闭不需要的应用。",frame.At));
+        if (Trend("memory",memoryHot,frame.At,90)) alerts.Add(new("memory",L.T("可用内存持续偏低"),L.F($"内存占用约 {frame.Memory:0}%，已持续至少90秒。可查看占用排行并自行关闭不需要的应用。"),frame.At));
         if (!cpuHot && frame.Cpu is double validCpu && Valid(validCpu) && !frame.ExpectedLoad) Add(_cpu,validCpu);
         if (!memoryHot && frame.Memory is double validMemory && Valid(validMemory)) Add(_memory,validMemory);
         return alerts.ToArray();
@@ -67,15 +68,15 @@ internal sealed class SystemHealthMonitor
                 growing=growth>=256L*1024*1024 && growth>=start*.4 && rising>=(history.Count-1)*.8
                     && increments.Max()<=growth*.5 && recentGrowth>=Math.Max(32L*1024*1024,growth*.15);
             }
-            if (growing && Allow(memoryId,now)) alerts.Add(new(memoryId,sample.Name+" 的私有内存持续增长",
-                $"最近约{(now-history[0].At).TotalMinutes:0}分钟从 {history[0].Sample.PrivateBytes/1048576d:0} MB 增长到 {sample.PrivateBytes/1048576d:0} MB。这是趋势提示，缓存或任务处理也可能导致增长，不能据此认定内存泄漏。",now));
+            if (growing && Allow(memoryId,now)) alerts.Add(new(memoryId,sample.Name+L.T(" 的私有内存持续增长"),
+                L.F($"最近约{(now-history[0].At).TotalMinutes:0}分钟从 {history[0].Sample.PrivateBytes/1048576d:0} MB 增长到 {sample.PrivateBytes/1048576d:0} MB。这是趋势提示，缓存或任务处理也可能导致增长，不能据此认定内存泄漏。"),now));
             string writeId=$"process-write:{sample.Id}:{sample.Started}";
             var recent=history.Where(value=>now-value.At<=TimeSpan.FromMinutes(3)).ToArray();
             bool writes=!expectedLoad && recent.Length>=6 && now-recent[0].At>=TimeSpan.FromSeconds(140)
                 && recent.Zip(recent.Skip(1),(a,b)=> a.Sample.WrittenBytes is ulong first && b.Sample.WrittenBytes is ulong last && last>=first
                     && (last-first)/(b.At-a.At).TotalSeconds>=50*1024*1024).All(value=>value);
-            if (writes && Allow(writeId,now)) alerts.Add(new(writeId,sample.Name+" 的 I/O 写入持续较高",
-                "最近数分钟观察到较高的进程写入量。此指标包含非磁盘 I/O，可能是下载、缓存或正常工作，不能据此认定在大量写日志。",now));
+            if (writes && Allow(writeId,now)) alerts.Add(new(writeId,sample.Name+L.T(" 的 I/O 写入持续较高"),
+                L.T("最近数分钟观察到较高的进程写入量。此指标包含非磁盘 I/O，可能是下载、缓存或正常工作，不能据此认定在大量写日志。"),now));
         }
         // Process churn must not grow cooldown dictionaries for an entire desktop session.
         foreach(string id in _cooldown.Where(pair=>now-pair.Value>TimeSpan.FromHours(1)).Select(pair=>pair.Key).ToArray()) _cooldown.Remove(id);

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -58,8 +59,8 @@ public sealed class IslandContourHandle : FrameworkElement
     {
         Cursor = Cursors.Hand;
         Focusable = true;
-        System.Windows.Automation.AutomationProperties.SetName(this, "切换组件");
-        ToolTip = "单击下一卡片 · 滚轮切换 · 长按移向图标，松手确认 · 移远或 Esc 取消";
+        System.Windows.Automation.AutomationProperties.SetName(this, L.T("切换组件"));
+        ToolTip = L.T("单击下一卡片 · 滚轮切换 · 长按移向图标，松手确认 · 移远或 Esc 取消");
         Loaded += (_, _) => { MotionPolicy.Changed += OnMotionPolicyChanged; PlayHint(); };
         Unloaded += (_, _) => { MotionPolicy.Changed -= OnMotionPolicyChanged; StopHint(); FinishBackdropTransition(); };
         IsVisibleChanged += (_, e) => { if ((bool)e.NewValue) PlayHint(); else { StopHint(); FinishBackdropTransition(); } };

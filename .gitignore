@@ -361,3 +361,22 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Credentials, personal application state and local diagnostic exports
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.dmp
+secrets.dat
+secrets.json
+credentials.json
+auth.json
+options.json
+options.json.bak
+clipboard_history.json
+integrations.json
+diagnostics-*.zip
+diagnostic-exports/

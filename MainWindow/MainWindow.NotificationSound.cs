@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using alpha_island.Core;
 using alpha_island.Services;
@@ -10,7 +11,7 @@ public partial class MainWindow
     private readonly NotificationSoundPolicy _notificationSoundPolicy = new();
 
     internal static Stream OpenNotificationSound() => typeof(MainWindow).Assembly.GetManifestResourceStream("AlphaIsland.NotificationGentle.wav")
-        ?? throw new FileNotFoundException("内置通知音效不可用。");
+        ?? throw new FileNotFoundException(L.T("内置通知音效不可用。"));
 
     private void ApplyNotificationSoundOptions()
     {

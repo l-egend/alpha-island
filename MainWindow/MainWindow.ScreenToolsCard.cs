@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -19,7 +20,7 @@ public partial class MainWindow
         view.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         view.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         view.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        view.Children.Add(new TextBlock { Text = "屏幕工具", FontSize = 15, FontWeight = FontWeights.SemiBold,
+        view.Children.Add(new TextBlock { Text = L.T("屏幕工具"), FontSize = 15, FontWeight = FontWeights.SemiBold,
             Foreground = Brushes.White, Margin = new Thickness(4, 2, 4, 8) });
         var actions = new Grid();
         actions.ColumnDefinitions.Add(new ColumnDefinition()); actions.ColumnDefinitions.Add(new ColumnDefinition());
@@ -29,16 +30,16 @@ public partial class MainWindow
             var button = new ToolActionButton(title, glyph, detail, action);
             Grid.SetRow(button, row); Grid.SetColumn(button, column); actions.Children.Add(button); return button;
         }
-        Add(0, 0, "识字并复制", "\uE8A5", "框选文字 · 自动复制", () => LaunchScreenCapture(false));
-        Add(0, 1, "颜色吸管", "\uE790", "获取 HEX / RGB 色值", () => LaunchScreenCapture(true));
-        Add(1, 0, "语音识别", "\uE720", "声音转文字 · 无需框选", async () => await ToggleScreenCaptionAsync(ScreenCaptionMode.SpeechRecognition));
-        Add(1, 1, "区域翻译", "\uE7F4", "框选屏幕文字 · 持续翻译", async () => await ToggleScreenCaptionAsync(ScreenCaptionMode.RegionTranslation));
-        Add(2, 0, "文字翻译 / 扫码", "\uE8C1", null, OpenScreenTools);
-        Add(2, 1, "快速启动", "\uE8A7", null, ShowQuickLauncher);
-        Add(3, 0, "管理提醒", "\uE916", null, () => OpenAssistantCenter());
-        Add(3, 1, "学习与健康", "\uE9D9", null, () => OpenAssistantCenter("habits"));
-        _externalTranslationButton = Add(4, 0, "调用外部翻译", "\uE8C1", null, async () => await InvokeExternalTranslationAsync());
-        Add(4, 1, "快捷键设置", "\uE765", null, OpenExternalTranslationSettings);
+        Add(0, 0, L.T("识字并复制"), "\uE8A5", L.T("框选文字 · 自动复制"), () => LaunchScreenCapture(false));
+        Add(0, 1, L.T("颜色吸管"), "\uE790", L.T("获取 HEX / RGB 色值"), () => LaunchScreenCapture(true));
+        Add(1, 0, L.T("语音识别"), "\uE720", L.T("声音转文字 · 无需框选"), async () => await ToggleScreenCaptionAsync(ScreenCaptionMode.SpeechRecognition));
+        Add(1, 1, L.T("区域翻译"), "\uE7F4", L.T("框选屏幕文字 · 持续翻译"), async () => await ToggleScreenCaptionAsync(ScreenCaptionMode.RegionTranslation));
+        Add(2, 0, L.T("文字翻译 / 扫码"), "\uE8C1", null, OpenScreenTools);
+        Add(2, 1, L.T("快速启动"), "\uE8A7", null, ShowQuickLauncher);
+        Add(3, 0, L.T("管理提醒"), "\uE916", null, () => OpenAssistantCenter());
+        Add(3, 1, L.T("学习与健康"), "\uE9D9", null, () => OpenAssistantCenter("habits"));
+        _externalTranslationButton = Add(4, 0, L.T("调用外部翻译"), "\uE8C1", null, async () => await InvokeExternalTranslationAsync());
+        Add(4, 1, L.T("快捷键设置"), "\uE765", null, OpenExternalTranslationSettings);
         Grid.SetRow(actions, 1); view.Children.Add(actions);
         _externalTranslationHint = new TextBlock { FontSize = 10, Foreground = new SolidColorBrush(Color.FromArgb(180, 255, 255, 255)),
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(5, 6, 5, 0), VerticalAlignment = VerticalAlignment.Top };

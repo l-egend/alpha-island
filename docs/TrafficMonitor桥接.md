@@ -43,6 +43,7 @@
 原生 DLL 独立于 C# 日常解决方案：安装 Visual Studio 的“使用 C++ 的桌面开发”后，单独打开 `plugins/TrafficMonitorBridge/TrafficMonitorBridge.vcxproj`，选择 x64 编译。输出复用 `bin/TrafficMonitorBridge/x64`，不生成安装包。当前机器也可用已有的 x64 MinGW：
 
 ```powershell
+cd ..\alpha-island-plugins
 .\tools\build-traffic-monitor-bridge.ps1
 ```
 

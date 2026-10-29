@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using alpha_island.Core;
@@ -98,12 +99,12 @@ public partial class MainWindow
         openApps.IntersectWith(_desktopInbox.History.Select(NotificationStackGroup.KeyFor));
         _notificationList.Children.Clear();
         int pendingCount = _desktopInbox.History.Count(n => n.Reminder is { Pending: true });
-        _notificationHistoryTitle.Text = _workspace.Notifications.ExpandedKeys != null ? $"本批通知 · {history.Length} 条" : pendingCount > 0 ? $"通知中心 · 待处理 {pendingCount}" : "通知中心";
+        _notificationHistoryTitle.Text = _workspace.Notifications.ExpandedKeys != null ? L.F($"本批通知 · {history.Length} 条") : pendingCount > 0 ? L.F($"通知中心 · 待处理 {pendingCount}") : L.T("通知中心");
         _notificationStackBack.Visibility = _workspace.Notifications.ExpandedKeys != null ? Visibility.Visible : Visibility.Collapsed;
         DesktopNotificationCard Create(DesktopNotification item)
         {
             var card = new DesktopNotificationCard(item);
-            card.ToolTip = _desktopPolicy.Level(item) switch { NotificationImportance.Critical => "紧急通知", NotificationImportance.Important => "重要通知", _ => "普通通知" };
+            card.ToolTip = _desktopPolicy.Level(item) switch { NotificationImportance.Critical => L.T("紧急通知"), NotificationImportance.Important => L.T("重要通知"), _ => L.T("普通通知") };
             if (expandedText.Contains(item.Key)) card.SetFullContentExpanded(true);
             card.OpenRequested += OpenDesktopNotificationApp;
             card.DismissRequested += DismissDesktopNotification;
@@ -131,6 +132,6 @@ public partial class MainWindow
             stack.ExpandedChanged += expanded => { if (expanded) openApps.Add(group.Key); else openApps.Remove(group.Key); };
             _notificationList.Children.Add(stack);
         }
-        if (history.Length == 0) _notificationList.Children.Add(UtilityText("暂无通知。授权后接收新消息；静默消息保留在这里。", 11));
+        if (history.Length == 0) _notificationList.Children.Add(UtilityText(L.T("暂无通知。授权后接收新消息；静默消息保留在这里。"), 11));
     }
 }

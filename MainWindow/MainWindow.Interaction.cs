@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -362,7 +363,7 @@ namespace alpha_island
         };
 
         /// <summary>卡片页在提示气泡里的短名（直接用页标题，没有就退回页 Id）。</summary>
-        private string CardDisplayName() => _pages.ActivePage?.Title ?? _pages.ActiveId ?? "卡片";
+        private string CardDisplayName() => _pages.ActivePage?.Title ?? _pages.ActiveId ?? L.T("卡片");
 
         /// <summary>
         /// 钉住 / 取消钉住**某一层**（③A）。右键路由与调试钩子共用这一条路径，
@@ -466,17 +467,17 @@ namespace alpha_island
         /// <summary>图层 Key → 气泡里的短名（气泡只有 11px 字号，名字越短越好）。</summary>
         private string LayerDisplayName(string key) => IsAgentIslandKey(key) ? AgentLabel(key) : key switch
         {
-            "volume" => "音量",
-            "battery" => "电量",
-            "bluetooth" => "蓝牙",
-            "clipboard" => "剪贴板",
-            "netspeed" => "网速",
-            "status" => "系统状态",
-            "charging" => "充电电量",
-            "system" => "系统",
-            "download" => "下载",
-            "agentstatus" => "助手",
-            "approval" => "审批",
+            "volume" => L.T("音量"),
+            "battery" => L.T("电量"),
+            "bluetooth" => L.T("蓝牙"),
+            "clipboard" => L.T("剪贴板"),
+            "netspeed" => L.T("网速"),
+            "status" => L.T("系统状态"),
+            "charging" => L.T("充电电量"),
+            "system" => L.T("系统"),
+            "download" => L.T("下载"),
+            "agentstatus" => L.T("助手"),
+            "approval" => L.T("审批"),
             _ => CardPinDisplayName(key) ?? key,
         };
 
@@ -488,7 +489,7 @@ namespace alpha_island
             if (PinBubble == null) return;
             _pinBubbleHiding = false;
 
-            string text = (pinned ? "已置顶" : "已取消") + (string.IsNullOrEmpty(target) ? string.Empty : "·" + target);
+            string text = (pinned ? L.T("已置顶") : L.T("已取消")) + (string.IsNullOrEmpty(target) ? string.Empty : "·" + target);
 
             PinBubbleIcon.Text = pinned ? "\uE718" : "\uE77A";
             PinBubbleText.Text = text;
@@ -572,7 +573,7 @@ namespace alpha_island
 
         private void ExpandIslandFromBar()
         {
-            if (GameDoNotDisturbActive) return;
+            if (GameDoNotDisturbActive || BrowserCompactBlocking) return;
             bool showingNotification = HasActiveNotification || _approvalCurrent != null || _layers.AnyPinned;
             string page = LastOpenedCardPage();
             if (ShouldHideForegroundMedia && !showingNotification && page == IslandPageIds.Music) return;
@@ -587,7 +588,7 @@ namespace alpha_island
 
         private void IslandBody_MouseEnter(object sender, MouseEventArgs e)
         {
-            if (_exiting || GameDoNotDisturbActive) return;
+            if (_exiting || GameDoNotDisturbActive || BrowserCompactBlocking) return;
             if (_approvalCurrent != null) { PresentCurrentApproval(); return; }
             if (_clipboardLocked) return;
             _hoverOutTicks = 0;
@@ -604,6 +605,11 @@ namespace alpha_island
             if (IsCompactIslandDoubleClick(e)) { e.Handled = true; return; }
             if (_exiting || GameDoNotDisturbActive) return;
             if (VoiceIslandVisible) { e.Handled = true; return; }
+            if (BrowserVolumeFeedbackActive) _browserManualReveal = true;
+            if (_state == IslandState.Bar && BrowserCompactBlocking)
+            {
+                RevealBrowserCompactIsland(); e.Handled = true; return;
+            }
             if (_state == IslandState.Pill && IsAgentIslandKey(PinTargetLayer()) && TryOpenAgentIsland(PinTargetLayer()))
             {
                 e.Handled = true;
@@ -714,6 +720,8 @@ namespace alpha_island
 
             // 3. 统一同步图层互斥显隐与左侧音乐圆球（通知结束时音乐圆球平滑回缩入主岛，PillLayer恢复居中）
             SyncNotificationLayers();
+
+            if (HandleBrowserCompactHover(IsCursorInHotZone())) return;
 
             // 若有任何提示/通知处于活跃期，保持展开不收回
             if (_state != IslandState.Card && ((_upNextShowing && UpNextActive) || HasActiveNotification))
@@ -918,6 +926,10 @@ namespace alpha_island
         {
             _componentCardAwaitingPointer = false;
             _hoverOutTicks = 0;
+            if (_browserCompactActive && !GameDoNotDisturbActive && _approvalCurrent == null && !VoiceIslandVisible)
+            {
+                _browserManualReveal = false; SetState(IslandState.Bar); return;
+            }
             // 若用户已置顶任意岛（音乐或通知）：点击外部绝不收回至细条。
             // 卡片态平滑降回"置顶小岛"（Pill 态常驻置顶）而不是一大张卡片顶置或塌成细条
             if ((HasVisibleMusicPin || _layers.AnyPinned) && (_state == IslandState.Pill || _state == IslandState.Card))

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using AlphaIsland.PluginSdk;
 
 namespace alpha_island.Core;
@@ -56,15 +57,15 @@ internal sealed class DeviceBatteryReminderPolicy
                 else if (percent < 100) charge.Armed = d.Charging && !charge.Completed;
                 charge.Percent = percent;
             }
-            if (full.Count > 0) alerts.Add(new(group.Name, true, string.Join("、", full) + "已充满（100%）"));
-            if (starting.Count > 0) alerts.Add(new(group.Name, false, string.Join("、", starting) + "，正在充电",
+            if (full.Count > 0) alerts.Add(new(group.Name, true, string.Join("、", full) + L.T("已充满（100%）")));
+            if (starting.Count > 0) alerts.Add(new(group.Name, false, string.Join("、", starting) + L.T("，正在充电"),
                 Charging: true, Kind: group.Display.Device.Kind));
             var low = components.Where(r => !r.Sample.Device.Charging && r.Sample.Device.Percent is >= 0 and <= 20).ToArray();
             int band = low.Any(r => r.Sample.Device.Percent <= 10) ? 2 : low.Length > 0 ? 1 : 0;
             if (band > state.LowBand)
             {
                 state.LowBand = band;
-                alerts.Add(new(group.Name, false, string.Join("、", low.Select(r => DeviceBatteryGroup.PartName(r.Part) + " " + (r.Sample.Device.Estimated ? "约 " : "") + r.Sample.Device.Percent + "%")) + "，请及时充电"));
+                alerts.Add(new(group.Name, false, string.Join("、", low.Select(r => DeviceBatteryGroup.PartName(r.Part) + " " + (r.Sample.Device.Estimated ? L.T("约 ") : "") + r.Sample.Device.Percent + "%")) + L.T("，请及时充电")));
             }
             else if (components.Count > 0 && components.All(r => r.Sample.Device.Percent is > 25)) state.LowBand = 0;
         }

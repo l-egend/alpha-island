@@ -60,6 +60,54 @@ internal static partial class Program
                 Thread.Sleep(80);
                 Check(!NativeMethods.IsWindowVisible(popup), "按键连发及声音/窗口事件先后顺序回归 " + i);
             }
+            var layers = AgentField<IslandLayerHost>(window, "_layers");
+            layers.Hide("volume");
+            PrivateCall(window, "ApplyBrowserCompact", true);
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar, "浏览器最大化或全屏时先正常收起");
+            NativeMethods.ShowWindowAsync(popup, 4);
+            SetAgentField(service, "_lastPercent", 42);
+            PrivateCall(window, "OnVolumeChanged", null, new VolumeInfo(42, false)); Thread.Sleep(80);
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Pill && layers.IsActive("volume")
+                && AgentField<string>(window, "_activeMainIslandKey") == "volume" && window.VolumeText.Text == "42%",
+                "浏览器收起时音量变化仍展开可见的音量提示");
+            Check(!NativeMethods.IsWindowVisible(popup) && guard.Running, "岛内音量提示可见时继续正确接管系统浮层");
+            for (int i = 0; i < 8; i++) PrivateCall(window, "HandleBrowserCompactHover", false);
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Pill, "鼠标移开不提前打断短暂音量提示");
+            PrivateCall(window, "ShowPillNotification", IslandNotification.Seconds("battery", 10));
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Pill
+                && AgentField<string>(window, "_activeMainIslandKey") == "volume", "普通通知不会抢走正在显示的音量提示");
+            layers.Hide("volume"); PrivateCall(window, "HandleBrowserCompactHover", false);
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar, "音量提示结束后回到浏览器细条");
+            PrivateCall(window, "ShowPillNotification", IslandNotification.Seconds("battery", 10));
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar, "浏览器收起仍屏蔽其他通知的自动展开");
+            PrivateCall(window, "IslandBody_PreviewMouseWheel", window.IslandBody,
+                new System.Windows.Input.MouseWheelEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, 120)
+                { RoutedEvent = System.Windows.UIElement.PreviewMouseWheelEvent });
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Pill && layers.IsActive("volume"),
+                "岛上滚轮调节音量也能显示短暂反馈");
+            PrivateCall(window, "IslandBody_MouseLeftButtonDown", window.IslandBody,
+                new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+                { RoutedEvent = System.Windows.UIElement.MouseLeftButtonDownEvent });
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Card
+                && AgentField<bool>(window, "_browserManualReveal"), "点击音量提示可临时打开音量卡片");
+            PrivateCall(window, "HandleOutsideIslandClick");
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar, "操作音量卡片后点击岛外继续收起");
+            PrivateCall(window, "ShowPillNotification", IslandNotification.Seconds("battery", 10));
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar,
+                "关闭音量卡片后其他通知不能借用剩余音量提示时间重新展开");
+            layers.SetPinned("volume", true);
+            SetAgentField(window, "_lastVolumeFeedbackAt", Environment.TickCount64 - (long)(options.VolumeNotifySeconds * 1000) - 1000);
+            PrivateCall(window, "SetState", IslandState.Pill, true);
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Bar && layers.IsPinned("volume"),
+                "音量置顶不延长临时提示，也不丢失置顶偏好");
+            layers.SetPinned("volume", false);
+            layers.Hide("battery"); layers.Hide("volume"); PrivateCall(window, "ApplyBrowserCompact", false);
+            PrivateCall(window, "OnVolumeChanged", null, new VolumeInfo(44, false)); Thread.Sleep(80);
+            Check(!NativeMethods.IsWindowVisible(popup) && layers.IsActive("volume"), "退出浏览器收起状态后原音量提示仍正常");
+            PrivateCall(window, "ApplyBrowserCompact", true);
+            Check(AgentField<IslandState>(window, "_state") == IslandState.Pill && layers.IsActive("volume"),
+                "提示期间最大化浏览器不会突然掐掉音量反馈");
+            PrivateCall(window, "ApplyBrowserCompact", false);
             Thread.Sleep(800);
             NativeMethods.ShowWindowAsync(popup, 4); Thread.Sleep(80);
             Check(NativeMethods.IsWindowVisible(popup), "反馈窗口到期后不持续隐藏同一宿主");
@@ -92,6 +140,7 @@ internal static partial class Program
         }
         finally
         {
+            PrivateCall(window, "ApplyBrowserCompact", false);
             SetAgentField(window, "_volumeFlyoutGuard", null);
             SetAgentField(window, "_volumeService", null);
             guard.Dispose();

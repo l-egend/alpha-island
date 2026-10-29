@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using alpha_island.Core;
 using alpha_island.Services;
 
@@ -11,7 +12,7 @@ public partial class MainWindow
     {
         if (_bootTimingRequested || !App.IsAutoStartup || _exiting || !SettingsRegistry.GetBool(_options, "StartupBootTimeNotify", true)) return;
         _bootTimingRequested = true;
-        PresentBootTiming(new(null, null, "", "等待 Windows 提交精确记录", Waiting: true));
+        PresentBootTiming(new(null, null, "", L.T("等待 Windows 提交精确记录"), Waiting: true));
         try
         {
             BootTimingReading? shown = null;
@@ -26,13 +27,13 @@ public partial class MainWindow
         catch (Exception ex)
         {
             IslandLog.Warn("BootTiming", "开机耗时读取失败：" + ex.Message);
-            if (!_exiting) PresentBootTiming(new(null, null, "系统启动记录不可读取", "Windows 启动事件"));
+            if (!_exiting) PresentBootTiming(new(null, null, L.T("系统启动记录不可读取"), L.T("Windows 启动事件")));
         }
     }
 
     private void PresentBootTiming(BootTimingReading reading)
     {
-        var item = new DesktopNotification(_bootTimingKey, "", "Windows", "本次开机", reading.DisplayText,
+        var item = new DesktopNotification(_bootTimingKey, "", "Windows", L.T("本次开机"), reading.DisplayText,
             DateTimeOffset.Now, DesktopEventKind.BootTiming);
         // A late Event 100 must update the waiting popup or reappear after that popup has expired.
         if (_desktopCurrent?.Key == item.Key)

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using alpha_island.Core;
 using alpha_island.Services;
@@ -27,6 +28,9 @@ namespace alpha_island
         /// <summary>注册全部服务并把自己的状态区块挂进「关于」页。只应在构造函数里调一次。</summary>
         private void BuildServiceHost()
         {
+            _services.Register(new DelegateIslandService(IslandServiceIds.BrowserWindow, IslandServiceIds.DisplayName(IslandServiceIds.BrowserWindow),
+                options => SettingsRegistry.GetBool(options, "BrowserAutoCompactEnabled", true),
+                StartBrowserWindowMonitor, StopBrowserWindowMonitor, autoStart: true));
             _services.Register(new DelegateIslandService(IslandServiceIds.GameActivity, IslandServiceIds.DisplayName(IslandServiceIds.GameActivity),
                 options => SettingsRegistry.GetBool(options, "NotificationGameQuietEnabled", true) || SettingsRegistry.GetBool(options, "ProductivityEnabled", true)
                     || SettingsRegistry.GetBool(options, "TimelineEnabled", true) || SettingsRegistry.GetBool(options, "AgentProactiveEnabled", true)
@@ -48,18 +52,21 @@ namespace alpha_island
                 if (_exiting) return;
                 UpdateResourceSnapshot(_resourceMonitor.Values.Snapshot);
                 _settingsWindow?.UpdateHardwarePowerState(_resourceMonitor.Power
-                    ?? new(null, null, "硬件功耗监测未开启"));
+                    ?? new(null, null, L.T("硬件功耗监测未开启")));
             };
             _resourceMonitor.MemorySampled += OnMemorySampled;
             BindResourceState();
             IsVisibleChanged += (_, _) => SyncResourceSampling();
             StateChanged += (_, _) => SyncResourceSampling();
             DiagnosticsReport.RegisterSection("采样调度", () => _ticker.Report());
+            DiagnosticsReport.RegisterSection("网卡采样", NetworkSamplingDiagnostics);
             _services.Register(new DelegateIslandService(IslandServiceIds.HardwarePower, IslandServiceIds.DisplayName(IslandServiceIds.HardwarePower),
                 options => SettingsRegistry.GetBool(options, "StatusShowPower", true), StartHardwarePowerService, StopHardwarePowerService, autoStart: true));
 
             // 「关于」页的服务状态区块：直接读宿主，切到那页时现取。
             DiagnosticsReport.RegisterSection("服务状态", () => _services.Report());
+            DiagnosticsReport.RegisterSection("浏览器自动收起", () =>
+                $"窗口事件监听={_browserWindowMonitor?.EventsRunning == true}；自动收起={_browserCompactActive}；临时展开={_browserManualReveal}");
             DiagnosticsReport.RegisterSection("助手接入", () => AgentIntegrationService.DiagnosticsText()
                 + "\n" + (_bridge?.StatusDiagnostics ?? "状态桥接未运行"));
             DiagnosticsReport.RegisterSection("游戏免打扰", () => _gameActivity == null ? "检测未开启"
@@ -219,7 +226,7 @@ namespace alpha_island
             // 这里只把「没起来」翻译成宿主能看懂的降级原因。
             if (!EnsureClipboardInitialized())
             {
-                throw new InvalidOperationException("剪切板/热键初始化失败（详见日志）");
+                throw new InvalidOperationException(L.T("剪切板/热键初始化失败（详见日志）"));
             }
         }
 

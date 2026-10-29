@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
@@ -21,7 +22,7 @@ internal sealed record WeatherReminderOptions(bool AutoRefresh, int RefreshMinut
 internal sealed record WeatherReminder(string Key, string Title, string Body, int? WeatherCode = null)
 {
     internal DesktopNotification ToNotification(DateTimeOffset created) => new("weather:" + Guid.NewGuid().ToString("N"),
-        "", "天气", Title, Body, created, DesktopEventKind.Weather, WeatherCode: WeatherCode);
+        "", L.T("天气"), Title, Body, created, DesktopEventKind.Weather, WeatherCode: WeatherCode);
 }
 internal sealed record WeatherTemperatureReading(DateTimeOffset Time, double Temperature);
 internal sealed class WeatherReminderState
@@ -67,8 +68,8 @@ internal sealed class WeatherReminderPolicy
         var reminders = new List<WeatherReminder>();
         var hazards = new Dictionary<string, string>();
         var hazardCodes = new Dictionary<string, int>();
-        AddHazards(hazards, weather.Code, null, null, weather.WindSpeed, weather.WindGusts, "当前", hazardCodes);
-        foreach (var hour in future) AddHazards(hazards, hour.Code, hour.RainProbability, hour.Precipitation, hour.WindSpeed, hour.WindGusts, "未来 3 小时", hazardCodes);
+        AddHazards(hazards, weather.Code, null, null, weather.WindSpeed, weather.WindGusts, L.T("当前"), hazardCodes);
+        foreach (var hour in future) AddHazards(hazards, hour.Code, hour.RainProbability, hour.Precipitation, hour.WindSpeed, hour.WindGusts, L.T("未来 3 小时"), hazardCodes);
         // 雷雨或冻雨已经包含降雨，避免同一场天气同时弹多个提醒。
         if (hazards.ContainsKey("thunder") || hazards.ContainsKey("ice")) hazards.Remove("rain");
         var fresh = hazards.Where(x => !_state.ActiveHazards.Contains(x.Key) && Ready(city + "/" + x.Key, now, TimeSpan.FromHours(1))).ToArray();
@@ -76,7 +77,7 @@ internal sealed class WeatherReminderPolicy
         {
             foreach (var item in fresh) _state.Sent[city + "/" + item.Key] = now;
             string iconHazard = new[] { "thunder", "ice", "snow", "rain", "fog", "wind" }.First(x => fresh.Any(y => y.Key == x));
-            reminders.Add(new("conditions", weather.City.Name + " · 天气提醒", string.Join("；", fresh.Select(x => x.Value)), hazardCodes[iconHazard]));
+            reminders.Add(new("conditions", weather.City.Name + L.T(" · 天气提醒"), string.Join("；", fresh.Select(x => x.Value)), hazardCodes[iconHazard]));
         }
         _state.ActiveHazards = options.Conditions ? hazards.Keys.ToArray() : [];
 
@@ -94,9 +95,9 @@ internal sealed class WeatherReminderPolicy
             if (difference >= options.TemperatureThreshold && Ready(key, now, TimeSpan.FromHours(3)))
             {
                 bool upcoming = falling ? upcomingFall > fall : upcomingRise > rise;
-                string text = upcoming ? "未来 3 小时预计" : "近 3 小时已";
-                reminders.Add(new("temperature", weather.City.Name + (falling ? " · 降温提醒" : " · 升温提醒"),
-                    $"{text}{(falling ? "降温" : "升温")} {difference:0.#}°，当前 {weather.Temperature:0.#}°。" + (falling ? "外出记得添衣。" : "注意补水和防晒。"), weather.Code));
+                string text = upcoming ? L.T("未来 3 小时预计") : L.T("近 3 小时已");
+                reminders.Add(new("temperature", weather.City.Name + (falling ? L.T(" · 降温提醒") : L.T(" · 升温提醒")),
+                    L.F($"{text}{(falling ? "降温" : "升温")} {difference:0.#}°，当前 {weather.Temperature:0.#}°。") + (falling ? L.T("外出记得添衣。") : L.T("注意补水和防晒。")), weather.Code));
                 _state.Sent[key] = now; _state.Temperatures.Clear();
             }
         }
@@ -110,16 +111,16 @@ internal sealed class WeatherReminderPolicy
             if (tomorrow != null)
             {
                 var advice = new Dictionary<string, string>();
-                AddHazards(advice, tomorrow.Code, tomorrow.RainProbability, tomorrow.Precipitation, tomorrow.WindSpeed, tomorrow.WindGusts, "明天");
+                AddHazards(advice, tomorrow.Code, tomorrow.RainProbability, tomorrow.Precipitation, tomorrow.WindSpeed, tomorrow.WindGusts, L.T("明天"));
                 if (advice.ContainsKey("thunder") || advice.ContainsKey("ice")) advice.Remove("rain");
                 var today = (weather.Days ?? []).FirstOrDefault(x => x.Date == cityToday);
-                if (today != null && today.High - tomorrow.High >= options.TemperatureThreshold) advice["cooling"] = "明天明显降温，记得添衣";
+                if (today != null && today.High - tomorrow.High >= options.TemperatureThreshold) advice["cooling"] = L.T("明天明显降温，记得添衣");
                 string description = WeatherService.Describe(tomorrow.Code);
                 // 建议放在前面，让小岛单行摘要也能看见“带伞 / 添衣”；完整温度仍留在通知记录里。
                 string body = advice.Count == 0
-                    ? $"明天 {description} · {tomorrow.Low:0}°～{tomorrow.High:0}°。"
-                    : string.Join("；", advice.Values) + $"。预计 {tomorrow.Low:0}°～{tomorrow.High:0}°。";
-                reminders.Add(new("evening", weather.City.Name + " · 明日天气", body, tomorrow.Code));
+                    ? L.F($"明天 {description} · {tomorrow.Low:0}°～{tomorrow.High:0}°。")
+                    : string.Join("；", advice.Values) + L.F($"。预计 {tomorrow.Low:0}°～{tomorrow.High:0}°。");
+                reminders.Add(new("evening", weather.City.Name + L.T(" · 明日天气"), body, tomorrow.Code));
                 _state.Sent[EveningKey(weather.City, localNow)] = now;
             }
         }
@@ -130,17 +131,18 @@ internal sealed class WeatherReminderPolicy
     private static void AddHazards(Dictionary<string, string> target, int code, double? probability, double? precipitation,
         double? wind, double? gusts, string when, Dictionary<string, int>? iconCodes = null)
     {
+        if (L.IsEnglish) when += " · ";
         void Add(string key, string body, int? iconCode = null)
         {
             if (target.TryAdd(key, body)) iconCodes?.TryAdd(key, iconCode ?? code);
         }
-        if (code is 95 or 96 or 97 or 99) Add("thunder", when + "有雷雨，带伞并留意雷电，避免空旷处");
-        else if (code is 56 or 57 or 66 or 67) Add("ice", when + "有冻雨，带伞并注意道路结冰");
-        else if (code is 71 or 73 or 75 or 77 or 85 or 86) Add("snow", when + "有雪，注意保暖和路面湿滑");
+        if (code is 95 or 96 or 97 or 99) Add("thunder", when + L.T("有雷雨，带伞并留意雷电，避免空旷处"));
+        else if (code is 56 or 57 or 66 or 67) Add("ice", when + L.T("有冻雨，带伞并注意道路结冰"));
+        else if (code is 71 or 73 or 75 or 77 or 85 or 86) Add("snow", when + L.T("有雪，注意保暖和路面湿滑"));
         else if (code is 51 or 53 or 55 or 61 or 63 or 65 or 80 or 81 or 82 || probability >= 60 && precipitation >= 0.2)
-            Add("rain", when + "可能降雨，出门记得带伞", WeatherIconPolicy.Resolve(code) is WeatherIconKind.Drizzle or WeatherIconKind.Rain ? code : 61);
-        if (code is 45 or 48) Add("fog", when + "有雾，出行注意能见度");
-        if (wind >= 39 || gusts >= 50) Add("wind", when + "风较大，留意高空坠物");
+            Add("rain", when + L.T("可能降雨，出门记得带伞"), WeatherIconPolicy.Resolve(code) is WeatherIconKind.Drizzle or WeatherIconKind.Rain ? code : 61);
+        if (code is 45 or 48) Add("fog", when + L.T("有雾，出行注意能见度"));
+        if (wind >= 39 || gusts >= 50) Add("wind", when + L.T("风较大，留意高空坠物"));
     }
 
     internal void Save(string path)

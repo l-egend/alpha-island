@@ -1,10 +1,12 @@
 using System.IO;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using alpha_island.Core;
 using alpha_island.Plugins;
+using alpha_island.Services;
 using AlphaIsland.Plugins.LocalAgents;
 using CheckBox = System.Windows.Controls.CheckBox;
 
@@ -61,6 +63,35 @@ internal static partial class Program
         string bounded = boundedReader.ReadToEnd();
         Check(bounded.Length < 1_048_700 && !bounded.Contains("fixture-old-sensitive-content") && !bounded.Contains(secret) && bounded.Contains("429"),
             "大日志仅打包有限尾部，依然执行脱敏并保留最新错误");
+
+        string native = Path.Combine(root, "native"), data = Path.Combine(root, "data"), output = Path.Combine(root, "export");
+        Directory.CreateDirectory(native); Directory.CreateDirectory(Path.Combine(data, "config"));
+        File.WriteAllText(Path.Combine(native, "config.toml"), "[features]\nhooks = false\n");
+        File.WriteAllText(Path.Combine(native, "hooks.json"), "{\"hooks\":{}}");
+        using var reserve = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); reserve.Start();
+        int diagnosticPort = ((System.Net.IPEndPoint)reserve.LocalEndpoint).Port; reserve.Stop();
+        using var diagnosticBridge = new AgentBridgeService(diagnosticPort, _ => false) { NativeStatusAllowed = () => false }; diagnosticBridge.Start();
+        using var diagnosticHttp = new System.Net.Http.HttpClient(new System.Net.Http.HttpClientHandler { UseProxy = false });
+        using var stateReport = diagnosticHttp.PostAsync(diagnosticBridge.Endpoint + "status", new System.Net.Http.StringContent(
+            "{\"source\":\"codex\",\"session\":\"diagnostic-input\",\"state\":\"input-wait\",\"detail\":\"Codex\"}", System.Text.Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+        Check(stateReport.IsSuccessStatusCode, "诊断样本接入独立的等待回复状态通道");
+        File.WriteAllText(Path.Combine(data, "config", "options.json"), JsonSerializer.Serialize(new { Extras = new { AgentBridgeEnabled = true, AgentStatusEnabled = true, AgentBridgePort = diagnosticPort, apiKey = secret } }));
+        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Path.GetFullPath("tools/Collect-CodexIslandDiagnostics.ps1"),
+            "-CodexDirectory", native, "-DataDirectory", data, "-OutputDirectory", output }) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start)!;
+        if (!process.WaitForExit(15000)) { process.Kill(true); throw new TimeoutException("Isolated diagnostics exporter timed out."); }
+        Check(process.ExitCode == 0, "隔离执行实际 Codex 诊断导出脚本");
+        using var exported = ZipFile.OpenRead(Directory.GetFiles(output, "*.zip").Single());
+        using var exportedReader = new StreamReader(exported.Entries.Single().Open());
+        string exportedText = exportedReader.ReadToEnd(); using var exportedJson = JsonDocument.Parse(exportedText);
+        Check(exportedJson.RootElement.GetProperty("HookFile").GetProperty("Exists").ValueKind == JsonValueKind.True
+            && exportedJson.RootElement.GetProperty("UserFeatureFlags").GetProperty("Hooks").ValueKind == JsonValueKind.False,
+            "脚本脱敏后文件存在与原生开关仍保留准确布尔值");
+        Check(!exportedText.Contains(secret) && !exportedText.Contains(root, StringComparison.OrdinalIgnoreCase)
+            && exportedJson.RootElement.GetProperty("IslandHandlerCount").GetInt32() == 0, "脚本诊断包隐藏个人配置并保留处理器数量");
+        Check(exportedJson.RootElement.GetProperty("Bridge").GetProperty("Sources").EnumerateArray().Any(s => s.GetProperty("State").GetString() == "input-wait"),
+            "诊断能区分等待用户回复与未知状态");
     }
 
     private static void AgentDiscoveryPortabilityChecks(string root)
@@ -98,7 +129,7 @@ internal static partial class Program
         options.Extras[PluginHost.EnabledKey("ai.local-agents")] = JsonSerializer.SerializeToElement(true);
         using var host = new PluginHost(window.Dispatcher, options, Array.Empty<string>(), _ => { }, _ => { }, _ => { });
         var entry = new PluginHost.Entry { Directory = root,
-            Manifest = PluginManifest.Read(Path.GetFullPath($"examples/LocalAgentsPlugin/bin/{TestBuildConfiguration}/net8.0-windows/plugin.json")), Attempted = true };
+            Manifest = PluginManifest.Read(ExternalPluginSource($"LocalAgentsPlugin/bin/{TestBuildConfiguration}/net8.0-windows/plugin.json")), Attempted = true };
         AgentField<List<PluginHost.Entry>>(host, "_entries").Add(entry);
         var settings = new alpha_island.Settings.SettingsWindow(false);
         try

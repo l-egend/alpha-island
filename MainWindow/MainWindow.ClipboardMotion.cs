@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -38,7 +39,7 @@ public partial class MainWindow
 
     private void ShowClipboardCopyFeedback()
     {
-        ClipboardHistoryHint.Text = "已复制，可到目标位置粘贴";
+        ClipboardHistoryHint.Text = L.T("已复制，可到目标位置粘贴");
         if (!ClipboardHistoryHint.IsVisible || MotionPolicy.InstantMorph || MotionPolicy.PowerSave) return;
         AlphaIsland.PluginSdk.AnimationClockLifetime.Once(ClipboardHistoryHint, UIElement.OpacityProperty,
             new DoubleAnimation(.4, 1, TimeSpan.FromMilliseconds(160)), 1d);

@@ -16,6 +16,7 @@ namespace alpha_island
         /// <summary>异常日志路径：%LOCALAPPDATA%\alpha-island\error.log</summary>
         public static string LogPath => AppPaths.ErrorLogFile;
         internal static bool IsAutoStartup { get; private set; }
+        internal static IslandOptions? StartupOptions { get; private set; }
         internal const string MainWindowXamlPath = "MainWindow/MainWindow.xaml";
         private Plugins.Isolation.PluginWorkerServer? _pluginWorker;
 
@@ -46,6 +47,8 @@ namespace alpha_island
                 Shutdown(result);
                 return;
             }
+            StartupOptions = IslandOptions.Load();
+            AlphaIsland.PluginSdk.Localization.UiText.Initialize(SettingsRegistry.GetText(StartupOptions, "InterfaceLanguage", "system"));
             StartupUri = new Uri(MainWindowXamlPath, UriKind.Relative);
             IsAutoStartup = e.Args.Contains("--startup", StringComparer.OrdinalIgnoreCase);
             base.OnStartup(e);

@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Detect','Auto','Install','Remove')][string]$Mode = 'Detect',
+    [ValidateSet('Detect','Auto','Install','Remove','Check')][string]$Mode = 'Detect',
     [ValidateSet('all','codex','antigravity','deepseek-harness','claude-code')][string]$Provider = 'all',
     [string]$InstallDirectory = (Split-Path $PSScriptRoot -Parent),
     [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'alpha-island'),
@@ -82,6 +82,67 @@ function Test-CodexApplication {
         try { return @(Get-AppxPackage -Name 'OpenAI.Codex*' -ErrorAction Stop).Count -gt 0 } catch { }
     }
     return $false
+}
+function Get-CodexReadiness($Target, [string]$Node) {
+    $state='not-configured';$count=0;$configChecked=$false
+    try {
+        $flags=@{};$section=''
+        $native=Join-Path $Target.home 'config.toml'
+        if (Test-Path -LiteralPath $native -PathType Leaf) {
+            if ((Get-Item -LiteralPath $native).Length -gt 1MB) { throw 'Oversized configuration' }
+            foreach ($line in [IO.File]::ReadAllLines($native)) {
+                if ($line -match '^\s*\[([^\]]+)\]') { $section=$Matches[1].Trim() }
+                if ($section -in @('','features','hooks') -and $line -match '^\s*(hooks|codex_hooks|allow_managed_hooks_only)\s*=\s*(true|false)\s*(?:#.*)?$') {
+                    $flags[$section+'.'+$Matches[1]]=($Matches[2] -eq 'true')
+                }
+            }
+        }
+        $configChecked=$true
+        $hooksEnabled=if($flags.ContainsKey('features.hooks')){$flags['features.hooks']}elseif($flags.ContainsKey('features.codex_hooks')){$flags['features.codex_hooks']}else{$true}
+        $nativeHooks=Read-SetupJson $Target.target
+        $events=@('SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','PreCompact','PostCompact','Stop','Interrupt','SessionEnd')
+        $complete=$true
+        foreach ($event in $events) {
+            $owned=@(foreach($group in @($nativeHooks.hooks.$event)){foreach($handler in @($group.hooks)){
+                if($handler.statusMessage -eq ('Alpha Island / '+$event) -and $handler.type -eq 'command' -and $handler.command -and $group.enabled -ne $false -and $handler.enabled -ne $false){$handler}
+            }})
+            $count+=$owned.Count
+            if($owned.Count -ne 1){$complete=$false}
+            foreach($handler in $owned){
+              $runtimes=@($Node,(Join-Path $DataRoot 'integrations\runtime\node.exe'))|Where-Object{$_ -and (Test-Path -LiteralPath $_ -PathType Leaf)}
+              if(!@($runtimes|Where-Object{$handler.command.IndexOf($_.Replace("'","''"),[StringComparison]::OrdinalIgnoreCase) -ge 0}).Count){$complete=$false}
+              foreach($required in @((Join-Path $DataRoot 'integrations\codex\hook.mjs'),(Join-Path $DataRoot 'config\codex-hooks.json'))){
+                if(!$required -or $handler.command.IndexOf($required.Replace("'","''"),[StringComparison]::OrdinalIgnoreCase) -lt 0){$complete=$false}
+            }}
+        }
+        if(!$hooksEnabled){$state='hooks-disabled'}
+        elseif($flags['.allow_managed_hooks_only'] -eq $true -or $flags['hooks.allow_managed_hooks_only'] -eq $true){$state='policy-blocked'}
+        elseif($Target.owned -or $count -gt 0){
+            $registration=Read-SetupJson (Join-Path $DataRoot 'config\codex-hooks.json')
+            if(!$complete -or !$Node -or !$registration -or $registration.endpoint -ne "http://127.0.0.1:$Port/" -or
+                !(Test-Path -LiteralPath (Join-Path $DataRoot 'integrations\codex\hook.mjs') -PathType Leaf)){$state='repair-required'}
+            else{$state='review-required'}
+        }
+    } catch {$state='configuration-unavailable'}
+    [pscustomobject]@{state=$state;registeredHandlers=$count;configurationChecked=$configChecked;trustVerified=$false}
+}
+function Get-CodexNativeInspection([string]$NativeDirectory, [string]$Node) {
+    if($Isolated -or !$Node){return [pscustomobject]@{available=$false;error='NativeInspectionUnavailable'}}
+    $paths=@();$command=Get-Command codex.exe -ErrorAction SilentlyContinue;if($command){$paths+=$command.Source}
+    foreach($process in @(Get-Process -Name Codex -ErrorAction SilentlyContinue)){
+        try {if($process.Path){$paths+=Join-Path (Split-Path $process.Path -Parent) 'resources\codex.exe'}}catch{}
+    }
+    $cache=Join-Path $LocalDataDirectory 'OpenAI\Codex\bin'
+    if(Test-Path -LiteralPath $cache -PathType Container){foreach($directory in @(Get-ChildItem -LiteralPath $cache -Directory|Sort-Object LastWriteTime -Descending|Select-Object -First 8)){$paths+=Join-Path $directory.FullName 'codex.exe'}}
+    try {foreach($package in @(Get-AppxPackage -Name '*Codex*' -ErrorAction Stop)){
+        if($package.InstallLocation){$paths+=Join-Path $package.InstallLocation 'app\resources\codex.exe';$paths+=Join-Path $package.InstallLocation 'resources\codex.exe'}
+    }}catch{}
+    $cli=$paths|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -First 1
+    $inspector=Join-Path $PSScriptRoot 'native-hooks-info.mjs'
+    if(!(Test-Path -LiteralPath $inspector)){$inspector=Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\OneClickCodex\native-hooks-info.mjs'}
+    if(!$cli -or !(Test-Path -LiteralPath $inspector)) {return [pscustomobject]@{available=$false;error='NativeInspectionUnavailable'}}
+    try {& $Node $inspector $cli $NativeDirectory $UserProfileDirectory | ConvertFrom-Json}
+    catch {[pscustomobject]@{available=$false;error='NativeInspectionUnavailable'}}
 }
 function Get-AgentTargets {
     $codex = Get-SetupHome 'CODEX_HOME' $CodexHome (Join-Path $UserProfileDirectory '.codex')
@@ -209,7 +270,12 @@ function Invoke-AgentSetup {
                 if ($enabled -and $target.id -eq 'claude-code' -and $target.nativeDisabled) { $status='disabled';$detail='Claude Code has disabled user hooks; enable them in Claude settings.' }
             } catch { $status='error';$detail=$_.Exception.Message }
         }
-        $results += [pscustomobject]@{id=$target.id;name=$target.name;detected=[bool]$target.detected;status=$status;detail=$detail;scope=$target.scope;profile=$target.profile;allProjects=($target.allProjects -eq $true)}
+        $readiness=if($target.id -eq 'codex'){Get-CodexReadiness $target $node}else{$null}
+        if($target.id -eq 'codex' -and $Mode -eq 'Check') {
+            $inspection=Get-CodexNativeInspection $target.home $node
+            $readiness|Add-Member NoteProperty nativeInspection $inspection
+        }
+        $results += [pscustomobject]@{id=$target.id;name=$target.name;detected=[bool]$target.detected;status=$status;detail=$detail;scope=$target.scope;profile=$target.profile;allProjects=($target.allProjects -eq $true);readiness=$readiness}
     }
     if ($changed) { $null = Assert-SetupPath $DataRoot; $ledger | Add-Member -Force NoteProperty device $device; Write-SetupJson $ledgerPath $ledger }
     [pscustomobject]@{runtimeAvailable=[bool]$node;providers=$results}

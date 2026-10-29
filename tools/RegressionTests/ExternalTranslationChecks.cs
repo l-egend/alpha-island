@@ -69,6 +69,7 @@ internal static partial class Program
         Check(cancelled && held.Batches.Count == 0, "关闭或取消后不发送快捷键");
         Check((await new ShortcutSimulationService(new ShortcutInputStub()).SendAsync("F8")).Sent, "失败及取消后释放发送互斥锁");
         var options = new IslandOptions();
+        SettingsRegistry.Write(options, "ExternalTranslationEnabled", true);
         SettingsRegistry.SetExtra(options, "plugin/example/enabled", true);
         SettingsRegistry.Write(options, "ExternalTranslationName", "测试翻译");
         SettingsRegistry.Write(options, "ExternalTranslationShortcut", "Ctrl+Shift+T");
@@ -81,6 +82,7 @@ internal static partial class Program
     private static void ExternalTranslationUiChecks(alpha_island.MainWindow island, Grid islandRoot, string root)
     {
         var options = new IslandOptions();
+        SettingsRegistry.Write(options, "ExternalTranslationEnabled", true);
         SettingsRegistry.Write(options, "ExternalTranslationName", "测试翻译");
         SettingsRegistry.Write(options, "ExternalTranslationShortcut", "Ctrl+Shift+T");
         var settings = new alpha_island.Settings.SettingsWindow(persistSettings: false) { ForceClose = true };

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 
 namespace alpha_island.Core
@@ -26,7 +27,10 @@ namespace alpha_island.Core
         Error = 4,
 
         /// <summary>正在执行工具或后台任务。</summary>
-        Working = 5
+        Working = 5,
+
+        /// <summary>等待用户在原助手中回答问题。</summary>
+        InputWait = 6
     }
 
     /// <summary>
@@ -159,7 +163,8 @@ namespace alpha_island.Core
 
         private static int Rank(AgentRunState state) => state switch
         {
-            AgentRunState.ToolWait => 4,
+            AgentRunState.ToolWait => 5,
+            AgentRunState.InputWait => 4,
             AgentRunState.Error => 3,
             AgentRunState.Working or AgentRunState.Streaming => 2,
             AgentRunState.Thinking => 1,
@@ -172,7 +177,7 @@ namespace alpha_island.Core
         {
             AgentRunState.Thinking => "#FF8A5CFF",
             AgentRunState.Working or AgentRunState.Streaming => "#FF22D3EE",
-            AgentRunState.ToolWait => "#FFFFB900",
+            AgentRunState.ToolWait or AgentRunState.InputWait => "#FFFFB900",
             AgentRunState.Error => "#FFFF5A5F",
             _ => "#00000000"
         };
@@ -183,11 +188,12 @@ namespace alpha_island.Core
             string detail = Detail;
             string name = State switch
             {
-                AgentRunState.Thinking => "思考中",
-                AgentRunState.Working => "执行中", AgentRunState.Streaming => "输出中",
-                AgentRunState.ToolWait => "等待授权",
-                AgentRunState.Error => "出错",
-                _ => "空闲"
+                AgentRunState.Thinking => L.T("思考中"),
+                AgentRunState.Working => L.T("执行中"), AgentRunState.Streaming => L.T("输出中"),
+                AgentRunState.ToolWait => L.T("等待授权"),
+                AgentRunState.InputWait => L.T("等待回复"),
+                AgentRunState.Error => L.T("出错"),
+                _ => L.T("空闲")
             };
             return string.IsNullOrWhiteSpace(detail) ? name : name + "｜" + detail;
         }

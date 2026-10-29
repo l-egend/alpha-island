@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using CommunityToolkit.Mvvm.ComponentModel;
 using alpha_island.Core;
 
@@ -9,11 +10,11 @@ internal sealed class SystemResourcesViewModel : ObservableObject
     public SystemResourceSnapshot Snapshot { get; private set; }
     public string CpuText => Snapshot.CpuPercent is double value ? $"{value:0}%" : "—";
     public string MemoryText => Snapshot.MemoryPercent is double value ? $"{value:0}%" : "—";
-    public string MemoryDetail => Snapshot.MemoryDetail ?? "等待内存采样";
+    public string MemoryDetail => Snapshot.MemoryDetail ?? L.T("等待内存采样");
     public string PowerText => Snapshot.TotalWatts is double value ? $"{value:0.0} W" : "— W";
     public string PowerDetail => Snapshot.CpuWatts.HasValue || Snapshot.GpuWatts.HasValue
         ? $"CPU {(Snapshot.CpuWatts is double cpu ? $"{cpu:0.0} W" : "—")} · GPU {(Snapshot.GpuWatts is double gpu ? $"{gpu:0.0} W" : "—")}"
-        : "等待可用功耗传感器";
+        : L.T("等待可用功耗传感器");
     public string? PowerDescription => Snapshot.PowerDetail;
 
     internal void Update(SystemResourceSnapshot value)

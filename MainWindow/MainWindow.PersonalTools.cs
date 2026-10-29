@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -23,16 +24,16 @@ public partial class MainWindow
         _userReminders.Cancelled+=id=>
         {
             foreach(var notice in _desktopInbox.History.Where(notice=>notice.Reminder?.Rule=="user-reminder"&&notice.Reminder.Actions.Any(action=>action.Target==id)).ToArray())
-                ResolveAssistantNotification(notice.Key,"提醒已取消");
+                ResolveAssistantNotification(notice.Key,L.T("提醒已取消"));
             RefreshDesktopInbox();
         };
         _insights=new(_ticker,_runtimeEnabled?Path.Combine(AppPaths.Root,"desktop-insights.dat"):null,ReadInsightFrame);
-        _insights.SuggestionReady+=suggestion=>PostAssistantNotification(new("habit:"+suggestion.Id,"","Alpha Island · 本地学习",suggestion.Title,suggestion.Detail,
+        _insights.SuggestionReady+=suggestion=>PostAssistantNotification(new("habit:"+suggestion.Id,"",L.T("Alpha Island · 本地学习"),suggestion.Title,suggestion.Detail,
             DateTimeOffset.Now,DesktopEventKind.Assistant){IsPinned=true,Reminder=new("habit",true,DateTimeOffset.Now.AddDays(7),
-                [new("habit-accept","采纳建议",suggestion.Id),new("habit-dismiss","暂不采纳",suggestion.Id),new("assistant-center","查看学习记录","habits")])},!NotificationQuietEffective);
-        _insights.HealthReady+=warning=>PostAssistantNotification(new("health:"+warning.Id,"","Alpha Island · 健康预警",warning.Title,warning.Detail,
+                [new("habit-accept",L.T("采纳建议"),suggestion.Id),new("habit-dismiss",L.T("暂不采纳"),suggestion.Id),new("assistant-center",L.T("查看学习记录"),"habits")])},!NotificationQuietEffective);
+        _insights.HealthReady+=warning=>PostAssistantNotification(new("health:"+warning.Id,"",L.T("Alpha Island · 健康预警"),warning.Title,warning.Detail,
             warning.At,DesktopEventKind.Assistant){IsPinned=true,Reminder=new("health",true,DateTimeOffset.Now.AddDays(1),
-                [new("assistant-center","查看健康详情","health"),new("health-taskmgr","任务管理器")])},!NotificationQuietEffective);
+                [new("assistant-center",L.T("查看健康详情"),"health"),new("health-taskmgr",L.T("任务管理器"))])},!NotificationQuietEffective);
         _workspace.Focus.PhaseCompleted+=()=>{if(_pomodoro.IsBreak)_insights?.FocusCompleted(_pomodoro.Options.FocusMinutes);};
         InitializeVoiceAssistant(); ConfigurePersonalTools();
     }
@@ -49,7 +50,7 @@ public partial class MainWindow
         var now=DateTimeOffset.UtcNow;
         string app=ForegroundApplication()??"";
         bool focus=_pomodoro.Running&&!_pomodoro.IsBreak;
-        bool work=focus||AgentStatus.Snapshot.Any(agent=>agent.State is AgentRunState.Thinking or AgentRunState.Streaming or AgentRunState.ToolWait)
+        bool work=focus||AgentStatus.Snapshot.Any(agent=>agent.State is AgentRunState.Thinking or AgentRunState.Streaming or AgentRunState.ToolWait or AgentRunState.InputWait)
             || new[]{"code","devenv","rider64","pycharm64","idea64","clion64","notepad++","notepad","obsidian","WINWORD","EXCEL","POWERPNT","wps","typora"}.Contains(app,StringComparer.OrdinalIgnoreCase);
         var resources=_workspace.Resources.Snapshot;
         var memory=_resourceMonitor.Memory;
@@ -64,24 +65,24 @@ public partial class MainWindow
     private ValueTask<ToolResult> ExecuteUserReminderTool(string command,JsonElement args,CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if(_userReminders==null||_exiting||_sessionLocked)return ValueTask.FromResult(ToolResult.Fail("本地提醒暂不可用。"));
+        if(_userReminders==null||_exiting||_sessionLocked)return ValueTask.FromResult(ToolResult.Fail(L.T("本地提醒暂不可用。")));
         return ValueTask.FromResult(command switch
         {
             "create_reminder"=>_userReminders.Create(args.GetProperty("text").GetString()??""),
             "list_reminders"=>_userReminders.List(),
             "cancel_reminder"=>args.TryGetProperty("id",out var id)?_userReminders.Cancel(id.GetString()??""):
-                args.TryGetProperty("title",out var title)?_userReminders.CancelByTitle(title.GetString()??""):ToolResult.Fail("请提供提醒ID或完整事项名称。"),
+                args.TryGetProperty("title",out var title)?_userReminders.CancelByTitle(title.GetString()??""):ToolResult.Fail(L.T("请提供提醒ID或完整事项名称。")),
             "snooze_reminder"=>_userReminders.Snooze(args.GetProperty("id").GetString()??"",args.GetProperty("minutes").GetInt32()),
-            _=>ToolResult.Fail("未开放的提醒指令。")
+            _=>ToolResult.Fail(L.T("未开放的提醒指令。"))
         });
     }
     private bool DeliverUserReminder(ReminderDelivery delivery)
     {
         if(_exiting)return false;
         string when=TimeZoneInfo.ConvertTime(delivery.Due,TimeZoneInfo.Local).ToString("yyyy-MM-dd HH:mm");
-        PostAssistantNotification(new(delivery.Key,"","Alpha Island · 提醒",delivery.Title,
-            (delivery.Late?"错过的提醒已补记。原定时间：":"原定时间：")+when,DateTimeOffset.Now,DesktopEventKind.Assistant,Importance:NotificationImportance.Important)
-        {IsPinned=true,Reminder=new("user-reminder",true,DateTimeOffset.Now.AddDays(7),[new("reminder-snooze","10分钟后再提醒",delivery.JobId),new("assistant-center","管理提醒","reminders")])},!delivery.Late);
+        PostAssistantNotification(new(delivery.Key,"",L.T("Alpha Island · 提醒"),delivery.Title,
+            (delivery.Late?L.T("错过的提醒已补记。原定时间："):L.T("原定时间："))+when,DateTimeOffset.Now,DesktopEventKind.Assistant,Importance:NotificationImportance.Important)
+        {IsPinned=true,Reminder=new("user-reminder",true,DateTimeOffset.Now.AddDays(7),[new("reminder-snooze",L.T("10分钟后再提醒"),delivery.JobId),new("assistant-center",L.T("管理提醒"),"reminders")])},!delivery.Late);
         return true;
     }
     private void OpenAssistantCenter(string section="reminders")
@@ -100,10 +101,10 @@ public partial class MainWindow
     private ToolResult ApplyHabitSuggestion(string id)
     {
         var suggestion=_insights?.Suggestions.FirstOrDefault(value=>value.Id==id);
-        if(suggestion==null)return ToolResult.Fail("这条建议已失效或样本不足，请查看当前学习记录。");
+        if(suggestion==null)return ToolResult.Fail(L.T("这条建议已失效或样本不足，请查看当前学习记录。"));
         if(suggestion.ReminderText.Length>0)
         {
-            var result=_userReminders?.Create(suggestion.ReminderText)??ToolResult.Fail("提醒暂不可用。");
+            var result=_userReminders?.Create(suggestion.ReminderText)??ToolResult.Fail(L.T("提醒暂不可用。"));
             if(!result.Success)return result;
         }
         else
@@ -113,8 +114,8 @@ public partial class MainWindow
             if(_runtimeEnabled)_options.Save();
             ApplyOptions();_settingsWindow?.LoadFrom(_options);
         }
-        _insights!.Respond(id,true);ResolveAssistantNotification("habit:"+id,"已采纳建议");RefreshDesktopInbox();
-        return ToolResult.Ok("已采纳建议。可在管理提醒或设置中修改。");
+        _insights!.Respond(id,true);ResolveAssistantNotification("habit:"+id,L.T("已采纳建议"));RefreshDesktopInbox();
+        return ToolResult.Ok(L.T("已采纳建议。可在管理提醒或设置中修改。"));
     }
     private void ConfigureScreenHotkeys()
     {
@@ -132,12 +133,12 @@ public partial class MainWindow
                 if(new KeyGestureConverter().ConvertFromInvariantString(entry.Item1) is not KeyGesture gesture||gesture.Key==Key.None
                     ||(gesture.Modifiers&(ModifierKeys.Control|ModifierKeys.Alt|ModifierKeys.Windows))==0)throw new ArgumentException();
                 if(HotkeyService.TryRegisterSystem(new(gesture.Modifiers,gesture.Key),entry.Item2,out var registration,out string error))
-                {_screenHotkeys.Add(registration!);statuses.Add(entry.Item1+" 已注册");}
+                {_screenHotkeys.Add(registration!);statuses.Add(entry.Item1+L.T(" 已注册"));}
                 else statuses.Add(entry.Item1+"："+error);
             }
-            catch(Exception ex)when(ex is ArgumentException or NotSupportedException or FormatException){statuses.Add(entry.Item1+"：快捷键格式无效");}
+            catch(Exception ex)when(ex is ArgumentException or NotSupportedException or FormatException){statuses.Add(entry.Item1+L.T("：快捷键格式无效"));}
         }
-        _screenHotkeyStatus=enabled?string.Join("；",statuses):"识字与取色快捷键已关闭";
+        _screenHotkeyStatus=enabled?string.Join("；",statuses):L.T("识字与取色快捷键已关闭");
         DiagnosticsReport.RegisterSection("屏幕工具快捷键",()=>_screenHotkeyStatus);
         _settingsWindow?.SetScreenToolsStatus(_screenHotkeyStatus);
     }
@@ -149,13 +150,13 @@ public partial class MainWindow
             var tools=EnsureScreenTools();
             if(color)await tools.PickColorAsync(returnToWindow:false);else await tools.RecognizeAsync(copy:true,returnToWindow:false);
         }
-        catch(Exception ex)when(ex is not OutOfMemoryException){IslandLog.Error("ScreenTools",ex);OnScreenToolCompleted(new("error","屏幕工具暂不可用，请打开翻译/扫码窗口查看状态。"));}
+        catch(Exception ex)when(ex is not OutOfMemoryException){IslandLog.Error("ScreenTools",ex);OnScreenToolCompleted(new("error",L.T("屏幕工具暂不可用，请打开翻译/扫码窗口查看状态。")));}
     }
     private void OnScreenToolCompleted(ScreenToolOutput output)
     {
         string text=SensitiveTextDetector.Inspect(output.Text).Redacted;
         if(text.Length>160)text=text[..160]+"…";
-        var notice=new DesktopNotification("screen-tool:"+Guid.NewGuid().ToString("N"),"","Alpha Island · 屏幕工具",output.Kind=="ocr"?"已识别并复制原文":output.Kind=="error"?"屏幕工具未能完成":"已复制颜色",text,DateTimeOffset.Now,DesktopEventKind.System);
+        var notice=new DesktopNotification("screen-tool:"+Guid.NewGuid().ToString("N"),"",L.T("Alpha Island · 屏幕工具"),output.Kind=="ocr"?L.T("已识别并复制原文"):output.Kind=="error"?L.T("屏幕工具未能完成"):L.T("已复制颜色"),text,DateTimeOffset.Now,DesktopEventKind.System);
         _desktopInbox.Add(notice,_desktopPolicy.CanPopup(notice,_sessionLocked),_desktopPolicy);StartNotificationUiTimer();TickDesktopNotifications();RefreshDesktopInbox();
     }
     private void StopPersonalTools()

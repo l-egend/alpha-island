@@ -8,8 +8,8 @@
 | --- | --- |
 | `Test-Maintenance.ps1` | 按功能运行离线回归；`-Configuration Debug -Only '--multi-display-only'` 只检查多显示器定位。 |
 | `RegressionTests/`、`PluginFixture/` | WPF、服务与插件的回归程序和隔离测试插件。 |
+| `LocalizationMaintenance/` | 校验中英文文案引用与格式参数；`dotnet run --project tools/LocalizationMaintenance -- . check`，不会改写代码。英文窗口回归使用 `--localization-only`。 |
 | `AgentBridgeTests/` | 外部助手桥接与安装脚本的 Node.js 检查；部分用例需要对应工具或测试包。 |
-| `build-traffic-monitor-bridge.ps1` | 构建可选 TrafficMonitor 原生桥接，需要 x64 MinGW g++；MSVC 可使用对应 vcxproj。 |
 | `Test-PackageCompatibility*.ps1`、`Test-ShortcutIcons.ps1` | 检查已有发布目录的运行库、资源和快捷方式。 |
 
 ```powershell
@@ -49,9 +49,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/Test-Maintenance.ps1 -
 | `build-installer.ps1` | 完成更新后生成 EXE 安装包；成功后自动只保留最近两个版本并清理旧展开目录。 |
 | `build-msix.ps1 -CreatePackage` | 可选的开发 MSIX 打包，需要 Windows SDK 与开发签名；省略开关不会打包。 |
 | `Install-NotificationBuild.ps1`、`Trust-NotificationPublisher.ps1` | 可选 MSIX 安装与开发证书信任，须审核后明确选择。 |
-| `package-earbuds-plugin.ps1`、`package-vivo-plugin.ps1` | 打包独立设备插件。 |
 | `Update-TestInstallation.ps1`、`Verify-TestInstallation.ps1` | 完成构建后同步升级已授权的检阅安装、重启并核验配置保留；须显式传入实际安装目录。安装包生成后仍需执行部署步骤。 |
 | `Verify-SettingsMigration.ps1`、`Verify-ClipboardHistoryRuntimeUpdate.ps1` | 核验迁移或升级审计，不能替代通用单元测试。 |
 | `test-installer.ps1` | 安装器专用测试；执行前阅读参数和前置条件。 |
 
 `packaging/` 内的脚本是安装器载荷，`examples/*/install.ps1` 是对应集成的安装入口。普通应用启动不会执行这些开发脚本。
+
+可选插件及其构建、打包脚本位于同级独立目录 `alpha-island-plugins/`；在该目录执行 `tools/build-plugins.ps1`，产物写入其 `packages/`。主程序解决方案可独立构建；包含插件的扩展回归需另行准备该源码目录。
+
+`Test-RepositoryPrivacy.py --root . --report <本地报告路径>` 只读检查源码中的凭据、个人路径和常见隐私文件，报告不包含匹配原文。它不能代替图片审核或历史提交检查。开发签名私钥应存放在 `%LOCALAPPDATA%\AlphaIslandBuild\PackageSigning`，不进入仓库。

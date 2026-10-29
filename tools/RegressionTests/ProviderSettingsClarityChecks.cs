@@ -12,7 +12,7 @@ internal static partial class Program
     private static void ProviderSettingsClarityChecks(alpha_island.MainWindow window, string root)
     {
         string target = Path.Combine(root, "api-clarity-worker"); Directory.CreateDirectory(target);
-        string source = Path.GetFullPath($"examples/ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
+        string source = ExternalPluginSource($"ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach (string file in Directory.GetFiles(source).Where(file => file.EndsWith(".dll") || file.EndsWith(".deps.json") || file.EndsWith("plugin.json")))
             File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
         var manifest = PluginManifest.Read(Path.Combine(target, "plugin.json"));

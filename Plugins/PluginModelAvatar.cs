@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Media;
 using alpha_island.Animation;
@@ -23,7 +24,7 @@ internal sealed class PluginModelAvatar : IModelAvatar
         var activity = state.ToLowerInvariant() switch
         { "thinking" => AgentRunState.Thinking, "streaming" => AgentRunState.Streaming, "working" => AgentRunState.Working,
             "toolwait" or "tool-wait" or "waiting" => AgentRunState.ToolWait, "error" => AgentRunState.Error, _ => AgentRunState.Idle };
-        _icon.ToolTip = family.Length > 0 ? model : "AI 对话";
+        _icon.ToolTip = family.Length > 0 ? model : L.T("AI 对话");
         _icon.Text = activity == AgentRunState.Error ? "\uE783" : "\uE99A";
         try { AgentAvatarMotion.Configure(_icon, ModelArtwork.Source(family), activity, null, _snapshotSurface); }
         catch (Exception ex) when (ex is System.IO.IOException or System.IO.InvalidDataException or System.Text.Json.JsonException

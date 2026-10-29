@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -36,21 +37,21 @@ internal sealed class TimelineView : StackPanel
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/alpha-island;component/Themes/Controls.xaml") });
         _day.Style = (Style)Resources[typeof(ComboBox)];
         _service = service; Margin = new Thickness(0, 14, 0, 0);
-        Children.Add(Text("今日时间轴", 15));
+        Children.Add(Text(L.T("今日时间轴"), 15));
         var actions = new WrapPanel { Margin = new Thickness(0, 6, 0, 6) };
         _day.ItemsSource = Enumerable.Range(0, 7).Select(n => DateTime.Today.AddDays(-n).ToString("yyyy-MM-dd")).ToArray(); _day.SelectedIndex = 0;
         _day.SelectionChanged += (_, _) => { if (!_updatingDays) Refresh(); }; actions.Children.Add(_day);
         Button Action(string title, Action run)
         { var button = new Button { Style = (Style)Resources["ThemedButton"], Content = title, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 3), FontSize = 11 }; button.Click += (_, _) => run(); return button; }
-        actions.Children.Add(Action("导出", async () =>
+        actions.Children.Add(Action(L.T("导出"), async () =>
         {
-            var picker = new Microsoft.Win32.SaveFileDialog { Filter = "JSON 文件|*.json", FileName = "Alpha-Island-时间轴.json" };
+            var picker = new Microsoft.Win32.SaveFileDialog { Filter = L.T("JSON 文件|*.json"), FileName = L.T("Alpha-Island-时间轴.json") };
             if (picker.ShowDialog() != true) return;
             try { await service.ExportAsync(picker.FileName, lifetime); }
             catch (OperationCanceledException) { }
-            catch (Exception) { System.Windows.MessageBox.Show("导出失败，请检查所选位置是否可写。", "时间轴"); }
+            catch (Exception) { System.Windows.MessageBox.Show(L.T("导出失败，请检查所选位置是否可写。"), L.T("时间轴")); }
         }));
-        actions.Children.Add(Action("清空", service.Clear)); Children.Add(actions); Children.Add(_status);
+        actions.Children.Add(Action(L.T("清空"), service.Clear)); Children.Add(actions); Children.Add(_status);
         VirtualizingPanel.SetIsVirtualizing(_list, true); VirtualizingPanel.SetVirtualizationMode(_list, VirtualizationMode.Recycling);
         VirtualizingPanel.SetScrollUnit(_list, ScrollUnit.Pixel); ScrollViewer.SetHorizontalScrollBarVisibility(_list, ScrollBarVisibility.Disabled);
         var outer = new FrameworkElementFactory(typeof(Border)); outer.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
@@ -75,7 +76,7 @@ internal sealed class TimelineView : StackPanel
         {
             var scroll = FindScroll(_list); scroll?.ScrollToVerticalOffset(scroll.VerticalOffset - args.Delta / 3d); args.Handled = true;
         };
-        Children.Add(_list); Children.Add(Text("详细事件仅保存在本机，默认保留 7 天；未启用期间不补造活动记录。", 9));
+        Children.Add(_list); Children.Add(Text(L.T("详细事件仅保存在本机，默认保留 7 天；未启用期间不补造活动记录。"), 9));
         IsVisibleChanged += (_, _) => { if (IsVisible) Refresh(); };
         service.Changed += () => { if (IsVisible) Refresh(); }; Refresh();
     }
@@ -86,8 +87,8 @@ internal sealed class TimelineView : StackPanel
         if (_day.Items.Count != days.Length || !Equals(_day.Items[0], days[0]))
         { _updatingDays = true; _day.ItemsSource = days; _day.SelectedItem = days.Contains(selected) ? selected : days[0]; _updatingDays = false; selected = (string)_day.SelectedItem; }
         var entries = _service.Entries.Where(e => e.Started.LocalDateTime.ToString("yyyy-MM-dd") == selected).OrderByDescending(e => e.Started).ToArray();
-        _status.Text = (!_service.Enabled ? "记录已暂停 · " : "") + (entries.Length == 0 ? "这一天暂无已记录的活动。" : $"共 {entries.Length} 段活动；各类别可重叠。");
-        string Kind(string value) => value switch { "boot" => "开机", "game" => "游戏", "music" => "音乐", "camera" => "摄像头", "microphone" => "麦克风", _ => "活动" };
+        _status.Text = (!_service.Enabled ? L.T("记录已暂停 · ") : "") + (entries.Length == 0 ? L.T("这一天暂无已记录的活动。") : L.F($"共 {entries.Length} 段活动；各类别可重叠。"));
+        string Kind(string value) => value switch { "boot" => L.T("开机"), "game" => L.T("游戏"), "music" => L.T("音乐"), "camera" => L.T("摄像头"), "microphone" => L.T("麦克风"), _ => L.T("活动") };
         var ids = entries.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var row in _rows.Where(r => !ids.Contains(r.Id)).ToArray()) _rows.Remove(row);
         var existing = _rows.ToDictionary(r => r.Id, StringComparer.Ordinal);
@@ -96,8 +97,8 @@ internal sealed class TimelineView : StackPanel
             var e = entries[i]; existing.TryGetValue(e.Id, out var row);
             if (row == null) { row = new(e.Id, Kind(e.Kind) + " · " + e.Name); _rows.Insert(i, row); }
             else if (i >= _rows.Count || !ReferenceEquals(_rows[i], row)) _rows.Move(_rows.IndexOf(row), i);
-            row.Time = e.Started.LocalDateTime.ToString("HH:mm:ss") + (e.Kind == "boot" ? "" : " — " + (e.Ended?.LocalDateTime.ToString("HH:mm:ss") ?? "进行中"));
-            row.Detail = e.Interrupted ? "记录在上次观察时结束，未推测中断期间的活动。" : e.Kind == "boot" ? "Windows 启动事件" : $"已观察 {Math.Max(0, ((e.Ended ?? DateTimeOffset.UtcNow) - e.Started).TotalMinutes):0.#} 分钟";
+            row.Time = e.Started.LocalDateTime.ToString("HH:mm:ss") + (e.Kind == "boot" ? "" : " — " + (e.Ended?.LocalDateTime.ToString("HH:mm:ss") ?? L.T("进行中")));
+            row.Detail = e.Interrupted ? L.T("记录在上次观察时结束，未推测中断期间的活动。") : e.Kind == "boot" ? L.T("Windows 启动事件") : L.F($"已观察 {Math.Max(0, ((e.Ended ?? DateTimeOffset.UtcNow) - e.Started).TotalMinutes):0.#} 分钟");
         }
     }
     private static TextBlock Text(string value, double size) { var text = new TextBlock { Text = value, FontSize = size, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4) }; text.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimary"); return text; }

@@ -1,9 +1,0 @@
-{
-  "id": "vivo.office",
-  "name": "vivo 手机",
-  "version": "0.1.2",
-  "apiVersion": 2,
-  "assembly": "AlphaIsland.Plugins.VivoOffice.dll",
-  "entryType": "AlphaIsland.Plugins.VivoOffice.VivoOfficePlugin",
-  "description": "显示设备名称、连接方式、连接时间和内网 IP，并在新连接时提醒。"
-}

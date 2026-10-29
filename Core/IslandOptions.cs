@@ -178,7 +178,7 @@ namespace alpha_island.Core
             {
                 // Only a genuinely new profile receives automatic integration defaults.
                 // Persist them even without external apps so later installation works after a restart.
-                foreach (string key in new[] { "AgentBridgeEnabled", "plugin/oppo.pods/enabled", "plugin/vivo.office/enabled", "plugin/oppo.pods/setting/auto-connect" })
+                foreach (string key in new[] { "AgentBridgeEnabled" })
                     defaults.Extras[key] = JsonSerializer.SerializeToElement(true);
             }
             return defaults;

@@ -11,18 +11,25 @@ public sealed record ReminderDraft(string Title, DateTimeOffset Due, string Zone
 public sealed record ReminderParseResult(bool IsRequest, ReminderDraft? Draft, string Error = "");
 
 /// <summary>Deterministic local interpretation. Never sends text to a model or executes it.</summary>
-public static class ReminderTextParser
+public static partial class ReminderTextParser
 {
     private const string Number = @"[0-9零〇一二两三四五六七八九十百千]+";
     private static readonly Regex Duration = new($@"^(?:(?<d>{Number})天)?(?:(?<h>{Number})(?:个)?小时)?(?:(?<m>{Number})(?:个)?分(?:钟)?)?(?:(?<s>{Number})秒(?:钟)?)?后$", RegexOptions.CultureInvariant);
     private static readonly Regex Clock = new($@"^(?<period>凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里)?\s*(?<h>{Number})(?:[:：](?<m>\d{{1,2}})|点(?:(?<m>{Number})分?|(?<part>半|一刻|三刻))?)$", RegexOptions.CultureInvariant);
-    public static bool IsListRequest(string text) => Regex.IsMatch(text.Trim(), @"^(?:请)?(?:查看|列出|显示|看看)(?:我的)?提醒(?:列表)?[。！？?]?$|^(?:我的)?提醒列表[。！？?]?$|^我有哪些提醒[。！？?]?$", RegexOptions.CultureInvariant);
+    public static bool IsListRequest(string text) => Regex.IsMatch(text.Trim(), @"^(?:please )?(?:(?:show|list)(?: me)?(?: my)? reminders|my reminders)[.!?]?$", EnglishMatch) || Regex.IsMatch(text.Trim(), @"^(?:请)?(?:查看|列出|显示|看看)(?:我的)?提醒(?:列表)?[。！？?]?$|^(?:我的)?提醒列表[。！？?]?$|^我有哪些提醒[。！？?]?$", RegexOptions.CultureInvariant);
     public static string? CancellationTitle(string text)
     {
+        var english = Regex.Match(text.Trim(), @"^(?:please )?(?:cancel|delete) (?:the )?reminder (?:named )?(?<name>.+?)[.!]?$", EnglishMatch);
+        if (english.Success) return english.Groups["name"].Value.Trim();
         var match = Regex.Match(text.Trim(), @"^(?:请)?(?:取消|删除)(?:名为|叫)?(?:提醒[：:]?\s*(?<name>.+)|(?<name>.+?)(?:的)?提醒)[。！]?$", RegexOptions.CultureInvariant);
         return match.Success ? match.Groups["name"].Value.Trim().TrimEnd('。', '！') : null;
     }
     public static ReminderParseResult Parse(string input, DateTimeOffset now, TimeZoneInfo zone)
+    {
+        var result = ParseEnglish(input.Trim(), now, zone) ?? ParseChinese(input, now, zone);
+        return result with { Error = AlphaIsland.PluginSdk.Localization.UiText.T(result.Error) };
+    }
+    private static ReminderParseResult ParseChinese(string input, DateTimeOffset now, TimeZoneInfo zone)
     {
         string normalized;
         try { normalized = input.Trim().Normalize(NormalizationForm.FormKC); }

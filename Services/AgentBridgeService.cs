@@ -92,7 +92,8 @@ namespace alpha_island.Services
         private readonly CodexTurnHistory _codexTurns = new();
         private readonly CodexStatusJournal _codexStatusJournal;
         private int _sweepRunning;
-        internal string StatusDiagnostics => _externalAgents.DiagnosticsText();
+        internal Func<bool> NativeStatusAllowed { get; set; } = () => true;
+        internal string StatusDiagnostics => _externalAgents.DiagnosticsText() + "\nCodex native: " + Json(_codexTurns.NativeObservationInfo);
 
         /// <param name="port">回环端口（调用方已经 clamp 过）。</param>
         /// <param name="onRequest">
@@ -145,7 +146,15 @@ namespace alpha_island.Services
         private void SweepAgentStatus()
         {
             if (Interlocked.CompareExchange(ref _sweepRunning, 1, 0) != 0) return;
-            try { var now = DateTime.UtcNow; _codexStatusJournal.Drain(_externalAgents, now); _codexTurns.Reconcile(_externalAgents, now); _externalAgents.Sweep(now); }
+            try
+            {
+                var now = DateTime.UtcNow;
+                _codexStatusJournal.Drain(_externalAgents, now);
+                _codexTurns.Reconcile(_externalAgents, now);
+                _codexTurns.ObserveNewTurns(_externalAgents, _codexStatusJournal, now, NativeStatusAllowed());
+                _externalAgents.Sweep(now);
+            }
+            catch (Exception ex) { IslandLog.Warn("AgentBridge", "状态核验失败：" + ex.GetType().Name); }
             finally { Volatile.Write(ref _sweepRunning, 0); }
         }
         /// <summary>停掉监听；所有还在等待的请求立刻按"拒绝：桥接已关闭"回传。</summary>
@@ -456,6 +465,7 @@ namespace alpha_island.Services
                     port = _port,
                     pending = _pending.Count,
                     statusReporting = true,
+                    codexNativeStatus = _codexTurns.NativeObservationInfo,
                     apiDecisions = _allowApiDecisions,
                     usage = new[]
                     {

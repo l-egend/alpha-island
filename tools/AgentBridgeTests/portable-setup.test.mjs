@@ -42,6 +42,53 @@ test('fresh device with no optional apps stays usable without creating app confi
   }finally{await f.cleanup();}
 });
 
+test('Codex readiness distinguishes registered hooks from hooks disabled by the host',{skip:process.platform!=='win32'},async()=>{
+  const f=await fixture();try{
+    const native=path.join(f.codex,'config.toml');
+    const original='model = "fixture"\n[features]\nhooks = false\ncodex_hooks = false\n';
+    await writeFile(native,original);
+    const report=f.run('Auto','codex');
+    const codex=report.providers.find(p=>p.id==='codex');
+    assert.equal(codex.detected,true);
+    assert.equal(codex.readiness?.state,'hooks-disabled','file registration must not be presented as usable native event reporting');
+    assert.equal(await readFile(native,'utf8'),original,'do not silently override the user\'s native hook policy');
+  }finally{await f.cleanup();}
+});
+
+test('Codex readiness checks policies, partial hooks, runtime and endpoint without changing native settings',{skip:process.platform!=='win32'},async()=>{
+ const f=await fixture();try{
+  const native=path.join(f.codex,'config.toml');
+  const provider=mode=>f.run(mode??'Detect','codex').providers.find(p=>p.id==='codex');
+  f.run('Auto','codex');assert.equal(provider().readiness.state,'review-required');
+  const original='allow_managed_hooks_only = true\n[features]\nhooks = true\ncodex_hooks = false\n';
+  await writeFile(native,original);assert.equal(provider().readiness.state,'policy-blocked');
+  await writeFile(native,'[features]\nhooks = true\ncodex_hooks = false\n');
+  assert.equal(provider().readiness.state,'review-required','current flag takes precedence over the legacy flag');
+  assert.equal(provider().readiness.trustVerified,false,'configuration presence does not prove native trust');
+  const hooksPath=path.join(f.codex,'hooks.json');const hooks=JSON.parse(await readFile(hooksPath,'utf8'));
+  delete hooks.hooks.Stop;await writeFile(hooksPath,JSON.stringify(hooks));
+  assert.equal(provider().readiness.state,'repair-required');
+  f.run('Install','codex');assert.equal(provider().readiness.registeredHandlers,10);
+  const registrationPath=path.join(f.data,'config','codex-hooks.json');const registration=JSON.parse(await readFile(registrationPath,'utf8'));
+  registration.endpoint='http://127.0.0.1:9432/';await writeFile(registrationPath,JSON.stringify(registration));
+  assert.equal(provider().readiness.state,'repair-required');
+  f.run('Install','codex');await rm(path.join(f.data,'integrations','codex','hook.mjs'));
+  assert.equal(provider().readiness.state,'repair-required');
+  f.run('Remove','codex');assert.equal(provider().status,'disabled');
+ }finally{await f.cleanup();}
+});
+
+test('Codex status check is read only and never enables a disabled integration',{skip:process.platform!=='win32'},async()=>{
+ const f=await fixture();try{
+  f.run('Auto','codex');f.run('Remove','codex');
+  const paths=[path.join(f.codex,'hooks.json'),path.join(f.data,'config','integrations.json')];
+  const before=await Promise.all(paths.map(p=>readFile(p,'utf8')));
+  const codex=f.run('Check','codex').providers.find(p=>p.id==='codex');
+  assert.equal(codex.status,'disabled');assert.equal(codex.readiness.nativeInspection.available,false);
+  assert.deepEqual(await Promise.all(paths.map(p=>readFile(p,'utf8'))),before);
+ }finally{await f.cleanup();}
+});
+
 test('installed Codex without a user profile reports initialization required and leaves the profile untouched',{skip:process.platform!=='win32'},async()=>{
   const f=await fixture(false);try{
     await mkdir(path.join(f.local,'OpenAI','Codex'),{recursive:true});

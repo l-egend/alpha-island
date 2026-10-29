@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using alpha_island.Core;
@@ -12,7 +13,7 @@ public partial class SettingsWindow
     private void AddWorkspaceSettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "快速启动与统计", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = L.T("快速启动与统计"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var rows = new StackPanel();
         foreach (var descriptor in SettingsRegistry.All.Where(item => item.Key.StartsWith("Launcher", StringComparison.Ordinal) || item.Key == "ProductivityEnabled"))
         {
@@ -36,7 +37,7 @@ public partial class SettingsWindow
             input.Name = descriptor.ControlName; RegisterName(input.Name, input); Grid.SetColumn(input, 1); row.Children.Add(input);
             rows.Children.Add(SettingCard(row));
         }
-        _launcherStatus = new TextBlock { Text = "默认 Ctrl+Alt+Space；在屏幕工具卡片也可打开启动器。", Style = (Style)FindResource("W11RowHint"), Margin = new Thickness(14, 9, 14, 12), TextWrapping = TextWrapping.Wrap };
+        _launcherStatus = new TextBlock { Text = L.T("默认 Ctrl+Alt+Space；在屏幕工具卡片也可打开启动器。"), Style = (Style)FindResource("W11RowHint"), Margin = new Thickness(14, 9, 14, 12), TextWrapping = TextWrapping.Wrap };
         rows.Children.Add(_launcherStatus); panel.Children.Add(rows); Page_Behavior.Children.Add(panel);
     }
 }

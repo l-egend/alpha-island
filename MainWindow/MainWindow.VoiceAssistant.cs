@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -51,7 +52,7 @@ public partial class MainWindow
         _voicePill = new VoiceAssistantPill { Visibility = Visibility.Collapsed };
         ((Panel)NetSpeedNotifyLayer.Parent).Children.Add(_voicePill);
         _voiceAssistant = new(Dispatcher, CreateVoiceCapture,
-            (id, text) => _plugins?.SubmitTextAsync(VoiceChatPage, id, text) ?? Task.FromResult(new PluginTextInputResult(false, "API 对话插件未就绪。")),
+            (id, text) => _plugins?.SubmitTextAsync(VoiceChatPage, id, text) ?? Task.FromResult(new PluginTextInputResult(false, L.T("API 对话插件未就绪。"))),
             id => _plugins?.CancelTextAsync(VoiceChatPage, id) ?? Task.CompletedTask,
             () => !_exiting && !_sessionLocked && !GameDoNotDisturbActive && _approvalCurrent == null
                 && SettingsRegistry.GetBool(_options, "VoiceWakeEnabled", true) && _pages.IndexOf(VoiceChatPage) >= 0
@@ -96,7 +97,8 @@ public partial class MainWindow
     private IVoiceCapture CreateVoiceCapture()
     {
         var config = SpeechSettings.Read(_options);
-        if (config.Provider == "windows-local") return new VoiceRecognitionService();
+        if (config.Provider == "windows-local") return new VoiceRecognitionService(culture:
+            System.Globalization.CultureInfo.GetCultureInfo(config.Language switch { "zh" => "zh-CN", "en" => "en-US", _ => L.Language }));
         SpeechSettings.Validate(config);
         return new ProviderVoiceCapture(SpeechRecognizerRegistry.Default.Create(config), new WasapiSpeechAudioSource());
     }
@@ -116,7 +118,7 @@ public partial class MainWindow
             if (!enabled)
             {
                 if (_voiceAssistant.Visible) _ = _voiceAssistant.CancelAsync();
-                _voiceHotkeyStatus = GameDoNotDisturbActive ? "游戏期间暂停语音唤醒，结束后自动恢复。" : "配置并启用 API 对话后，可使用语音唤醒。";
+                _voiceHotkeyStatus = GameDoNotDisturbActive ? L.T("游戏期间暂停语音唤醒，结束后自动恢复。") : L.T("配置并启用 API 对话后，可使用语音唤醒。");
             }
             else if (_runtimeEnabled)
             {
@@ -125,11 +127,11 @@ public partial class MainWindow
                     if (new KeyGestureConverter().ConvertFromInvariantString(shortcut) is not KeyGesture gesture || gesture.Key == Key.None
                         || (gesture.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) == 0) throw new ArgumentException();
                     _voiceHotkeyStatus = HotkeyService.TryRegisterSystem(new(gesture.Modifiers, gesture.Key), () => _ = ToggleVoiceAssistantAsync(), out _voiceShortcut, out string error)
-                        ? shortcut + " 已注册" : shortcut + "：" + error;
+                        ? shortcut + L.T(" 已注册") : shortcut + "：" + error;
                 }
                 catch (Exception error) when (error is ArgumentException or NotSupportedException or FormatException)
-                { _voiceHotkeyStatus = "语音快捷键格式无效，请使用 Ctrl+Alt+V 这样的组合。"; }
-                if (_voiceHoldEnabled) _voiceHotkeyStatus += "；长按右 Ctrl 0.6 秒唤醒";
+                { _voiceHotkeyStatus = L.T("语音快捷键格式无效，请使用 Ctrl+Alt+V 这样的组合。"); }
+                if (_voiceHoldEnabled) _voiceHotkeyStatus += L.T("；长按右 Ctrl 0.6 秒唤醒");
             }
         }
         SyncVoiceKeyHook(); _settingsWindow?.SetVoiceHotkeyStatus(_voiceHotkeyStatus);
@@ -239,7 +241,7 @@ public partial class MainWindow
         _voiceStopOrb.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         _voiceStopTranslate.X = IslandBody.ActualWidth / 2 + 10 + 18;
         _voiceStopGlyph!.Text = _voiceAssistant?.Active == true ? "\uE71A" : "\uE711";
-        _voiceStopOrb.ToolTip = _voiceAssistant?.Active == true ? "取消本次语音指令（Esc）" : "关闭语音提示";
+        _voiceStopOrb.ToolTip = _voiceAssistant?.Active == true ? L.T("取消本次语音指令（Esc）") : L.T("关闭语音提示");
     }
     private void OnVoiceSpectrum(float[] frame)
     {

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,7 +16,7 @@ public partial class SettingsWindow
     private void AddNotificationSettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "通知与事件", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = L.T("通知与事件"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var group = new StackPanel();
         foreach (var descriptor in SettingsRegistry.All.Where(x => x.Key != "NotificationSoundPath" && (x.Key.StartsWith("Notification", StringComparison.Ordinal)
             || x.Key is "SystemToastEnabled" or "SessionEventNotifyEnabled" or "CpuMonitorEnabled" or "BluetoothLowBatteryEnabled" or "DeviceBatteryFullEnabled" or "DeviceBatteryChargingEnabled")))
@@ -48,7 +49,7 @@ public partial class SettingsWindow
             control.Name = descriptor.ControlName; RegisterName(control.Name, control); Grid.SetColumn(control, 1); row.Children.Add(control);
             if (descriptor.PageId == SettingsPageIds.System)
             {
-                Page_System.Children.Insert(1, new TextBlock { Text = "处理器", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
+                Page_System.Children.Insert(1, new TextBlock { Text = L.T("处理器"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
                 Page_System.Children.Insert(2, SettingCard(row));
             }
             else
@@ -57,7 +58,7 @@ public partial class SettingsWindow
             }
         }
         AddNotificationSoundSettings(group);
-        var open = new Button { Style = (Style)FindResource("W11Button"), Content = "通知中心与权限", Margin = new Thickness(14, 12, 14, 12), Padding = new Thickness(10, 6, 10, 6), HorizontalAlignment = HorizontalAlignment.Left };
+        var open = new Button { Style = (Style)FindResource("W11Button"), Content = L.T("通知中心与权限"), Margin = new Thickness(14, 12, 14, 12), Padding = new Thickness(10, 6, 10, 6), HorizontalAlignment = HorizontalAlignment.Left };
         open.Click += (_, _) => NotificationCenterRequested?.Invoke(this, EventArgs.Empty); group.Children.Add(open);
         panel.Children.Add(group);
         Page_Notifications.Children.Insert(1, panel);

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using alpha_island.Services;
 
 namespace alpha_island.Core;
@@ -33,15 +34,15 @@ internal sealed class UserReminderQueue
     }
     internal UserReminder Add(ReminderDraft draft, DateTimeOffset now)
     {
-        if (draft.Due <= now || draft.Due > now.AddDays(366)) throw new ArgumentException("提醒时间应在未来一年内。");
+        if (draft.Due <= now || draft.Due > now.AddDays(366)) throw new ArgumentException(L.T("提醒时间应在未来一年内。"));
         var local = TimeZoneInfo.ConvertTime(draft.Due, TimeZoneInfo.FindSystemTimeZoneById(draft.ZoneId));
         var job = new UserReminder(Guid.NewGuid().ToString("N"), draft.Title, draft.Due, draft.ZoneId,
             local.Hour, local.Minute, draft.Weekdays.Distinct().Order().ToArray(), draft.IntervalMinutes, now);
-        if (!Valid(job)) throw new ArgumentException("提醒内容或时间规则无效。");
+        if (!Valid(job)) throw new ArgumentException(L.T("提醒内容或时间规则无效。"));
         var existing = _jobs.FirstOrDefault(value => value.Active && value.Title == job.Title && Math.Abs((value.Due - job.Due).TotalSeconds) < 2
             && value.ZoneId == job.ZoneId && value.IntervalMinutes == job.IntervalMinutes && value.Weekdays.SequenceEqual(job.Weekdays));
         if (existing != null) return existing;
-        if (_jobs.Count(value => value.Active) >= 100) throw new ArgumentException("最多同时保存100条待办提醒，请先完成或取消一些。");
+        if (_jobs.Count(value => value.Active) >= 100) throw new ArgumentException(L.T("最多同时保存100条待办提醒，请先完成或取消一些。"));
         _jobs.Add(job); Trim(now); return job;
     }
     internal bool Cancel(string id)
@@ -51,7 +52,7 @@ internal sealed class UserReminderQueue
     }
     internal UserReminder Snooze(string id, int minutes, DateTimeOffset now)
     {
-        var job = _jobs.FirstOrDefault(value => value.Id == id) ?? throw new ArgumentException("提醒已删除或不存在。");
+        var job = _jobs.FirstOrDefault(value => value.Id == id) ?? throw new ArgumentException(L.T("提醒已删除或不存在。"));
         return Add(new(job.Title, now.AddMinutes(Math.Clamp(minutes, 1, 1440)), job.ZoneId, []), now);
     }
     internal bool Advance(DateTimeOffset now)

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,14 +13,14 @@ public partial class MainWindow
     {
         var media = _smtc;
         var menu = new ContextMenu();
-        var auto = new MenuItem { Header = "自动选择最近播放的媒体", IsCheckable = true, IsChecked = media?.SelectedSessionId == null };
+        var auto = new MenuItem { Header = L.T("自动选择最近播放的媒体"), IsCheckable = true, IsChecked = media?.SelectedSessionId == null };
         auto.Click += (_, _) => SelectMediaSource(null); menu.Items.Add(auto); menu.Items.Add(new Separator());
         if (media == null || media.Sessions.Count == 0)
-            menu.Items.Add(new MenuItem { Header = "没有可控制的系统媒体会话", IsEnabled = false });
+            menu.Items.Add(new MenuItem { Header = L.T("没有可控制的系统媒体会话"), IsEnabled = false });
         else
             foreach (var session in media.Sessions)
             {
-                string state = session.State == PlaybackState.Playing ? "正在播放" : session.State == PlaybackState.Paused ? "已暂停" : "未播放";
+                string state = session.State == PlaybackState.Playing ? L.T("正在播放") : session.State == PlaybackState.Paused ? L.T("已暂停") : L.T("未播放");
                 var item = new MenuItem { Header = $"{session.SourceName} · {(session.Title.Length > 0 ? session.Title : "媒体会话")} · {state}",
                     IsCheckable = true, IsChecked = media.ActiveSessionId == session.Id,
                     IsEnabled = session.State is PlaybackState.Playing or PlaybackState.Paused or PlaybackState.Changing };

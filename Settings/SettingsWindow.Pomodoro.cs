@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -57,13 +58,14 @@ public partial class SettingsWindow
             }
             else
             {
-                var choice = new ComboBox { ItemsSource = new[] { "提示", "完成", "警告" }, Width = 86, MinHeight = 28, VerticalAlignment = VerticalAlignment.Center };
+                var choice = new ComboBox { ItemsSource = new[] { "提示", "完成", "警告" }.Select(item => new KeyValuePair<string, string>(item, L.T(item))).ToArray(),
+                    DisplayMemberPath = "Value", SelectedValuePath = "Key", Width = L.IsEnglish ? 120 : 86, MinHeight = 28, VerticalAlignment = VerticalAlignment.Center };
                 choice.SetResourceReference(StyleProperty, typeof(ComboBox));
                 choice.SelectionChanged += (s, e) => Setting_Changed(s, e);
                 var strip = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
                 strip.Children.Add(choice);
-                var preview = new Button { Content = "试听", Style = (Style)FindResource("W11Button"), Margin = new Thickness(6, 0, 0, 0), Padding = new Thickness(8, 4, 8, 4) };
-                preview.Click += (_, _) => PomodoroSound.Play(choice.SelectedItem as string ?? "提示");
+                var preview = new Button { Content = L.T("试听"), Style = (Style)FindResource("W11Button"), Margin = new Thickness(6, 0, 0, 0), Padding = new Thickness(8, 4, 8, 4) };
+                preview.Click += (_, _) => PomodoroSound.Play(choice.SelectedValue as string ?? "提示");
                 strip.Children.Add(preview); control = choice; controls = strip;
             }
             control.Name = descriptor.ControlName; RegisterName(control.Name, control);

@@ -1,9 +1,0 @@
-{
-  "id": "alpha.trafficmonitor",
-  "name": "TrafficMonitor 网络数据",
-  "version": "1.0.1",
-  "apiVersion": 6,
-  "assembly": "AlphaIsland.Plugins.TrafficMonitor.dll",
-  "entryType": "AlphaIsland.Plugins.TrafficMonitor.TrafficMonitorPlugin",
-  "description": "读取 TrafficMonitor 桥接 DLL 提供的原始速率和今日流量，接管内置网络显示。需同时安装桥接 DLL。"
-}

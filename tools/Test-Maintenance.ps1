@@ -29,11 +29,16 @@ try {
     $executable = Join-Path $projectRoot "tools\RegressionTests\bin\$Configuration\net8.0-windows10.0.19041.0\AlphaIsland.RegressionTests.exe"
     if ($runtimeOutput) { $executable = Join-Path $runtimeOutput 'AlphaIsland.RegressionTests.exe' }
     $flags = @(
+        '--codex-portable-status-only',
+        '--agent-input-wait-only',
+        '--distribution-defaults-only',
+        '--external-translation-only',
+        '--localization-only',
         '--service-provider-presets-only','--provider-settings-clarity-only','--agent-file-transfer-only',
         '--diagnostics-privacy-only','--agent-discovery-portability-only','--plugin-enable-state-only',
         '--main-window-resources-only','--compact-island-click-only','--welcome-logo-only','--plugin-details-availability-only',
         '--welcome-power-preview-only','--agent-foreground-click-only','--messenger-direct-open-only','--agent-ui-only',
-        '--multi-display-only',
+        '--multi-display-only','--browser-compact-only','--network-responsiveness-only',
         '--media-lyrics-controls-only',
         '--lyric-rest-only',
         '--settings-lyrics-only',

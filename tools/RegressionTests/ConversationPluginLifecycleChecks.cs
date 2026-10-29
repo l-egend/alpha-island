@@ -75,6 +75,6 @@ internal static partial class Program
         Check(AgentField<System.Windows.Controls.ComboBox>(view,"_provider").Style!=null&&AgentField<TextBox>(view,"_input").Style!=null,"本机 Agent 提供方与输入框明确使用岛的深色控件样式，避免白底白字");
         Check(AgentField<System.Windows.Controls.ComboBox>(view,"_provider").Background is System.Windows.Media.SolidColorBrush {Color.R:<80,Color.G:<80,Color.B:<80},"全局浅色主题不会覆盖本机 Agent 下拉框的深色背景");
         Check(AgentField<AgentSession>(view,"_session").NativeSession=="saved-thread-123"&&AgentField<TextBox>(view,"_output").Text.Contains("原有回复"),"本机 Agent 记录与原生会话标识一起恢复，可继续当前上下文");
-        SaveConversationPreview(new Border{Background=new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20,24,30)),Child=view},"docs/screens/local-agent-card.png",392,294);
+        SaveConversationPreview(new Border{Background=new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20,24,30)),Child=view},"bin/plugin-isolation-previews/local-agent-card.png",392,294);
     }
 }

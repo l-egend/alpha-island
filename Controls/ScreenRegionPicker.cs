@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -54,7 +55,7 @@ internal sealed class ScreenRegionPicker : Form
         using var pen = new Pen(Color.Cyan, 3);
         Rectangle local = _selection; local.Offset(-Left, -Top);
         if (_start.HasValue) e.Graphics.DrawRectangle(pen, local);
-        e.Graphics.DrawString("拖动框选文字或二维码，Esc 取消", SystemFonts.MessageBoxFont ?? Font, Brushes.White, 24, 24);
+        e.Graphics.DrawString(L.T("拖动框选文字或二维码，Esc 取消"), SystemFonts.MessageBoxFont ?? Font, Brushes.White, 24, 24);
     }
 
     internal static Rectangle? Pick(CancellationToken token = default)

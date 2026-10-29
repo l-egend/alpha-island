@@ -18,7 +18,7 @@ internal static partial class Program
     {
         string directory = Path.Combine(testRoot, "plugin-details"); Directory.CreateDirectory(directory);
         string api = Path.Combine(directory, "api"); Directory.CreateDirectory(api);
-        string apiSource = Path.GetFullPath($"examples/ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
+        string apiSource = ExternalPluginSource($"ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach (string file in Directory.GetFiles(apiSource).Where(file => file.EndsWith(".dll") || file.EndsWith(".deps.json") || Path.GetFileName(file) == "plugin.json"))
             File.Copy(file, Path.Combine(api, Path.GetFileName(file)));
         string probe = Path.Combine(directory, "probe"); Directory.CreateDirectory(probe);

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -46,9 +47,9 @@ internal sealed partial class DesktopNotificationPill
         if (value > 1) Height = 36;
         StackCountButton.Visibility = _stackMiddle.Visibility = value > 1 ? Visibility.Visible : Visibility.Collapsed;
         _stackRear.Visibility = value > 2 ? Visibility.Visible : Visibility.Collapsed;
-        StackCountButton.Content = $"共 {(value >= 50 ? "50+" : value.ToString())} 条";
-        StackCountButton.ToolTip = "展开这批通知；正文点击仍打开对应应用";
-        System.Windows.Automation.AutomationProperties.SetName(StackCountButton, $"展开 {value} 条堆叠通知");
+        StackCountButton.Content = L.F($"共 {(value >= 50 ? "50+" : value.ToString())} 条");
+        StackCountButton.ToolTip = L.T("展开这批通知；正文点击仍打开对应应用");
+        System.Windows.Automation.AutomationProperties.SetName(StackCountButton, L.F($"展开 {value} 条堆叠通知"));
         if (_stackCount != value && value > 1) ActionIconMotion.Play(StackCountButton);
         if (value <= 1) ActionIconMotion.Stop(StackCountButton);
         _stackCount = value;

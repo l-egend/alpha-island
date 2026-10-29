@@ -2,7 +2,8 @@ namespace AlphaIsland.PluginSdk;
 
 public sealed record AiServicePreset(string Id, string Name, string BaseUrl, string Model = "", string Protocol = "")
 {
-    public override string ToString() => Name;
+    public string DisplayName => Localization.UiText.T(Name);
+    public override string ToString() => DisplayName;
 }
 
 public static class AiServicePresets

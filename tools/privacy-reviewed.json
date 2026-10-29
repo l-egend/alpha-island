@@ -1,0 +1,134 @@
+[
+  {
+    "path": "tools/AgentBridgeTests/antigravity-hooks.test.mjs",
+    "rule": "literal-secret",
+    "lineHash": "63895e13c0866f87ddd24fccfceb054f9ceb20332f20a235c682dac0e4e851c3",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AgentPortabilityRepairChecks.cs",
+    "rule": "personal-windows-path",
+    "lineHash": "af38616fb260a78169c5af960b79468d30aeef73fec26f8dd7c8dccd11d770bf",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AgentPortabilityRepairChecks.cs",
+    "rule": "personal-windows-path",
+    "lineHash": "21359ae2ef7ad716de90a46e3fd9ed2013da87809f4ab54e533a85ba9e8ef4bd",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AgentPortabilityRepairChecks.cs",
+    "rule": "credential-url",
+    "lineHash": "c582e91f89e9124104ebefed644c651f1643188e73f839970099f149dee56dc9",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AgentPortabilityRepairChecks.cs",
+    "rule": "email-address",
+    "lineHash": "c582e91f89e9124104ebefed644c651f1643188e73f839970099f149dee56dc9",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AgentPortabilityRepairChecks.cs",
+    "rule": "private-key",
+    "lineHash": "6308223862a95e267087bd942d31d4a8a8b5285b683d7ca40af8a34aff181335",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AgentPortabilityRepairChecks.cs",
+    "rule": "email-address",
+    "lineHash": "34fd5cf3c958b9cb2efa86d37e5c70fac7e64b6d48fae4c7645bb45a36dece70",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AgentPortabilityRepairChecks.cs",
+    "rule": "email-address",
+    "lineHash": "5bc387ea63a335d8a4007ab50826216cd4c063d6ff6009488da6b0ef0ef48bfe",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AiConfigurationChecks.cs",
+    "rule": "literal-secret",
+    "lineHash": "1e9a582101e7fd7ad7363d1b12ef1f64bb62c03ad176a0db911b4984d195c16a",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AiConfigurationChecks.cs",
+    "rule": "literal-secret",
+    "lineHash": "27be62ff2d8f74543d376c92e3c8d2f05d25888d40e8a84cc6cd634108f904e5",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AiIntegrationChecks.cs",
+    "rule": "credential-url",
+    "lineHash": "b03465f8a8b3a43510b52c376a3d8bfbd250f34750576d2239817866395b7814",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AiIntegrationChecks.cs",
+    "rule": "email-address",
+    "lineHash": "b03465f8a8b3a43510b52c376a3d8bfbd250f34750576d2239817866395b7814",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AiModelConnectionChecks.cs",
+    "rule": "literal-secret",
+    "lineHash": "58efe21fec691be0ffe9078a5a2b155a5a4f4ec18894f24e77aac9aa5613227b",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/AiModelConnectionChecks.cs",
+    "rule": "literal-secret",
+    "lineHash": "078da1df2b81677277d864fc892bb51ac446669c321cd9d218b3f598008f0898",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/ClipboardDomainChecks.cs",
+    "rule": "email-address",
+    "lineHash": "0a004008de9cdef81ae0c0ba054dfabb579b5cc858ae8d954fff10e5affceb06",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/ClipboardDomainChecks.cs",
+    "rule": "email-address",
+    "lineHash": "f025c87d517e123a7ce767e80631625bf82f48fde2ace22df1ac9a2afa0457f3",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/ClipboardDomainChecks.cs",
+    "rule": "email-address",
+    "lineHash": "d0fb8922eca47c3ba173d24d4f8fe2996adf1524d8488f17990b63728f3cbc8e",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/ClipboardDomainChecks.cs",
+    "rule": "email-address",
+    "lineHash": "1c669179b6f11771695a0845f741b824e2433e8e018c9732357b85e9e7de0a99",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/ClipboardDomainUiChecks.cs",
+    "rule": "email-address",
+    "lineHash": "b3d39fefca3a42e99b2a38db3d396dbe2e21ebe0e18d3e6719fd5bf9648d037a",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/LaunchAndLinksChecks.cs",
+    "rule": "email-address",
+    "lineHash": "635ced79f184cda4db202de60b1d8ed2e9681a83dba0c2a37c4228a0e4d567ba",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/VoiceAssistantUiChecks.cs",
+    "rule": "provider-token",
+    "lineHash": "f4607d13de6db8ae0cf3fe5a2674180f922cd40cc6843486c422c8934c3a6056",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  },
+  {
+    "path": "tools/RegressionTests/VoiceAssistantUiChecks.cs",
+    "rule": "provider-token",
+    "lineHash": "0da4bf9ec7cf91de5445c5f3f0275e60234c1c2010c3ee23236d30fa193e02c4",
+    "reason": "synthetic regression fixture; exact reviewed line"
+  }
+]

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -132,7 +133,7 @@ internal sealed class ComponentRadialMenu : Canvas
             item.Circle.BorderThickness = new Thickness(hovered ? 2.5 : active ? 1.8 : 1);
             item.Icon.Foreground = active || hovered ? _accent : Brushes.White;
         }
-        _caption.Text = _items.FirstOrDefault(x => x.Id == (id ?? _activeId)).Title ?? "切换组件";
+        _caption.Text = _items.FirstOrDefault(x => x.Id == (id ?? _activeId)).Title ?? L.T("切换组件");
     }
 
     private static string Glyph(string id) => id switch

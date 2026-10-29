@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -35,13 +36,13 @@ internal sealed class VoiceAssistantPill : Grid
         var problem = state.State == VoiceAssistantState.Error ? state.Problem ?? VoiceRecognitionProblem.FromMessage(state.Hint) : null;
         Status.Text = state.State switch
         {
-            VoiceAssistantState.Starting => "语音助手 · 正在唤醒",
-            VoiceAssistantState.Recording => "正在聆听 · 停顿自动发送",
-            VoiceAssistantState.Finishing => "正在整理语音",
-            VoiceAssistantState.Processing => "正在处理指令",
-            VoiceAssistantState.Complete => "指令已完成 · 点击查看",
+            VoiceAssistantState.Starting => L.T("语音助手 · 正在唤醒"),
+            VoiceAssistantState.Recording => L.T("正在聆听 · 停顿自动发送"),
+            VoiceAssistantState.Finishing => L.T("正在整理语音"),
+            VoiceAssistantState.Processing => L.T("正在处理指令"),
+            VoiceAssistantState.Complete => L.T("指令已完成 · 点击查看"),
             VoiceAssistantState.Error => problem!.Title,
-            _ => "语音助手"
+            _ => L.T("语音助手")
         };
         string text = problem?.Summary ?? (state.State == VoiceAssistantState.Complete ? state.Hint
             : state.Text.Length > 0 ? state.Text : state.Hint);

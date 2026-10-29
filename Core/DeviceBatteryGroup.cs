@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using AlphaIsland.PluginSdk;
 
 namespace alpha_island.Core;
@@ -23,5 +24,5 @@ internal sealed record DeviceBatteryGroup(string Key, string Name, IReadOnlyList
         }
     }
     internal static string PartName(DeviceBatteryPart part) => part switch
-    { DeviceBatteryPart.Left => "左耳", DeviceBatteryPart.Right => "右耳", DeviceBatteryPart.Case => "耳机盒", _ => "电量" };
+    { DeviceBatteryPart.Left => L.T("左耳"), DeviceBatteryPart.Right => L.T("右耳"), DeviceBatteryPart.Case => L.T("耳机盒"), _ => L.T("电量") };
 }

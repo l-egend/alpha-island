@@ -16,10 +16,10 @@ internal static partial class Program
         foreach (var (folder, framework) in definitions)
         {
             string target = Path.Combine(root, "bundled", folder); Directory.CreateDirectory(target);
-            string source = Path.GetFullPath($"examples/{folder}/bin/{TestBuildConfiguration}/{framework}");
+            string source = ExternalPluginSource($"{folder}/bin/{TestBuildConfiguration}/{framework}");
             foreach (string file in Directory.GetFiles(source).Where(file => file.EndsWith(".dll") || file.EndsWith(".deps.json")))
                 File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
-            File.Copy(Path.GetFullPath($"examples/{folder}/plugin.json"), Path.Combine(target, "plugin.json"));
+            File.Copy(ExternalPluginSource($"{folder}/plugin.json"), Path.Combine(target, "plugin.json"));
             var manifest = PluginManifest.Read(Path.Combine(target, "plugin.json"));
             using var session = new PluginProcessSession(window.Dispatcher);
             try
@@ -37,7 +37,7 @@ internal static partial class Program
                         "真实本机 Agent 页面右侧按钮图像保留可见文字");
                 var remote = new RemotePluginView(page.Key, _ => Task.CompletedTask, _ => { }); remote.Apply(frame);
                 SaveConversationPreview(new Border { Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 24, 30)), Child = remote },
-                    "docs/screens/v105-" + manifest.Id + ".png", 414, (int)page.Height - 20);
+                    "bin/plugin-isolation-previews/" + manifest.Id + ".png", 414, (int)page.Height - 20);
             }
             if (registry.HasSettings)
             {

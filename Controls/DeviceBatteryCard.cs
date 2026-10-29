@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -13,7 +14,7 @@ internal sealed class DeviceBatteryCard : Grid
 {
     private readonly StackPanel _rows = new();
     private readonly TextBlock _count = new() { FontSize = 11, Opacity = .65 };
-    private readonly TextBlock _empty = new() { Text = "尚未发现已连接的设备\n连接蓝牙设备或启用 2.4G 设备电量插件后自动显示",
+    private readonly TextBlock _empty = new() { Text = L.T("尚未发现已连接的设备\n连接蓝牙设备或启用 2.4G 设备电量插件后自动显示"),
         TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = .7, Margin = new Thickness(0, 22, 0, 0) };
     private DeviceBatterySample[] _last = [];
     internal event Action? RefreshRequested;
@@ -24,9 +25,9 @@ internal sealed class DeviceBatteryCard : Grid
         RowDefinitions.Add(new() { Height = GridLength.Auto }); RowDefinitions.Add(new());
         var header = new Grid { Margin = new Thickness(0, 0, 0, 12) };
         var titles = new StackPanel();
-        titles.Children.Add(new TextBlock { Text = "电池", FontSize = 17, FontWeight = FontWeights.SemiBold });
+        titles.Children.Add(new TextBlock { Text = L.T("电池"), FontSize = 17, FontWeight = FontWeights.SemiBold });
         titles.Children.Add(_count); header.Children.Add(titles);
-        var refresh = new Button { Content = "刷新", Padding = new Thickness(10, 5, 10, 5),
+        var refresh = new Button { Content = L.T("刷新"), Padding = new Thickness(10, 5, 10, 5),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         refresh.Click += (_, _) => RefreshRequested?.Invoke(); header.Children.Add(refresh); Children.Add(header);
         var scroll = new ScrollViewer { Content = _rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -38,7 +39,7 @@ internal sealed class DeviceBatteryCard : Grid
     internal void UpdateGroups(IReadOnlyList<DeviceBatteryGroup> groups)
     {
         var samples = groups.SelectMany(g => g.Readings.Select(r => r.Sample)).ToArray();
-        _count.Text = groups.Count == 0 ? "显示已连接的蓝牙、2.4G 与手柄设备" : $"已连接设备 · {groups.Count} 项";
+        _count.Text = groups.Count == 0 ? L.T("显示已连接的蓝牙、2.4G 与手柄设备") : L.F($"已连接设备 · {groups.Count} 项");
         if (_last.SequenceEqual(samples)) return;
         _last = samples.ToArray(); _rows.Children.Clear();
         if (groups.Count == 0) { _rows.Children.Add(_empty); return; }
@@ -53,8 +54,8 @@ internal sealed class DeviceBatteryCard : Grid
                 FontSize = 20, Width = 28, VerticalAlignment = VerticalAlignment.Center });
             var labels = new StackPanel { Margin = new Thickness(10, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
             labels.Children.Add(new TextBlock { Text = d.Name, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis });
-            string transport = d.Transport switch { DeviceBatteryTransport.Bluetooth => "蓝牙", DeviceBatteryTransport.WirelessReceiver => "2.4G", _ => "USB / 接收器" };
-            labels.Children.Add(new TextBlock { Text = transport + (d.Charging ? " · 充电中" : ""), FontSize = 10.5, Opacity = .65, Margin = new Thickness(0, 3, 0, 0) });
+            string transport = d.Transport switch { DeviceBatteryTransport.Bluetooth => L.T("蓝牙"), DeviceBatteryTransport.WirelessReceiver => "2.4G", _ => L.T("USB / 接收器") };
+            labels.Children.Add(new TextBlock { Text = transport + (d.Charging ? L.T(" · 充电中") : ""), FontSize = 10.5, Opacity = .65, Margin = new Thickness(0, 3, 0, 0) });
             if (group.Components.Any(r => r.Part != DeviceBatteryPart.Whole))
             {
                 var details = new WrapPanel { Margin = new Thickness(0, 5, 0, 0) };
@@ -71,7 +72,7 @@ internal sealed class DeviceBatteryCard : Grid
             Grid.SetColumn(labels, 1); row.Children.Add(labels);
             var power = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             power.Children.Add(new DeviceBatteryIndicator { Percent = d.Percent, IsCharging = d.Charging });
-            power.Children.Add(new TextBlock { Text = d.Percent is int p ? (d.Estimated ? "约 " : "") + p + "%" : d.Level.Length > 0 ? d.Level : "未上报",
+            power.Children.Add(new TextBlock { Text = d.Percent is int p ? (d.Estimated ? L.T("约 ") : "") + p + "%" : d.Level.Length > 0 ? d.Level : L.T("未上报"),
                 Width = 48, TextAlignment = TextAlignment.Right, TextTrimming = TextTrimming.CharacterEllipsis,
                 FontSize = d.Percent.HasValue ? 12 : 10.5, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
             Grid.SetColumn(power, 2); row.Children.Add(power);

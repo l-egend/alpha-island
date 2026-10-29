@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using alpha_island.Core;
@@ -61,13 +62,13 @@ public partial class SettingsWindow
         _pluginSettingsSessions.TryGetValue(entry.Directory, out var session);
         var button = new Button
         {
-            Content = session?.Error.Length > 0 ? "重试设置" : "插件设置",
+            Content = session?.Error.Length > 0 ? L.T("重试设置") : L.T("插件设置"),
             Tag = "plugin-settings:" + entry.Directory,
             Style = (Style)FindResource("W11Button"), Margin = new Thickness(10, 0, 0, 0),
             IsEnabled = !entry.UninstallPending && session?.Loading != true
                 && !(entry.Instance != null && !entry.Running && entry.Error.Length == 0)
         };
-        System.Windows.Automation.AutomationProperties.SetName(button, "设置" + entry.Manifest!.Name);
+        System.Windows.Automation.AutomationProperties.SetName(button, L.T("设置") + entry.Manifest!.Name);
         button.Click += (_, _) =>
         {
             if (entry.Running) content.Children.OfType<FrameworkElement>().Skip(2).FirstOrDefault()?.BringIntoView();
@@ -81,14 +82,14 @@ public partial class SettingsWindow
             if (context.SettingsView != null)
             {
                 try { content.Children.Add(context.SettingsView()); }
-                catch (Exception error) { content.Children.Add(PluginDetailsHint("设置暂不可用：" + DiagnosticRedactor.Redact(error.Message))); }
+                catch (Exception error) { content.Children.Add(PluginDetailsHint(L.T("设置暂不可用：") + DiagnosticRedactor.Redact(error.Message))); }
             }
-            else if (context.Settings.Count == 0) content.Children.Add(PluginDetailsHint("此插件没有额外设置"));
+            else if (context.Settings.Count == 0) content.Children.Add(PluginDetailsHint(L.T("此插件没有额外设置")));
         }
-        else if (session?.Loading == true) content.Children.Add(PluginDetailsHint("正在加载插件设置…"));
-        else if (session?.Error.Length > 0) content.Children.Add(PluginDetailsHint("设置暂不可用：" + session.Error));
+        else if (session?.Loading == true) content.Children.Add(PluginDetailsHint(L.T("正在加载插件设置…")));
+        else if (session?.Error.Length > 0) content.Children.Add(PluginDetailsHint(L.T("设置暂不可用：") + session.Error));
         else if (!entry.Running && !entry.UninstallPending)
-            content.Children.Add(PluginDetailsHint(entry.GameSuspended ? "后台已暂停，仍可单独打开设置" : "点击“插件设置”修改配置"));
+            content.Children.Add(PluginDetailsHint(entry.GameSuspended ? L.T("后台已暂停，仍可单独打开设置") : L.T("点击“插件设置”修改配置")));
     }
 
     private TextBlock PluginDetailsHint(string text)

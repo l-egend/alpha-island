@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -101,8 +102,8 @@ namespace alpha_island
                     {
                         new(
                             Kind: DownloadSourceKind.Steam,
-                            Source: "Steam（合成）",
-                            Name: "合成游戏包（调试）",
+                            Source: L.T("Steam（合成）"),
+                            Name: L.T("合成游戏包（调试）"),
                             PathOnDisk: @"C:\ExampleGames\SteamLibrary\steamapps\downloading\appmanifest_999999.acf",
                             TotalBytes: total,
                             ReceivedBytes: received,
@@ -176,7 +177,7 @@ namespace alpha_island
             string state = task.StatusText;
             if (!task.HasReliableProgress)
             {
-                return $"{task.Source}：{task.Name}｜{state}｜实时进度不可用";
+                return L.F($"{task.Source}：{task.Name}｜{state}｜实时进度不可用");
             }
 
             return $"{task.Source}：{task.Name}｜{task.Percent}%（{MemoryService.FormatSize(task.ReceivedBytes)} / " +
@@ -191,30 +192,30 @@ namespace alpha_island
             if (!task.HasReliableProgress)
             {
                 DownloadNotifyDetail.Text = task.Name + (task.Kind == DownloadSourceKind.Browser
-                    ? $"｜已下载 {MemoryService.FormatSize(task.ReceivedBytes)}" : "");
+                    ? L.F($"｜已下载 {MemoryService.FormatSize(task.ReceivedBytes)}") : "");
                 DownloadNotifyValue.Text = string.Empty;
                 // 细条上真正显示了什么，日志里要能核对（每个任务只在第一次显示时打一条）。
                 _downloads?.DebugOnce("notify:" + task.Key + ":" + task.Status,
-                    $"下载提示：{DownloadNotifyTitle.Text}｜{DownloadNotifyDetail.Text}");
+                    L.F($"下载提示：{DownloadNotifyTitle.Text}｜{DownloadNotifyDetail.Text}"));
                 ShowDownloadLayer(refreshing);
                 return;
             }
 
             double displaySpeed = task.CanMeasureSpeed ? bytesPerSecond : 0;
             DownloadNotifyDetail.Text = task.Name
-                                        + $"｜总大小 {MemoryService.FormatSize(task.TotalBytes)}"
-                                        + (displaySpeed > 0 ? $"｜{NetworkSpeedService.FormatSpeedFull(displaySpeed)}" : "｜速度未知");
+                                        + L.F($"｜总大小 {MemoryService.FormatSize(task.TotalBytes)}")
+                                        + (displaySpeed > 0 ? $"｜{NetworkSpeedService.FormatSpeedFull(displaySpeed)}" : L.T("｜速度未知"));
             DownloadNotifyValue.Text = task.Percent + "%";
             // 细条上真正显示了什么，日志里要能核对。按「有没有速度」各记一条（同一任务的两种口径都留证据）。
             _downloads?.DebugOnce("notify:" + task.Key + (displaySpeed > 0 ? ":speed" : ":nospeed"),
-                $"下载提示：{DownloadNotifyTitle.Text}｜{DownloadNotifyDetail.Text}");
+                L.F($"下载提示：{DownloadNotifyTitle.Text}｜{DownloadNotifyDetail.Text}"));
             ShowDownloadLayer(refreshing);
         }
 
         private void ShowDownloadFinished(string name)
         {
             DownloadNotifyGlyph.Text = "\uE73E";   // 勾
-            DownloadNotifyTitle.Text = "下载完成";
+            DownloadNotifyTitle.Text = L.T("下载完成");
             DownloadNotifyDetail.Text = name;
             DownloadNotifyValue.Text = "100%";
             IslandLog.Debug("Download", $"下载完成：{name}");
@@ -239,14 +240,14 @@ namespace alpha_island
         /// <summary>剩余时间文案（速度未知就不猜）。</summary>
         private static string BuildEta(DownloadTask task, double bytesPerSecond)
         {
-            if (task.IsCompleted) return "已完成";
-            if (!task.HasReliableProgress || !task.IsRunning) return "剩余时间未知";
-            if (bytesPerSecond <= 1) return "剩余时间未知";
+            if (task.IsCompleted) return L.T("已完成");
+            if (!task.HasReliableProgress || !task.IsRunning) return L.T("剩余时间未知");
+            if (bytesPerSecond <= 1) return L.T("剩余时间未知");
             double seconds = Math.Max(0, task.TotalBytes - task.ReceivedBytes) / bytesPerSecond;
-            if (seconds < 1) return "即将完成";
-            if (seconds < 60) return $"剩余 {seconds:0} 秒";
-            if (seconds < 3600) return $"剩余 {seconds / 60:0} 分";
-            return $"剩余 {seconds / 3600:0.0} 小时";
+            if (seconds < 1) return L.T("即将完成");
+            if (seconds < 60) return L.F($"剩余 {seconds:0} 秒");
+            if (seconds < 3600) return L.F($"剩余 {seconds / 60:0} 分");
+            return L.F($"剩余 {seconds / 3600:0.0} 小时");
         }
 
         // ================= 卡片页 =================
@@ -271,7 +272,7 @@ namespace alpha_island
                 // 合成模式下卡片也照实显示合成任务（否则调卡片页看不到任何东西）。
                 long total = 300L * 1024 * 1024;
                 long received = (long)(total * Math.Min(1.0, _dlFakeTicks * 0.08));
-                tasks.Add(new DownloadTask(DownloadSourceKind.Steam, "Steam（合成）", "合成游戏包（调试）",
+                tasks.Add(new DownloadTask(DownloadSourceKind.Steam, L.T("Steam（合成）"), L.T("合成游戏包（调试）"),
                     @"C:\ExampleGames\SteamLibrary\steamapps\downloading\appmanifest_999999.acf",
                     total, received, received < total, DateTime.Now.AddMinutes(-3), ProgressReliable: true));
             }
@@ -286,12 +287,12 @@ namespace alpha_island
 
             DownloadCardSummaryText.Text = tasks.Count == 0
                 ? ""
-                : $"{activeCount} 个进行中" + (pausedCount > 0 ? $" · {pausedCount} 个已暂停" : "") + $" · 共 {tasks.Count} 个任务";
+                : L.F($"{activeCount} 个进行中") + (pausedCount > 0 ? L.F($" · {pausedCount} 个已暂停") : "") + L.F($" · 共 {tasks.Count} 个任务");
 
             DownloadEmptyText.Visibility = tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             DownloadEmptyText.Text = service?.DegradedReason is { Length: > 0 } reason
-                ? "读不到下载信息：" + reason
-                : "暂无下载任务";
+                ? L.T("读不到下载信息：") + reason
+                : L.T("暂无下载任务");
 
             for (int i = 0; i < DownloadCardRows; i++)
             {
@@ -311,7 +312,7 @@ namespace alpha_island
                 if (!task.HasReliableProgress)
                 {
                     meta.Text = task.StatusText + (task.Kind == DownloadSourceKind.Browser
-                        ? $" · 已下载 {MemoryService.FormatSize(task.ReceivedBytes)}" + (speed > 0 ? $" · {NetworkSpeedService.FormatSpeedFull(speed)}" : "") : "");
+                        ? L.F($" · 已下载 {MemoryService.FormatSize(task.ReceivedBytes)}") + (speed > 0 ? $" · {NetworkSpeedService.FormatSpeedFull(speed)}" : "") : "");
                 }
                 else
                 {
@@ -339,10 +340,10 @@ namespace alpha_island
             }
 
             string head = rows.Length == 0
-                ? "空"
+                ? L.T("空")
                 : rows[0].HasReliableProgress
                     ? $"{rows[0].Source}/{rows[0].Name} {rows[0].Percent}%"
-                    : $"{rows[0].Source}/{rows[0].Name} {rows[0].StatusText}（实时进度不可用）";
+                    : L.F($"{rows[0].Source}/{rows[0].Name} {rows[0].StatusText}（实时进度不可用）");
             IslandLog.Debug("Download", $"下载卡：共 {tasks.Count} 个（下载中 {activeCount}）｜首项 {head}"
                 + (rows.Length > 0 && DlMeta1 != null ? $"｜界面 {DlMeta1.Text}" : string.Empty));
         }
@@ -351,21 +352,21 @@ namespace alpha_island
         internal string BuildDownloadSummary()
         {
             DownloadMonitorService? service = _downloads;
-            if (service == null) return "未启动";
+            if (service == null) return L.T("未启动");
             if (service.DegradedReason is { Length: > 0 } reason) return reason;
             int active = service.Current.Count(t => t.IsRunning);
             int paused = service.Current.Count(t => t.Status == DownloadState.Paused);
             return service.Current.Count > 0
-                ? $"{active} 个进行中 · {paused} 个已暂停（Steam 按客户端日志识别状态）"
-                : "当前没有下载任务";
+                ? L.F($"{active} 个进行中 · {paused} 个已暂停（Steam 按客户端日志识别状态）")
+                : L.T("当前没有下载任务");
         }
 
         /// <summary>调试/诊断用：把当前任务列成一行。</summary>
         internal string DescribeDownloads()
         {
             DownloadMonitorService? service = _downloads;
-            if (service == null) return "服务未启动";
-            if (service.Current.Count == 0) return "没有任务";
+            if (service == null) return L.T("服务未启动");
+            if (service.Current.Count == 0) return L.T("没有任务");
             return string.Join("｜", service.Current.Take(DownloadCardRows).Select(DescribeTask));
         }
     }

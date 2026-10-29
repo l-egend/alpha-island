@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -25,13 +26,13 @@ internal sealed class VoiceAssistantHelpWindow : Window
         content.Children.Add(new ScrollViewer { Content = Detail, MaxHeight = 290, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         var actions = new WrapPanel { Margin = new Thickness(0, 18, 0, 0) };
-        SettingsButton = new Button { Content = "打开对应设置", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 9, 0) };
-        RetryButton = new Button { Content = "重新尝试", Padding = new Thickness(12, 6, 12, 6) };
+        SettingsButton = new Button { Content = L.T("打开对应设置"), Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 9, 0) };
+        RetryButton = new Button { Content = L.T("重新尝试"), Padding = new Thickness(12, 6, 12, 6) };
         SettingsButton.SetResourceReference(StyleProperty, "ThemedButton"); RetryButton.SetResourceReference(StyleProperty, "ThemedButton");
         SettingsButton.Click += (_, _) =>
         {
             try { openSettings(); }
-            catch (Exception) { Detail.Text = problem.Detail + "\n\n无法自动打开系统设置，请按 Win+I 手动检查语音组件或麦克风权限。"; }
+            catch (Exception) { Detail.Text = problem.Detail + L.T("\n\n无法自动打开系统设置，请按 Win+I 手动检查语音组件或麦克风权限。"); }
         };
         RetryButton.Click += (_, _) => { Close(); retry(); };
         actions.Children.Add(SettingsButton); actions.Children.Add(RetryButton); content.Children.Add(actions);

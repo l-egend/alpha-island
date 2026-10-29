@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Threading.Tasks;
 using System.Windows;
@@ -157,7 +158,7 @@ public partial class MainWindow
         try
         {
             overlay = new MediaHandoffOverlay(state.Bounds, MediaIslandScreenRect(landing: true),
-                _mediaWindows?.Snapshot, info?.Artwork, info?.DisplayTitle ?? "音乐播放器", opening: false,
+                _mediaWindows?.Snapshot, info?.Artwork, info?.DisplayTitle ?? L.T("音乐播放器"), opening: false,
                 reveal: () => PrepareMediaIslandLanding(epoch));
             _mediaHandoff = overlay; _mediaHandoffWindow = state.Handle;
             SyncForegroundMediaVisibility();
@@ -211,7 +212,7 @@ public partial class MainWindow
         var info = _smtc?.Current;
         bool restored = false;
         var overlay = new MediaHandoffOverlay(MediaIslandScreenRect(), state.Bounds, service.Snapshot, info?.Artwork,
-            info?.DisplayTitle ?? "音乐播放器", opening: true, islandPreview: MediaCardPreview(),
+            info?.DisplayTitle ?? L.T("音乐播放器"), opening: true, islandPreview: MediaCardPreview(),
             reveal: () => { if (epoch == _mediaHandoffEpoch) restored = service.Restore(state.Handle); },
             destinationReady: () => service.IsRestoredVisible(state.Handle),
             sourceCovered: () =>

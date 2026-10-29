@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Globalization;
 using System.Windows;
@@ -75,24 +76,24 @@ namespace alpha_island
 
             if (MotionPolicy.InstantMorph || MotionPolicy.PowerSave)
             {
-                SetCover3DActive(false, "关闭（使用 2D 封面）");
+                SetCover3DActive(false, L.T("关闭（使用 2D 封面）"));
                 return;
             }
 
             if (MotionPolicy.RenderTier < 2)
             {
                 SetCover3DActive(false,
-                    $"已拒绝：渲染层级=Tier {MotionPolicy.RenderTier}（分层窗口 + DWM backdrop 下 3D 会退化为软件渲染，需要 Tier 2；选项保持开启，换台机器即生效）");
+                    L.F($"已拒绝：渲染层级=Tier {MotionPolicy.RenderTier}（分层窗口 + DWM backdrop 下 3D 会退化为软件渲染，需要 Tier 2；选项保持开启，换台机器即生效）"));
                 return;
             }
 
             if (!EnsureCover3DScene())
             {
-                SetCover3DActive(false, "已拒绝：卡片封面槽里找不到 CardCover3D（XAML 被改过？）");
+                SetCover3DActive(false, L.T("已拒绝：卡片封面槽里找不到 CardCover3D（XAML 被改过？）"));
                 return;
             }
 
-            SetCover3DActive(true, $"开启（渲染层级=Tier {MotionPolicy.RenderTier}）");
+            SetCover3DActive(true, L.F($"开启（渲染层级=Tier {MotionPolicy.RenderTier}）"));
         }
 
         private void SetCover3DActive(bool active, string reason)
@@ -183,7 +184,7 @@ namespace alpha_island
                 bool? ok = ProbeCover3DRendering();
                 if (ok == false)
                 {
-                    SetCover3DActive(false, "已退回 2D：3D 渲染探针拿不到像素（本窗口里 3D 画不出来）");
+                    SetCover3DActive(false, L.T("已退回 2D：3D 渲染探针拿不到像素（本窗口里 3D 画不出来）"));
                     return;
                 }
                 if (ok == true) _cover3DProbed = true;

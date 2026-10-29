@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,16 +24,16 @@ public partial class MainWindow
             SettingsRegistry.GetBool(_options, "ProductivityEnabled", true));
         _productivity = service; var model = new ProductivityViewModel(service); _productivityViewModel = model;
         var panel = new StackPanel { Margin = new Thickness(8, 4, 8, 4) };
-        panel.Children.Add(UtilityText("生产力统计", 15));
+        panel.Children.Add(UtilityText(L.T("生产力统计"), 15));
         var period = UtilityText("", 10); panel.Children.Add(period);
         var rows = new StackPanel();
-        var span = new ComboBox { ItemsSource = new[] { "按天", "最近 7 天" }, SelectedIndex = 0, Width = 84, Margin = new Thickness(0, 2, 5, 2) };
+        var span = new ComboBox { ItemsSource = new[] { L.T("按天"), L.T("最近 7 天") }, SelectedIndex = 0, Width = 84, Margin = new Thickness(0, 2, 5, 2) };
         span.SelectionChanged += (_, _) => { model.Span(span.SelectedIndex == 1 ? 7 : 1); Render(); };
-        var navigation = UtilityButtons(UtilityButton("上一段", () => { model.Move(-1); Render(); }),
-            UtilityButton("今天", () => { model.Today(); Render(); }), UtilityButton("下一段", () => { model.Move(1); Render(); }));
+        var navigation = UtilityButtons(UtilityButton(L.T("上一段"), () => { model.Move(-1); Render(); }),
+            UtilityButton(L.T("今天"), () => { model.Today(); Render(); }), UtilityButton(L.T("下一段"), () => { model.Move(1); Render(); }));
         navigation.Children.Insert(0, span); panel.Children.Add(navigation);
         panel.Children.Add(rows);
-        var enabled = new CheckBox { Content = "记录本机活动时长", IsChecked = service.Enabled, Margin = new Thickness(0, 8, 0, 4) };
+        var enabled = new CheckBox { Content = L.T("记录本机活动时长"), IsChecked = service.Enabled, Margin = new Thickness(0, 8, 0, 4) };
         enabled.SetResourceReference(System.Windows.Controls.Control.ForegroundProperty, "TextPrimary");
         void ChangeEnabled()
         {
@@ -40,15 +41,15 @@ public partial class MainWindow
             service.SetEnabled(enabled.IsChecked == true); if (_runtimeEnabled) _options.Save(allowRecovery: true);
         }
         enabled.Checked += (_, _) => ChangeEnabled(); enabled.Unchecked += (_, _) => ChangeEnabled(); panel.Children.Add(enabled);
-        panel.Children.Add(UtilityButtons(UtilityButton("导出 CSV", async () =>
+        panel.Children.Add(UtilityButtons(UtilityButton(L.T("导出 CSV"), async () =>
         {
-            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "CSV 文件|*.csv", FileName = "Alpha-Island-活动统计.csv" };
+            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = L.T("CSV 文件|*.csv"), FileName = L.T("Alpha-Island-活动统计.csv") };
             if (dialog.ShowDialog() != true) return;
             try { await service.ExportAsync(dialog.FileName, _utilitiesLifetime.Token); }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { System.Windows.MessageBox.Show("导出失败：" + ex.Message, "活动统计"); }
-        }), UtilityButton("清除统计", service.Clear)));
-        panel.Children.Add(UtilityText("仅保留本机最近 90 天时长；不记录聊天内容。各类别可重叠，不能相加作为电脑使用总时长。", 9));
+            catch (Exception ex) { System.Windows.MessageBox.Show(L.T("导出失败：") + ex.Message, L.T("活动统计")); }
+        }), UtilityButton(L.T("清除统计"), service.Clear)));
+        panel.Children.Add(UtilityText(L.T("仅保留本机最近 90 天时长；不记录聊天内容。各类别可重叠，不能相加作为电脑使用总时长。"), 9));
         if (_desktopAssistant != null) panel.Children.Add(new alpha_island.Controls.TimelineView(_desktopAssistant, _utilitiesLifetime.Token));
         var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         scroll.PreviewMouseWheel += (_, args) => { if (alpha_island.Controls.TimelineView.ContainsList(args.OriginalSource as DependencyObject)) return; scroll.ScrollToVerticalOffset(scroll.VerticalOffset - args.Delta / 3d); args.Handled = true; };
@@ -88,7 +89,7 @@ public partial class MainWindow
     private void OnProductivityAgentChanged(object? sender, EventArgs args)
     {
         if (!Dispatcher.CheckAccess()) { if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(() => OnProductivityAgentChanged(sender, args)); return; }
-        _productivity?.SetActivity(ProductivityActivity.Agent, AgentStatus.Snapshot.Any(activity => activity.State is AgentRunState.Thinking or AgentRunState.Working or AgentRunState.Streaming or AgentRunState.ToolWait));
+        _productivity?.SetActivity(ProductivityActivity.Agent, AgentStatus.Snapshot.Any(activity => activity.State is AgentRunState.Thinking or AgentRunState.Working or AgentRunState.Streaming or AgentRunState.ToolWait or AgentRunState.InputWait));
         _assistantReminders?.TickNow();
     }
     private void StopProductivity()

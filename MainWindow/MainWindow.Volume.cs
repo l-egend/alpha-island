@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -173,7 +174,7 @@ namespace alpha_island
                 if (percent > 0) isMuted = false;
             }
 
-            string displayText = isMuted ? "静音" : $"{percent}%";
+            string displayText = isMuted ? L.T("静音") : $"{percent}%";
             bool changed = VolumeText.Text != displayText;
             VolumeIcon.Shape = IconShape.Volume;
             VolumeIcon.Active = !isMuted && percent > 0;
@@ -235,9 +236,9 @@ namespace alpha_island
             if ((displayPercent != null || _isDraggingVolumeSlider) && percent > 0) isMuted = false;
             _volumeDisplayPercent = percent;
             SyncVolumePillContent(percent, isMuted);
-            string devName = _volumeService?.CurrentDeviceName ?? "系统扬声器";
+            string devName = _volumeService?.CurrentDeviceName ?? L.T("系统扬声器");
 
-            string displayText = isMuted ? "静音" : $"{percent}%";
+            string displayText = isMuted ? L.T("静音") : $"{percent}%";
             bool changed = CardVolumePercentText.Text != displayText || CardVolumeDeviceText.Text != devName;
             CardVolumeIcon.Shape = IconShape.Volume;
             CardVolumeIcon.Active = !isMuted && percent > 0;

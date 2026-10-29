@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -96,14 +97,14 @@ public sealed class DesktopNotificationCard : Border
         Grid.SetColumn(app, 1); header.Children.Add(app);
         var time = TimestampText = Text(NotificationTimestamp.Format(item.Created, DateTimeOffset.Now), 10.5, 0xB0);
         time.VerticalAlignment = VerticalAlignment.Center; time.Margin = new Thickness(8, 0, 7, 0);
-        time.ToolTip = item.Created.ToLocalTime().ToString("yyyy年M月d日 HH:mm:ss");
+        time.ToolTip = item.Created.ToLocalTime().ToString(L.T("yyyy年M月d日 HH:mm:ss"));
         Grid.SetColumn(time, 2); header.Children.Add(time);
         var close = DismissButton = new Button { Width = 28, Height = 28, Padding = new Thickness(0),
             Content = new AlphaIsland.PluginSdk.GlyphIcon { Text = "\uE74D", Width = 18, Height = 18,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-            ToolTip = "从岛内记录移除" };
+            ToolTip = L.T("从岛内记录移除") };
         close.SetResourceReference(StyleProperty, "DeletionIconButton");
-        System.Windows.Automation.AutomationProperties.SetName(close, "移除通知");
+        System.Windows.Automation.AutomationProperties.SetName(close, L.T("移除通知"));
         close.Click += (_, e) => { e.Handled = true; DismissRequested?.Invoke(item); };
         Grid.SetColumn(close, 3); header.Children.Add(close); stack.Children.Add(header);
         bool hasTitle = !string.IsNullOrWhiteSpace(item.Title);
@@ -146,7 +147,7 @@ public sealed class DesktopNotificationCard : Border
         _fullTextPanel = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(8),
             Background = new SolidColorBrush(Color.FromArgb(0x18, 255, 255, 255)), Child = _fullText,
             Margin = new Thickness(0, 5, 0, 0), Visibility = Visibility.Collapsed };
-        _fullTextButton = ActionButton("查看全文", () => { SetFullContentExpanded(!FullContentExpanded); if (FullContentExpanded) ReadRequested?.Invoke(item); });
+        _fullTextButton = ActionButton(L.T("查看全文"), () => { SetFullContentExpanded(!FullContentExpanded); if (FullContentExpanded) ReadRequested?.Invoke(item); });
         _fullTextButton.Margin = new Thickness(0, 0, 8, 0);
         // Keep the body image alongside the full reader, not just its clipped preview.
         Grid.SetColumn(_fullTextPanel, 1); content.Children.Add(_fullTextPanel);
@@ -154,11 +155,11 @@ public sealed class DesktopNotificationCard : Border
         var toolbar = new WrapPanel { Margin = new Thickness(0, 7, 0, 6) };
         toolbar.Children.Add(_fullTextButton);
         stack.Children.Insert(1, toolbar);
-        var pin = ActionButton(item.IsPinned ? "取消置顶" : "置顶", () => PinRequested?.Invoke(item));
-        pin.ToolTip = "置顶仅影响通知中心排序，不让岛常驻展开"; toolbar.Children.Add(pin);
+        var pin = ActionButton(item.IsPinned ? L.T("取消置顶") : L.T("置顶"), () => PinRequested?.Invoke(item));
+        pin.ToolTip = L.T("置顶仅影响通知中心排序，不让岛常驻展开"); toolbar.Children.Add(pin);
         if (item.IsPinned || item.Reminder is { Pending: true })
         {
-            var status = Text((item.Reminder is { Pending: true } ? "待处理" : "") + (item.IsPinned ? " · 已置顶" : ""), 10, 0xD0);
+            var status = Text((item.Reminder is { Pending: true } ? L.T("待处理") : "") + (item.IsPinned ? L.T(" · 已置顶") : ""), 10, 0xD0);
             stack.Children.Insert(2, status);
         }
         if (item.Reminder is { } reminder && AssistantReminderRules.Valid(reminder) && reminder.Expires > DateTimeOffset.Now)
@@ -168,10 +169,10 @@ public sealed class DesktopNotificationCard : Border
                 actions.Children.Add(ActionButton(action.Label, () => ReminderActionRequested?.Invoke(item, action)));
             if (reminder.Pending)
             {
-                if (reminder.Rule != "habit") actions.Children.Add(ActionButton("已处理", () => ReminderResponseRequested?.Invoke(item, "done")));
-                if (AssistantReminderRules.EngineNames.Contains(reminder.Rule)) actions.Children.Add(ActionButton("稍后提醒", () => ReminderResponseRequested?.Invoke(item, "later")));
+                if (reminder.Rule != "habit") actions.Children.Add(ActionButton(L.T("已处理"), () => ReminderResponseRequested?.Invoke(item, "done")));
+                if (AssistantReminderRules.EngineNames.Contains(reminder.Rule)) actions.Children.Add(ActionButton(L.T("稍后提醒"), () => ReminderResponseRequested?.Invoke(item, "later")));
             }
-            if (AssistantReminderRules.EngineNames.Contains(reminder.Rule)) actions.Children.Add(ActionButton("今天不再提醒", () => ReminderResponseRequested?.Invoke(item, "today")));
+            if (AssistantReminderRules.EngineNames.Contains(reminder.Rule)) actions.Children.Add(ActionButton(L.T("今天不再提醒"), () => ReminderResponseRequested?.Invoke(item, "today")));
             stack.Children.Add(actions);
         }
         if (!string.IsNullOrWhiteSpace(item.ActionFeedback))
@@ -182,12 +183,12 @@ public sealed class DesktopNotificationCard : Border
         }
         if (item.CanOpenApp)
         {
-            OpenButton = ActionButton("打开应用", () => OpenRequested?.Invoke(item)); toolbar.Children.Add(OpenButton);
-            toolbar.Children.Add(ActionButton("屏蔽此应用", () => BlockAppRequested?.Invoke(item)));
+            OpenButton = ActionButton(L.T("打开应用"), () => OpenRequested?.Invoke(item)); toolbar.Children.Add(OpenButton);
+            toolbar.Children.Add(ActionButton(L.T("屏蔽此应用"), () => BlockAppRequested?.Invoke(item)));
         }
         else if (item.Kind == DesktopEventKind.Weather)
         {
-            OpenButton = ActionButton("查看天气", () => OpenRequested?.Invoke(item)); toolbar.Children.Add(OpenButton);
+            OpenButton = ActionButton(L.T("查看天气"), () => OpenRequested?.Invoke(item)); toolbar.Children.Add(OpenButton);
         }
     }
     internal void RefreshTimestamp(DateTimeOffset now) => TimestampText.Text = NotificationTimestamp.Format(Notification.Created, now);
@@ -195,7 +196,7 @@ public sealed class DesktopNotificationCard : Border
     {
         _fullText.Visibility = _fullTextPanel.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         _summary.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
-        _fullTextButton.Content = expanded ? "收起全文" : "查看全文";
+        _fullTextButton.Content = expanded ? L.T("收起全文") : L.T("查看全文");
     }
     private static TextBlock Text(string value, double size, byte alpha)
     {

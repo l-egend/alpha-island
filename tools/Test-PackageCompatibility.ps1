@@ -15,6 +15,8 @@ foreach ($framework in @('Microsoft.NETCore.App','Microsoft.WindowsDesktop.App')
     if (@($runtime.includedFrameworks | Where-Object name -eq $framework).Count -ne 1) { throw ('Missing bundled framework: ' + $framework) }
 }
 $files = @(Get-ChildItem -LiteralPath $stageRoot -Recurse -File)
+$optionalPlugins=@($files|Where-Object { $_.Name -eq 'plugin.json' -or $_.Name -match '^AlphaIsland\.(Plugins\.|Examples\.ClockPlugin)' -or $_.Name -eq 'AlphaIsland.TrafficMonitorBridge.dll' })
+if($optionalPlugins.Count){throw 'The main installer must not contain optional plugin packages.'}
 $personal = @($files | Where-Object {
     $relative = $_.FullName.Substring($stageRoot.Length+1)
     $relative -match '(^|\\)(options\.json(?:\.bak)?|secrets\.dat|clipboard_history\.json|error\.log|integrations\.json)$' -or
@@ -49,6 +51,7 @@ $report = [ordered]@{
     Passed=$true;CheckedAt=(Get-Date).ToString('o');Stage=$stageRoot;Target='win-x64';MinimumInstallerBuild=19041
     BundledFrameworks=@($runtime.includedFrameworks);Files=$files.Count;Binaries=$metadata.Count
     NativeBinaries=@($metadata | Where-Object {!$_.Managed});PersonalFiles=0
+    OptionalPlugins=0
     Limitations=@('Native imports are checked against bundled files and this Windows system; an older OS still requires real-machine testing.','Optional dynamically loaded APIs and device firmware are covered by runtime degradation checks, not PE imports.','Windows ARM64 x64 emulation has not been tested.')
 }
 if ($ReportPath) {

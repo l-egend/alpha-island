@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,10 +20,10 @@ public partial class SettingsWindow
     {
         _notificationAssets = new GreetingMediaStore(Path.Combine(_greetingAssets.DirectoryPath, "notification-sounds"));
         var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        actions.Children.Add(GreetingMediaButton("选择音效", "NotificationSoundChoose", ChooseNotificationSound));
-        actions.Children.Add(GreetingMediaButton("试听", "NotificationSoundPreview", PreviewNotificationSound));
-        actions.Children.Add(GreetingMediaButton("恢复默认", "NotificationSoundReset", ResetNotificationSound));
-        rows.Children.Add(GreetingFileRow("通知音效文件", "WAV、MP3、M4A、FLAC、WMA；最长 10 秒。导入后保存独立副本。", actions, out var hint, AlphaIsland.PluginSdk.GlyphArtwork.NotificationSoundGlyph));
+        actions.Children.Add(GreetingMediaButton(L.T("选择音效"), "NotificationSoundChoose", ChooseNotificationSound));
+        actions.Children.Add(GreetingMediaButton(L.T("试听"), "NotificationSoundPreview", PreviewNotificationSound));
+        actions.Children.Add(GreetingMediaButton(L.T("恢复默认"), "NotificationSoundReset", ResetNotificationSound));
+        rows.Children.Add(GreetingFileRow(L.T("通知音效文件"), L.T("WAV、MP3、M4A、FLAC、WMA；最长 10 秒。导入后保存独立副本。"), actions, out var hint, AlphaIsland.PluginSdk.GlyphArtwork.NotificationSoundGlyph));
         _notificationSoundHint = hint;
         _notificationSoundStatus = new TextBlock { Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(14, 0, 14, 8) };
         rows.Children.Add(_notificationSoundStatus);
@@ -32,11 +33,11 @@ public partial class SettingsWindow
 
     private void ChooseNotificationSound()
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "选择通知提示音", CheckFileExists = true,
-            Filter = "音效|*.wav;*.mp3;*.m4a;*.flac;*.wma" };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = L.T("选择通知提示音"), CheckFileExists = true,
+            Filter = L.T("音效|*.wav;*.mp3;*.m4a;*.flac;*.wma") };
         if (dialog.ShowDialog(this) != true) return;
         try { ImportNotificationSound(dialog.FileName); }
-        catch (Exception ex) { _notificationSoundStatus!.Text = "文件未更改：" + ex.Message; }
+        catch (Exception ex) { _notificationSoundStatus!.Text = L.T("文件未更改：") + ex.Message; }
     }
 
     private void ImportNotificationSound(string source)
@@ -45,7 +46,7 @@ public partial class SettingsWindow
         string imported = _notificationAssets.ImportSound(source);
         RetireNotificationSound();
         SettingsRegistry.Write(_options, "NotificationSoundPath", imported);
-        _notificationSoundStatus!.Text = "音效已导入；原文件移动后仍可使用。";
+        _notificationSoundStatus!.Text = L.T("音效已导入；原文件移动后仍可使用。");
         RefreshNotificationSoundSettings(); ApplyChanges();
     }
 
@@ -59,7 +60,7 @@ public partial class SettingsWindow
     {
         _notificationSoundPreview?.Stop(); RetireNotificationSound();
         SettingsRegistry.Write(_options, "NotificationSoundPath", "");
-        _notificationSoundStatus!.Text = "已恢复内置轻柔提示音。";
+        _notificationSoundStatus!.Text = L.T("已恢复内置轻柔提示音。");
         RefreshNotificationSoundSettings(); ApplyChanges();
     }
 
@@ -73,17 +74,17 @@ public partial class SettingsWindow
             try { _notificationSoundPreview.Play(path, SettingsRegistry.GetInt(_options, "NotificationSoundVolume", 25)); }
             catch when (path.Length > 0) { _notificationSoundPreview.Play("", SettingsRegistry.GetInt(_options, "NotificationSoundVolume", 25)); }
             _notificationSoundStatus!.Text = SettingsRegistry.GetInt(_options, "NotificationSoundVolume", 25) == 0
-                ? "通知音量为 0，当前静音。" : "正在试听通知提示音。";
+                ? L.T("通知音量为 0，当前静音。") : L.T("正在试听通知提示音。");
         }
-        catch (Exception ex) { _notificationSoundStatus!.Text = "无法试听：" + ex.Message; }
+        catch (Exception ex) { _notificationSoundStatus!.Text = L.T("无法试听：") + ex.Message; }
     }
 
     private void RefreshNotificationSoundSettings()
     {
         if (_notificationSoundHint == null) return;
         string path = SettingsRegistry.GetText(_options, "NotificationSoundPath", "");
-        _notificationSoundHint.Text = path.Length == 0 ? "内置轻柔提示音 · 约半秒"
-            : File.Exists(path) ? "已导入：" + Path.GetFileName(path) : "自选文件不可用，通知时使用内置提示音";
+        _notificationSoundHint.Text = path.Length == 0 ? L.T("内置轻柔提示音 · 约半秒")
+            : File.Exists(path) ? L.T("已导入：") + Path.GetFileName(path) : L.T("自选文件不可用，通知时使用内置提示音");
         bool enabled = SettingsRegistry.GetBool(_options, "NotificationSoundEnabled", true);
         if (FindName("NotificationSoundPreview") is Button preview) preview.IsEnabled = enabled;
         if (!enabled) _notificationSoundPreview?.Stop();

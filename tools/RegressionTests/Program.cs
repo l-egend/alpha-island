@@ -33,6 +33,30 @@ internal static partial class Program
     private static async Task RunChecks(string[] args)
     {
         IslandLog.FileSinkEnabled = false;
+        if (args.Contains("--codex-portable-status-only"))
+        {
+            string portableRoot = Path.Combine(Path.GetTempPath(), "alpha-codex-portable-" + Guid.NewGuid().ToString("N"));
+            try { Directory.CreateDirectory(portableRoot); await CodexPortableStatusChecks(portableRoot); Console.WriteLine($"All {_checks} portable Codex status checks passed."); }
+            finally { if (Directory.Exists(portableRoot)) Directory.Delete(portableRoot, true); }
+            return;
+        }
+        if (args.Contains("--localization-only"))
+        {
+            string languageRoot = Path.Combine(Path.GetTempPath(), "alpha-language-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(languageRoot); LocalizationCoreChecks();
+                AlphaIsland.PluginSdk.Localization.UiText.Initialize("en-US");
+                IslandUi(languageRoot, iconEntryProbe: "localization");
+                Console.WriteLine($"All {_checks} localization checks passed.");
+            }
+            finally
+            {
+                AlphaIsland.PluginSdk.Localization.UiText.Initialize("zh-CN");
+                if (Directory.Exists(languageRoot)) Directory.Delete(languageRoot, true);
+            }
+            return;
+        }
         if (args.Contains("--agent-file-transfer-only"))
         {
             string filesRoot = Path.Combine(Path.GetTempPath(), "alpha-agent-files-" + Guid.NewGuid().ToString("N"));
@@ -410,6 +434,8 @@ internal static partial class Program
             if (args.Contains("--short-hints-only")) { IslandUi(root, iconEntryProbe: "short-hints"); Console.WriteLine($"All {_checks} short hint checks passed."); return; }
             if (args.Contains("--hint-bounds-only")) { IslandUi(root, iconEntryProbe: "hint-bounds"); Console.WriteLine($"All {_checks} hint bounds checks passed."); return; }
             if (args.Contains("--gaming-notifications-only")) { IslandUi(root, iconEntryProbe: "gaming-notifications"); Console.WriteLine($"All {_checks} game notification checks passed."); return; }
+            if (args.Contains("--browser-compact-only")) { IslandUi(root, iconEntryProbe: "browser-compact"); Console.WriteLine($"All {_checks} browser compact checks passed."); return; }
+            if (args.Contains("--network-responsiveness-only")) { IslandUi(root, iconEntryProbe: "network-responsiveness"); Console.WriteLine($"All {_checks} network responsiveness checks passed."); return; }
             if (args.Contains("--game-compact-lock-only")) { IslandUi(root, iconEntryProbe: "game-compact-lock"); Console.WriteLine($"All {_checks} game compact lock checks passed."); return; }
             if (args.Contains("--agent-avatar-only")) { IslandUi(root, iconEntryProbe: "agent-avatar"); Console.WriteLine($"All {_checks} agent avatar checks passed."); return; }
             if (args.Contains("--agent-avatar-routing-only")) { IslandUi(root, iconEntryProbe: "agent-avatar-routing"); Console.WriteLine($"All {_checks} agent avatar routing checks passed."); return; }
@@ -426,6 +452,8 @@ internal static partial class Program
             if (args.Contains("--greeting-once-only")) { IslandUi(root, iconEntryProbe: "greeting-once"); Console.WriteLine($"All {_checks} single-play greeting checks passed."); return; }
             if (args.Contains("--caption-modes-only")) { IslandUi(root, iconEntryProbe: "caption-modes"); Console.WriteLine($"All {_checks} independent caption mode checks passed."); return; }
             if (args.Contains("--agent-completion-visual-only")) { IslandUi(root, iconEntryProbe: "agent-completion-visual"); Console.WriteLine($"All {_checks} completion and satellite checks passed."); return; }
+            if (args.Contains("--agent-input-wait-only")) { IslandUi(root, iconEntryProbe: "agent-input-wait"); Console.WriteLine($"All {_checks} input wait checks passed."); return; }
+            if (args.Contains("--distribution-defaults-only")) { await DistributionDefaultCoreChecks(root); IslandUi(root, iconEntryProbe: "distribution-defaults"); Console.WriteLine($"All {_checks} distribution default checks passed."); return; }
             if (args.Contains("--agent-multi-session-only")) { IslandUi(root, iconEntryProbe: "agent-multi-session"); Console.WriteLine($"All {_checks} multi-session agent checks passed."); return; }
             if (args.Contains("--agent-background-resume-only")) { IslandUi(root, iconEntryProbe: "agent-background-resume"); Console.WriteLine($"All {_checks} agent background resume checks passed."); return; }
             if (args.Contains("--background-agent-visibility-only")) { IslandUi(root, iconEntryProbe: "background-agent"); Console.WriteLine($"All {_checks} background agent visibility checks passed."); return; }
@@ -1112,9 +1140,13 @@ internal static partial class Program
                 SetField("_compactIslandPointer", new Func<System.Windows.Point?>(() => new System.Windows.Point(300, 300)));
                 var root = (System.Windows.Controls.Grid)window.Content;
 
+                if (iconEntryProbe == "localization") { LocalizationUiChecks(window, testRoot); return; }
+
                 if (iconEntryProbe == "plugin-enable-state") { PluginEnableStateChecks(window, testRoot); return; }
                 if (iconEntryProbe == "main-window-resources") { MainWindowResourceChecks(window); return; }
                 if (iconEntryProbe == "multi-display") { MultiDisplayUiChecks(window); return; }
+                if (iconEntryProbe == "browser-compact") { BrowserCompactChecks(window); return; }
+                if (iconEntryProbe == "network-responsiveness") { NetworkResponsivenessChecks(window); return; }
                 if (iconEntryProbe == "notification-refinement") { NotificationRefinementChecks(window); return; }
                 if (iconEntryProbe == "api-persona") { ApiPersonaUiChecks(testRoot); return; }
                 if (iconEntryProbe == "island-information") { IslandInformationUiChecks(window, testRoot); return; }
@@ -1246,6 +1278,8 @@ internal static partial class Program
                 if (iconEntryProbe == "caption-modes") { CaptionModesChecks(window, testRoot); return; }
                 if (iconEntryProbe == "satellite-material") { SatelliteMaterialChecks(window, root); return; }
                 if (iconEntryProbe == "agent-completion-visual") { AgentCompletionVisualChecks(window, root, testRoot); return; }
+                if (iconEntryProbe == "agent-input-wait") { AgentInputWaitChecks(window, root); return; }
+                if (iconEntryProbe == "distribution-defaults") { DistributionDefaultUiChecks(window, root); return; }
                 if (iconEntryProbe == "agent-multi-session") { AgentMultiSessionChecks(window, root); return; }
                 if (iconEntryProbe == "agent-background-resume") { AgentBackgroundResumeChecks(window, root); return; }
                 if (iconEntryProbe == "background-agent") { BackgroundVisibilityChecks(window, root, false); return; }

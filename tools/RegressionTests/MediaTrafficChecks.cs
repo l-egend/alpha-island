@@ -198,7 +198,7 @@ internal static partial class Program
             try
             {
                 string pluginRoot = Path.Combine(root, "traffic-plugin"), pluginDir = Path.Combine(pluginRoot, "tm"); Directory.CreateDirectory(pluginDir);
-                string source = Path.GetFullPath($"examples/TrafficMonitorPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
+                string source = ExternalPluginSource($"TrafficMonitorPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
                 foreach (string file in Directory.GetFiles(source).Where(f => f.EndsWith(".dll") || f.EndsWith(".deps.json") || f.EndsWith("plugin.json")))
                     File.Copy(file, Path.Combine(pluginDir, Path.GetFileName(file)), true);
                 var options = new IslandOptions(); var pages = new List<IIslandPage>();

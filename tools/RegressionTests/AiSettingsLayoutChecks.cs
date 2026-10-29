@@ -16,9 +16,9 @@ internal static partial class Program
     {
         PluginScrollingChecks();
         string target=Path.Combine(root,"api-settings-worker");Directory.CreateDirectory(target);
-        string source=Path.GetFullPath($"examples/ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
+        string source=ExternalPluginSource($"ApiChatPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach(string file in Directory.GetFiles(source).Where(f=>f.EndsWith(".dll")||f.EndsWith(".deps.json"))) File.Copy(file,Path.Combine(target,Path.GetFileName(file)));
-        File.Copy(Path.GetFullPath("examples/ApiChatPlugin/plugin.json"),Path.Combine(target,"plugin.json"));
+        File.Copy(ExternalPluginSource("ApiChatPlugin/plugin.json"),Path.Combine(target,"plugin.json"));
         var manifest=PluginManifest.Read(Path.Combine(target,"plugin.json"));
         using var session=new PluginProcessSession(window.Dispatcher);
         AwaitPlugin(session.StartAsync(new(target,manifest.Assembly,manifest.EntryType,manifest.Id,Path.Combine(root,"api-data"),

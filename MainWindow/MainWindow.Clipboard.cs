@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -54,7 +55,7 @@ namespace alpha_island
             }
             catch (Exception ex)
             {
-                ClipboardStatusTitle.Text = "打开失败，请重试";
+                ClipboardStatusTitle.Text = L.T("打开失败，请重试");
                 IslandLog.Warn("Clipboard", "默认浏览器打开链接失败：" + ex.Message);
                 return true;
             }
@@ -63,10 +64,10 @@ namespace alpha_island
         private void UpdateClipboardLinkAppearance()
         {
             var link = SettingsRegistry.GetBool(_options, "ClipboardLinkDetectionEnabled", true) ? _clipboard?.CurrentWebLink : null;
-            ClipboardStatusTitle.Text = _clipboard?.LastSensitiveKind.Length > 0 ? "敏感内容已复制" : link != null ? "点击打开链接" : _clipboardIsCut ? "已剪切" : "已复制";
-            ClipboardModeBadgeText.Text = link != null ? "链接" : _clipboardIsCut ? "剪切" : "文本";
+            ClipboardStatusTitle.Text = _clipboard?.LastSensitiveKind.Length > 0 ? L.T("敏感内容已复制") : link != null ? L.T("点击打开链接") : _clipboardIsCut ? L.T("已剪切") : L.T("已复制");
+            ClipboardModeBadgeText.Text = link != null ? L.T("链接") : _clipboardIsCut ? L.T("剪切") : L.T("文本");
             ClipboardIcon.Text = link != null ? "\uE71B" : "\uE8C8";
-            ClipboardNotifyLayer.ToolTip = link != null ? "使用默认浏览器打开\n" + link.AbsoluteUri : null;
+            ClipboardNotifyLayer.ToolTip = link != null ? L.T("使用默认浏览器打开\n") + link.AbsoluteUri : null;
         }
 
         private bool _copyingClipboardHistory;
@@ -79,7 +80,7 @@ namespace alpha_island
             _clipboardPastedUntil = DateTime.MinValue;
 
             UpdateClipboardLinkAppearance();
-            ClipboardPreviewText.Text = string.IsNullOrWhiteSpace(e.Summary) ? "剪贴板内容" : e.Summary;
+            ClipboardPreviewText.Text = string.IsNullOrWhiteSpace(e.Summary) ? L.T("剪贴板内容") : e.Summary;
 
             var cyan = (System.Windows.Media.Brush)FindResource("AccentCyan");
             ClipboardIcon.Foreground = cyan;
@@ -100,11 +101,11 @@ namespace alpha_island
             ClipboardNotifyLayer.ToolTip = null;
             _clipboardPastedUntil = DateTime.UtcNow.AddSeconds(2);
 
-            ClipboardStatusTitle.Text = "已粘贴";
-            ClipboardModeBadgeText.Text = "完成";
+            ClipboardStatusTitle.Text = L.T("已粘贴");
+            ClipboardModeBadgeText.Text = L.T("完成");
             if (string.IsNullOrWhiteSpace(ClipboardPreviewText.Text))
             {
-                ClipboardPreviewText.Text = "已成功粘贴";
+                ClipboardPreviewText.Text = L.T("已成功粘贴");
             }
 
             var green = new SolidColorBrush(Color.FromRgb(0x00, 0xFF, 0x88));
@@ -113,7 +114,7 @@ namespace alpha_island
             ClipboardIconContainer.BorderBrush = new SolidColorBrush(Color.FromArgb(0x44, 0x00, 0xFF, 0x88));
 
             ShowPillNotification(IslandNotification.Seconds("clipboard", 2,
-                deferredInCard: false) with { Title = "已粘贴", Detail = ClipboardPreviewText.Text });
+                deferredInCard: false) with { Title = L.T("已粘贴"), Detail = ClipboardPreviewText.Text });
         }
 
         private void OnClipboardCopiedDismissed(object? sender, EventArgs e)
@@ -214,12 +215,12 @@ namespace alpha_island
 
             var history = _clipboard?.History;
             int count = history?.Count ?? 0;
-            ClipboardCountBadge.Text = $"{count}条";
+            ClipboardCountBadge.Text = L.F($"{count}条");
             ClearClipboardButton.IsEnabled = count > 0;
             var snapshot = history?.ToArray() ?? Array.Empty<ClipboardEntry>();
             if (_clipboardRenderedEntries != null && _clipboardRenderedEntries.SequenceEqual(snapshot)) return;
             _clipboardRenderedEntries = snapshot;
-            ClipboardHistoryHint.Text = "点击复制，再到目标位置粘贴";
+            ClipboardHistoryHint.Text = L.T("点击复制，再到目标位置粘贴");
 
             if (count > 0 && history != null)
             {
@@ -284,7 +285,7 @@ namespace alpha_island
             }
             catch (Exception ex)
             {
-                ClipboardHistoryHint.Text = "复制失败，请重试";
+                ClipboardHistoryHint.Text = L.T("复制失败，请重试");
                 IslandLog.Warn("Clipboard", "历史条目复制失败：" + ex.GetType().Name);
             }
             finally { _copyingClipboardHistory = false; }

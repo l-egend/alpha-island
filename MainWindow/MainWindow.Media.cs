@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -81,9 +82,9 @@ namespace alpha_island
             if (!_fakeMediaForDebug) return;
             _smtc?.SetDebugNowPlaying(new NowPlayingInfo
             {
-                Title = "合成曲目（调试）",
+                Title = L.T("合成曲目（调试）"),
                 Artist = "Alpha Island",
-                Album = "图层验证用",
+                Album = L.T("图层验证用"),
                 SourceApp = "alpha-island-debug",
                 State = PlaybackState.Playing,
                 Position = TimeSpan.FromSeconds(42),
@@ -127,10 +128,10 @@ namespace alpha_island
             _mediaWindows?.SetSource(info.SourceApp);
             TitleText.Text = info.DisplayTitle;
             ArtistText.Text = string.IsNullOrWhiteSpace(info.Artist) && (info.ContentKind != MediaContentKind.Music || MediaSourceNames.IsBrowser(info.SourceApp))
-                ? info.ContentKind == MediaContentKind.Video ? "视频播放" : "网页媒体" : info.DisplayArtist;
+                ? info.ContentKind == MediaContentKind.Video ? L.T("视频播放") : L.T("网页媒体") : info.DisplayArtist;
             AlbumText.Text = info.SourceName
                 + (string.IsNullOrWhiteSpace(info.Album) ? "" : " · " + info.Album);
-            MediaSourcesButton.ToolTip = "选择媒体来源 · 当前：" + info.SourceName;
+            MediaSourcesButton.ToolTip = L.T("选择媒体来源 · 当前：") + info.SourceName;
             PlayPauseButton.IsEnabled = info.CanToggle;
 
             var art = info.Artwork;
@@ -147,7 +148,7 @@ namespace alpha_island
             NextButton.IsEnabled = info.CanNext;
             PlaybackOrderButton.Visibility = MediaPlaybackOrders.Supported(info).Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             PlaybackOrderButton.Content = MediaPlaybackOrders.Glyph(info.PlaybackOrder);
-            PlaybackOrderButton.ToolTip = info.PlaybackOrderKnown ? MediaPlaybackOrders.Name(info.PlaybackOrder) + "（点击切换）" : "切换播放模式";
+            PlaybackOrderButton.ToolTip = info.PlaybackOrderKnown ? MediaPlaybackOrders.Name(info.PlaybackOrder) + L.T("（点击切换）") : L.T("切换播放模式");
             ProgressTrack.Cursor = info.CanSeek ? Cursors.Hand : Cursors.Arrow;
             ProgressTrack.Opacity = info.CanSeek ? 1.0 : 0.6;
 
@@ -232,7 +233,7 @@ namespace alpha_island
             _lastFetchDuration = TimeSpan.Zero;
             ApplyLyrics(null);
 
-            TitleText.Text = "未在播放";
+            TitleText.Text = L.T("未在播放");
             ArtistText.Text = "";
             AlbumText.Text = "";
             CardCoverBrush.ImageSource = null;
@@ -493,7 +494,7 @@ namespace alpha_island
             try
             {
                 if (!await _smtc.CyclePlaybackOrderAsync())
-                    PlaybackOrderButton.ToolTip = "播放器未接受模式切换，请在播放器中确认是否支持";
+                    PlaybackOrderButton.ToolTip = L.T("播放器未接受模式切换，请在播放器中确认是否支持");
             }
             finally { PlaybackOrderButton.IsEnabled = true; }
         }

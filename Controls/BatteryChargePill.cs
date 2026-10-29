@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -49,15 +50,15 @@ public sealed class BatteryChargePill : Grid
     {
         bool connected = info is { HasBattery: true } && (info.IsOnAcPower == true || info.IsCharging);
         PercentText.Text = info is { HasBattery: true, Percent: >= 0 and <= 100 } ? $"{info.Percent}%" : "—";
-        StateText.Text = info == null ? "等待电池状态" : !info.HasBattery ? "未检测到电池"
-            : info.IsEnergySaverEnabled ? "节电模式" : !connected ? "电池供电" : info.Percent == 100 ? "电池已充满"
-            : info.SmartCharging == SmartChargingState.Active ? "智能充电"
-            : info.ChargeType == BatteryChargeType.ConservationMode ? "电池保养" : info.IsCharging ? "正在充电" : "已连接电源";
+        StateText.Text = info == null ? L.T("等待电池状态") : !info.HasBattery ? L.T("未检测到电池")
+            : info.IsEnergySaverEnabled ? L.T("节电模式") : !connected ? L.T("电池供电") : info.Percent == 100 ? L.T("电池已充满")
+            : info.SmartCharging == SmartChargingState.Active ? L.T("智能充电")
+            : info.ChargeType == BatteryChargeType.ConservationMode ? L.T("电池保养") : info.IsCharging ? L.T("正在充电") : L.T("已连接电源");
         bool smartCharging = info is { HasBattery: true, SmartCharging: SmartChargingState.Active };
         _ring.SetPowerState(connected, info?.Percent ?? -1, info is { HasBattery: true, IsEnergySaverEnabled: true }, smartCharging);
         _ring.SetLevel(info is { HasBattery: true, Percent: >= 0 and <= 100 } ? info.Percent / 100d : 0);
-        ToolTip = "电池 " + PercentText.Text + " · " + StateText.Text
-            + (smartCharging && StateText.Text != "智能充电" ? " · 智能充电" : "")
+        ToolTip = L.T("电池 ") + PercentText.Text + " · " + StateText.Text
+            + (smartCharging && StateText.Text != "智能充电" ? L.T(" · 智能充电") : "")
             + (connected ? " · " + BatteryService.FormatChargeType(info!.ChargeType) : "");
     }
 }

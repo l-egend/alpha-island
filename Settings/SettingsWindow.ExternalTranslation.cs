@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -32,7 +33,7 @@ public partial class SettingsWindow
     private void AddExternalTranslationSettings()
     {
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "外部翻译软件", Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = L.T("外部翻译调用"), Style = (Style)FindResource("W11CardTitle"), Margin = new Thickness(0, 26, 0, 12) });
         var group = new StackPanel();
         CheckBox? enabled = null;
         foreach (var descriptor in SettingsRegistry.All.Where(d => d.Key.StartsWith("ExternalTranslation", StringComparison.Ordinal)))
@@ -71,25 +72,25 @@ public partial class SettingsWindow
         var actions = new StackPanel { Margin = new Thickness(16, 10, 16, 14) };
         actions.SetBinding(IsEnabledProperty, new Binding("IsChecked") { Source = enabled, TargetNullValue = false });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        _recordShortcutButton = new Button { Content = "录制快捷键", Style = (Style)FindResource("W11Button") };
+        _recordShortcutButton = new Button { Content = L.T("录制快捷键"), Style = (Style)FindResource("W11Button") };
         _recordShortcutButton.Click += (_, _) =>
         {
             StopRecordingExternalShortcut();
-            _recordingShortcut = true; _recordShortcutButton.Content = "按下快捷键…";
-            _externalShortcutStatus.Text = "按下组合键或 F1–F24，Esc 取消录制。";
+            _recordingShortcut = true; _recordShortcutButton.Content = L.T("按下快捷键…");
+            _externalShortcutStatus.Text = L.T("按下组合键或 F1–F24，Esc 取消录制。");
             _externalShortcutBox.Focus();
             _shortcutRecorder = new KeyboardHook();
             _shortcutRecorder.KeyAction += CaptureExternalShortcut;
             if (!_shortcutRecorder.Hook())
             {
                 StopRecordingExternalShortcut();
-                _externalShortcutStatus.Text = "无法开始录制，请手动填写快捷键。";
+                _externalShortcutStatus.Text = L.T("无法开始录制，请手动填写快捷键。");
             }
         };
-        _testShortcutButton = new Button { Content = "测试调用", Style = (Style)FindResource("W11Button"), Margin = new Thickness(8, 0, 0, 0) };
+        _testShortcutButton = new Button { Content = L.T("测试调用"), Style = (Style)FindResource("W11Button"), Margin = new Thickness(8, 0, 0, 0) };
         _testShortcutButton.Click += async (_, _) => await TestExternalTranslationAsync();
         buttons.Children.Add(_recordShortcutButton); buttons.Children.Add(_testShortcutButton); actions.Children.Add(buttons);
-        _externalShortcutStatus = new TextBlock { Text = "调用时设置窗口会隐藏。此功能只唤起外部软件，不自动取回译文，也不调用岛内 AI。",
+        _externalShortcutStatus = new TextBlock { Text = L.T("调用时暂时隐藏设置窗口，译文在所配置的应用中查看。"),
             Style = (Style)FindResource("W11RowHint"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
         actions.Children.Add(_externalShortcutStatus); group.Children.Add(SettingCard(actions));
         panel.Children.Add(group);
@@ -104,11 +105,11 @@ public partial class SettingsWindow
         if (!_recordingShortcut) return;
         e.Handled = true;
         Key key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key == Key.Escape) { StopRecordingExternalShortcut(); _externalShortcutStatus.Text = "已取消录制。"; return; }
+        if (key == Key.Escape) { StopRecordingExternalShortcut(); _externalShortcutStatus.Text = L.T("已取消录制。"); return; }
         var shortcut = new HotkeyCombo(Keyboard.Modifiers, key);
         if (!ShortcutSimulationService.IsSupported(shortcut)) return;
         _externalShortcutBox.Text = ShortcutSimulationService.Format(shortcut);
-        StopRecordingExternalShortcut(); _externalShortcutStatus.Text = "快捷键已记录；请确认它与翻译软件的全局快捷键一致。";
+        StopRecordingExternalShortcut(); _externalShortcutStatus.Text = L.T("快捷键已记录；请确认它与翻译软件的全局快捷键一致。");
     }
 
     private void StopRecordingExternalShortcut()
@@ -118,7 +119,7 @@ public partial class SettingsWindow
         var recorder = _shortcutRecorder; _shortcutRecorder = null;
         if (recorder != null) { recorder.KeyAction -= CaptureExternalShortcut; recorder.Dispose(); }
         Interlocked.Exchange(ref _shortcutRecordPending, 0);
-        if (_recordShortcutButton != null) _recordShortcutButton.Content = "录制快捷键";
+        if (_recordShortcutButton != null) _recordShortcutButton.Content = L.T("录制快捷键");
     }
 
     private void CaptureExternalShortcut(object? sender, KeyboardHookEventArgs e)
@@ -142,11 +143,11 @@ public partial class SettingsWindow
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
         {
             if (!_recordingShortcut || generation != Volatile.Read(ref _shortcutRecordGeneration)) return;
-            if (e.Key == Key.Escape) _externalShortcutStatus.Text = "已取消录制。";
+            if (e.Key == Key.Escape) _externalShortcutStatus.Text = L.T("已取消录制。");
             else
             {
                 _externalShortcutBox.Text = ShortcutSimulationService.Format(shortcut);
-                _externalShortcutStatus.Text = "快捷键已记录；请确认它与翻译软件的全局快捷键一致。";
+                _externalShortcutStatus.Text = L.T("快捷键已记录；请确认它与翻译软件的全局快捷键一致。");
             }
             StopRecordingExternalShortcut();
         }));
@@ -156,7 +157,7 @@ public partial class SettingsWindow
     {
         if (_sendingTranslationShortcut || !ExternalTranslationOptions.From(_options).Enabled) return;
         string shortcut = _externalShortcutBox.Text.Trim();
-        if (!ShortcutSimulationService.TryParse(shortcut, out _)) { _externalShortcutStatus.Text = "快捷键格式无效，例如 Ctrl+Alt+D。"; return; }
+        if (!ShortcutSimulationService.TryParse(shortcut, out _)) { _externalShortcutStatus.Text = L.T("快捷键格式无效，例如 Ctrl+Alt+D。"); return; }
         _sendingTranslationShortcut = true; _testShortcutButton.IsEnabled = false;
         try
         {
@@ -167,7 +168,7 @@ public partial class SettingsWindow
             if (!result.Sent) ShowInForeground();
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { _externalShortcutStatus.Text = "调用失败：" + ex.Message; if (!_translationShortcutLifetime.IsCancellationRequested) ShowInForeground(); }
+        catch (Exception ex) { _externalShortcutStatus.Text = L.T("调用失败：") + ex.Message; if (!_translationShortcutLifetime.IsCancellationRequested) ShowInForeground(); }
         finally { _sendingTranslationShortcut = false; _testShortcutButton.IsEnabled = true; }
     }
 

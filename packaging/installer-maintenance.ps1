@@ -168,7 +168,6 @@ if ($Mode -eq 'Install') {
     $iconVersion = ($installedVersion -split '\.')[0..2] -join '.'
     Set-IslandShortcutIcons -InstallDirectory $install -IconPath (Join-Path $install ('icons\alpha-island-' + $iconVersion + '.ico')) | Out-Null
     if ($ownedStartup) { Set-ItemProperty -LiteralPath $runKey -Name $RunValue -Value ('"' + (Join-Path $install 'alpha-island.exe') + '" --startup') }
-    Install-BundledPlugins (Join-Path $install 'bundled-plugins') $data
     $setup = Join-Path $install 'agent-integrations\setup.ps1'
     if (Test-Path -LiteralPath $setup) {
         $port = 8765

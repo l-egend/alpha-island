@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Drawing;
 using System.IO;
@@ -47,9 +48,9 @@ namespace alpha_island.Interop
             if (_disposed || _icon != null) return;
 
             _menu = TrayMenuTheme.Create();
-            var settingsItem = new ToolStripMenuItem("打开设置");
+            var settingsItem = new ToolStripMenuItem(L.T("打开设置"));
             settingsItem.Click += (_, __) => TriggerSettingsRequested();
-            var exitItem = new ToolStripMenuItem("退出程序");
+            var exitItem = new ToolStripMenuItem(L.T("退出程序"));
             exitItem.Click += (_, __) => ExitRequested?.Invoke(this, EventArgs.Empty);
             _menu.Items.Add(settingsItem);
             _menu.Items.Add(new ToolStripSeparator());

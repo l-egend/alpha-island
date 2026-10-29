@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows.Threading;
 using alpha_island.Core;
 using AlphaIsland.PluginSdk;
@@ -45,8 +46,8 @@ public partial class MainWindow
         {
             if (!SettingsRegistry.GetBool(_options, alert.Charging ? "DeviceBatteryChargingEnabled"
                 : alert.Full ? "DeviceBatteryFullEnabled" : "BluetoothLowBatteryEnabled", true)) continue;
-            var item = new DesktopNotification("device-battery-" + Guid.NewGuid().ToString("N"), "", "设备电量",
-                alert.Name + (alert.Charging ? " · 正在充电" : alert.Full ? " · 充满提醒" : " · 电量低"), alert.Detail, now.ToLocalTime(),
+            var item = new DesktopNotification("device-battery-" + Guid.NewGuid().ToString("N"), "", L.T("设备电量"),
+                alert.Name + (alert.Charging ? L.T(" · 正在充电") : alert.Full ? L.T(" · 充满提醒") : L.T(" · 电量低")), alert.Detail, now.ToLocalTime(),
                 alert.Charging ? DesktopEventKind.DeviceCharging : alert.Full ? DesktopEventKind.DeviceBatteryFull : DesktopEventKind.BluetoothLowBattery)
                 { DeviceKind = alert.Kind };
             _desktopInbox.Add(item, _desktopPolicy.CanPopup(item, _sessionLocked), _desktopPolicy);

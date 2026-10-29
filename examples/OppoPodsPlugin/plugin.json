@@ -1,9 +1,0 @@
-{
-  "id": "oppo.pods",
-  "name": "耳机控制 · 多品牌",
-  "version": "0.1.5",
-  "apiVersion": 6,
-  "assembly": "AlphaIsland.Plugins.OppoPods.dll",
-  "entryType": "AlphaIsland.Plugins.OppoPods.OppoPodsPlugin",
-  "description": "独立耳机卡片：OPPO／一加／realme、vivo／iQOO、华为、小米／Redmi、漫步者和 AirPods。电量与控制按设备实际能力显示，禁用即关闭连接和扫描。"
-}

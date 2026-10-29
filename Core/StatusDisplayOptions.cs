@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 namespace alpha_island.Core;
 
 internal static class StatusDisplayOptions
@@ -6,8 +7,8 @@ internal static class StatusDisplayOptions
     internal const string DefaultOrder = "upload,download,cpu,memory,power";
     internal static string Label(string key) => key switch
     {
-        "upload" => "上传速度", "download" => "下载速度", "cpu" => "CPU 占用",
-        "memory" => "内存占用", "power" => "CPU＋GPU 功耗", _ => key
+        "upload" => L.T("上传速度"), "download" => L.T("下载速度"), "cpu" => L.T("CPU 占用"),
+        "memory" => L.T("内存占用"), "power" => L.T("CPU＋GPU 功耗"), _ => key
     };
     internal static string SettingKey(string key) => "StatusShow" + char.ToUpperInvariant(key[0]) + key[1..];
     internal static string[] Order(string? value) => (value ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)

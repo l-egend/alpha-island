@@ -45,7 +45,7 @@ internal static partial class Program
         var pages = AgentField<IslandPageHost>(window, "_pages");
         string pluginRoot = Path.Combine(testRoot, "plugins"), folder = Path.Combine(pluginRoot, "local-agent");
         Directory.CreateDirectory(folder);
-        string source = Path.GetFullPath($"examples/LocalAgentsPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
+        string source = ExternalPluginSource($"LocalAgentsPlugin/bin/{TestBuildConfiguration}/net8.0-windows");
         foreach (string file in Directory.GetFiles(source).Where(file => Path.GetExtension(file) == ".dll" || file.EndsWith(".deps.json") || file.EndsWith("plugin.json")))
             File.Copy(file, Path.Combine(folder, Path.GetFileName(file)));
         var original = AgentField<PluginHost?>(window, "_plugins");

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Text;
 using alpha_island.Core;
 
@@ -7,14 +8,14 @@ internal sealed partial class PluginHost
 {
     internal static string StateText(Entry entry, bool requested)
     {
-        if (entry.UninstallError.Length > 0) return "卸载失败：" + DiagnosticRedactor.Redact(entry.UninstallError);
-        if (entry.UninstallPending) return "正在卸载";
-        if (entry.Error.Length > 0) return (requested ? "开关已开启 · 加载失败：" : "加载失败：") + DiagnosticRedactor.Redact(entry.Error);
-        if (!requested) return !entry.Teardown.IsCompleted ? "已关闭 · 正在停止" : "未启用";
-        if (entry.GameSuspended) return "已启用 · 游戏模式暂停";
-        if (entry.Running) return "已启用 · 运行中";
-        if (!entry.Teardown.IsCompleted) return "已启用 · 等待旧进程退出";
-        return entry.Attempted ? "已启用 · 正在启动" : "已启用 · 等待启动";
+        if (entry.UninstallError.Length > 0) return L.T("卸载失败：") + DiagnosticRedactor.Redact(entry.UninstallError);
+        if (entry.UninstallPending) return L.T("正在卸载");
+        if (entry.Error.Length > 0) return (requested ? L.T("开关已开启 · 加载失败：") : L.T("加载失败：")) + DiagnosticRedactor.Redact(entry.Error);
+        if (!requested) return !entry.Teardown.IsCompleted ? L.T("已关闭 · 正在停止") : L.T("未启用");
+        if (entry.GameSuspended) return L.T("已启用 · 游戏模式暂停");
+        if (entry.Running) return L.T("已启用 · 运行中");
+        if (!entry.Teardown.IsCompleted) return L.T("已启用 · 等待旧进程退出");
+        return entry.Attempted ? L.T("已启用 · 正在启动") : L.T("已启用 · 等待启动");
     }
 
     internal string DiagnosticsText()
@@ -31,6 +32,6 @@ internal sealed partial class PluginHost
         foreach (var entry in _entries)
             if (entry.Instance is Isolation.IsolatedPlugin remote && remote.Diagnostics.Length > 0)
                 text.Append(entry.Manifest?.Id).Append(": ").AppendLine(remote.Diagnostics);
-        return text.Length > 0 ? text.ToString() : "尚未发现插件；检查插件目录或刷新列表。";
+        return text.Length > 0 ? text.ToString() : L.T("尚未发现插件；检查插件目录或刷新列表。");
     }
 }

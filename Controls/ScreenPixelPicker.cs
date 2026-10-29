@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -22,7 +23,7 @@ internal sealed class ScreenPixelPicker : Form
             foreach(var screen in Screen.AllScreens.Take(16))
             {
                 var rectangle=screen.Bounds;pixels+=(long)rectangle.Width*rectangle.Height;
-                if(pixels>64_000_000)throw new InvalidOperationException("显示器总分辨率过大，请暂时减少显示器后重试。");
+                if(pixels>64_000_000)throw new InvalidOperationException(L.T("显示器总分辨率过大，请暂时减少显示器后重试。"));
                 var image=Services.ScreenTextService.Capture(rectangle);_screens.Add((rectangle,image));
             }
         }
@@ -68,7 +69,7 @@ internal sealed class ScreenPixelPicker : Form
             using var paint=new SolidBrush(Color.FromArgb(color.Red,color.Green,color.Blue));e.Graphics.FillRectangle(paint,x+133,y+10,42,42);
             e.Graphics.DrawString(color.Hex,SystemFonts.MessageBoxFont??Font,Brushes.White,x+10,y+125);
         }
-        e.Graphics.DrawString("单击取色 · Esc / 右键取消",SystemFonts.MessageBoxFont??Font,Brushes.White,x+10,y+150);
+        e.Graphics.DrawString(L.T("单击取色 · Esc / 右键取消"),SystemFonts.MessageBoxFont??Font,Brushes.White,x+10,y+150);
     }
     protected override void Dispose(bool disposing)
     {if(disposing){foreach(var screen in _screens)screen.Image.Dispose();_screens.Clear();}base.Dispose(disposing);}

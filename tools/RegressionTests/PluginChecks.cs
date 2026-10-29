@@ -29,7 +29,7 @@ internal static partial class Program
         int builtins = pages.Count;
         string pluginRoot = Path.Combine(testRoot, "plugins"); Directory.CreateDirectory(pluginRoot);
         string build = TestBuildConfiguration, tfm = "net8.0-windows";
-        string clockSource = Path.GetFullPath($"examples/ClockPlugin/bin/{build}/{tfm}");
+        string clockSource = ExternalPluginSource($"ClockPlugin/bin/{build}/{tfm}");
         string fixtureSource = Path.GetFullPath($"tools/PluginFixture/bin/{build}/{tfm}");
         void WritePlugin(string folder, string id, string assembly, string type, string source, int api = 1)
         {

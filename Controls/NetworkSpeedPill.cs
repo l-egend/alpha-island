@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -16,7 +17,7 @@ namespace alpha_island.Controls;
 public sealed class NetworkSpeedPill : Grid
 {
     private static readonly string[] Units = { "B", "KB", "MB", "GB", "TB" };
-    private string _rateTip = "网速监测未开启", _sessionTip = "";
+    private string _rateTip = L.T("网速监测未开启"), _sessionTip = "";
     private readonly bool _compact;
     private readonly Dictionary<string, FrameworkElement> _items = new();
     private string[] _selection = [];
@@ -63,7 +64,7 @@ public sealed class NetworkSpeedPill : Grid
         }
         if (items.Length == 0)
         {
-            var empty = new TextBlock { Text = "实时网速", Foreground = Brushes.LightGray, FontSize = 11,
+            var empty = new TextBlock { Text = L.T("实时网速"), Foreground = Brushes.LightGray, FontSize = 11,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             SetRowSpan(empty, 2); Children.Add(empty);
         }
@@ -88,14 +89,14 @@ public sealed class NetworkSpeedPill : Grid
     public void SetRates(double upload, double download)
     {
         UploadValue.Text = FormatRate(upload).Replace(" ", ""); DownloadValue.Text = FormatRate(download).Replace(" ", "");
-        _rateTip = $"上传 {FormatRate(upload)} · 下载 {FormatRate(download)}"; RefreshTip();
+        _rateTip = L.F($"上传 {FormatRate(upload)} · 下载 {FormatRate(download)}"); RefreshTip();
     }
     public void SetSessionInfo(long? uploaded, long? downloaded, double peakUpload, double peakDownload, IReadOnlyList<double> history)
     {
-        _sessionTip = $"本次监测上传 {(uploaded.HasValue ? FormatBytes(uploaded.Value) : "—")}、下载 {(downloaded.HasValue ? FormatBytes(downloaded.Value) : "—")}\n上传峰值 {FormatRate(peakUpload)}、下载峰值 {FormatRate(peakDownload)}";
+        _sessionTip = L.F($"本次监测上传 {(uploaded.HasValue ? FormatBytes(uploaded.Value) : "—")}、下载 {(downloaded.HasValue ? FormatBytes(downloaded.Value) : "—")}\n上传峰值 {FormatRate(peakUpload)}、下载峰值 {FormatRate(peakDownload)}");
         RefreshTip();
     }
-    public void SetUnavailable() { UploadValue.Text = "—"; DownloadValue.Text = "—"; _rateTip = "网速监测未开启"; _sessionTip = ""; RefreshTip(); }
+    public void SetUnavailable() { UploadValue.Text = "—"; DownloadValue.Text = "—"; _rateTip = L.T("网速监测未开启"); _sessionTip = ""; RefreshTip(); }
     private void RefreshTip() => ToolTip = string.Join("\n", new[] { _rateTip, _sessionTip }.Where(x => x.Length > 0));
     internal static string FormatShortRate(double speed)
     {

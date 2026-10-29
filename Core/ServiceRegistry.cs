@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 
@@ -39,40 +40,42 @@ namespace alpha_island.Core
         public const string MessengerNotifications = "messengernotifications";
         public const string SessionEvents = "sessionevents";
         public const string GameActivity = "gameactivity";
+        public const string BrowserWindow = "browserwindow";
 
         /// <summary>全部 Id（按注册顺序无关；用于自检与文档）。</summary>
         public static IReadOnlyList<string> All { get; } = new[]
         {
             Smtc, Spectrum, Lyrics, Clipboard, FileTransfer, Volume, Battery, Bluetooth,
             Telemetry, NetworkSpeed, MemoryMonitor, PrivacyIndicator, AiChat, AgentBridge,
-            TrafficMonitorLink, DownloadMonitor, Cpu, HardwarePower, DesktopNotifications, MessengerNotifications, SessionEvents, GameActivity,
+            TrafficMonitorLink, DownloadMonitor, Cpu, HardwarePower, DesktopNotifications, MessengerNotifications, SessionEvents, GameActivity, BrowserWindow,
         };
 
         /// <summary>Id → 中文显示名的兜底映射（服务自己的 <c>DisplayName</c> 优先）。</summary>
         public static string DisplayName(string id) => id switch
         {
-            Smtc => "系统媒体（SMTC）",
-            Spectrum => "WASAPI 频谱采集",
-            Lyrics => "歌词服务",
-            Clipboard => "剪贴板与热键",
-            FileTransfer => "文件中转站",
-            Volume => "系统音量监听",
-            Battery => "电池状态监听",
-            Bluetooth => "蓝牙设备监听",
-            Telemetry => "无线开关监听（Wi-Fi / 蓝牙）",
-            NetworkSpeed => "网速与下载进度",
-            MemoryMonitor => "内存占用采样",
-            PrivacyIndicator => "麦克风摄像头指示灯",
-            AiChat => "AI 对话",
-            AgentBridge => "Agent 状态与审批",
-            TrafficMonitorLink => "每日流量",
-            DownloadMonitor => "下载进度（浏览器 / Steam）",
-            Cpu => "CPU 占用采样",
-            HardwarePower => "CPU＋GPU 硬件功耗",
-            DesktopNotifications => "Windows 通知监听",
-            MessengerNotifications => "QQ / 微信新消息提醒",
-            SessionEvents => "锁屏与解锁事件",
-            GameActivity => "游戏自动免打扰",
+            Smtc => L.T("系统媒体（SMTC）"),
+            Spectrum => L.T("WASAPI 频谱采集"),
+            Lyrics => L.T("歌词服务"),
+            Clipboard => L.T("剪贴板与热键"),
+            FileTransfer => L.T("文件中转站"),
+            Volume => L.T("系统音量监听"),
+            Battery => L.T("电池状态监听"),
+            Bluetooth => L.T("蓝牙设备监听"),
+            Telemetry => L.T("无线开关监听（Wi-Fi / 蓝牙）"),
+            NetworkSpeed => L.T("网速与下载进度"),
+            MemoryMonitor => L.T("内存占用采样"),
+            PrivacyIndicator => L.T("麦克风摄像头指示灯"),
+            AiChat => L.T("AI 对话"),
+            AgentBridge => L.T("Agent 状态与审批"),
+            TrafficMonitorLink => L.T("每日流量"),
+            DownloadMonitor => L.T("下载进度（浏览器 / Steam）"),
+            Cpu => L.T("CPU 占用采样"),
+            HardwarePower => L.T("CPU＋GPU 硬件功耗"),
+            DesktopNotifications => L.T("Windows 通知监听"),
+            MessengerNotifications => L.T("QQ / 微信新消息提醒"),
+            SessionEvents => L.T("锁屏与解锁事件"),
+            GameActivity => L.T("游戏自动免打扰"),
+            BrowserWindow => L.T("浏览器自动收起"),
             _ => id,
         };
     }

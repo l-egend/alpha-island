@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -163,7 +164,8 @@ namespace alpha_island
                 return false;
             }
             // 续期只更新内容与有效期；新事件才自动接管主岛。
-            bool promoteToMain = _layers.Hub.ShouldPromoteToMain(notification);
+            bool promoteToMain = _layers.Hub.ShouldPromoteToMain(notification)
+                && (!BrowserVolumeFeedbackActive || notification.Key == "volume");
             bool alreadyActive = _layers.IsActive(notification.Key);
             // 先登记生命周期，再更新形态和主岛；中途同步必须已经能看见新通知。
             if (!_layers.Request(notification, requestSync: false)) return false;
@@ -198,7 +200,7 @@ namespace alpha_island
 
             // Choose the new content before calculating its pill width. Otherwise a
             // compact battery island opens at its old width, then grows a second time.
-            if (notification.OpensIsland && _state != IslandState.Pill
+            if (notification.OpensIsland && _state != IslandState.Pill && (!BrowserCompactBlocking || notification.Key == "volume")
                 && (_state == IslandState.Bar || !notification.DeferredInCard)) SetState(IslandState.Pill);
             SyncNotificationLayers();
             PlayNotificationSound(notification, alreadyActive);
@@ -304,20 +306,20 @@ namespace alpha_island
 
         private string SideBubbleLabel(string key) => IsAgentIslandKey(key) ? AgentLabel(key) : key switch
         {
-            "music" => "媒体播放器",
-            "clipboard" => "剪贴板",
-            "download" => "下载任务",
-            "volume" => "音量",
-            "battery" => "电量提醒",
-            "bluetooth" => "蓝牙设备",
-            "netspeed" => "实时网速",
-            "status" => "系统状态",
-            "charging" => "电池电量",
-            ChargingPreviewIslandKey => "充电提示测试",
-            "system" => "系统状态",
+            "music" => L.T("媒体播放器"),
+            "clipboard" => L.T("剪贴板"),
+            "download" => L.T("下载任务"),
+            "volume" => L.T("音量"),
+            "battery" => L.T("电量提醒"),
+            "bluetooth" => L.T("蓝牙设备"),
+            "netspeed" => L.T("实时网速"),
+            "status" => L.T("系统状态"),
+            "charging" => L.T("电池电量"),
+            ChargingPreviewIslandKey => L.T("充电提示测试"),
+            "system" => L.T("系统状态"),
             DesktopToastKey => _notificationSummary.Title.Text,
-            "agentstatus" => "助手忙碌",
-            _ => CardPinDisplayName(key) ?? "有新提示",
+            "agentstatus" => L.T("助手忙碌"),
+            _ => CardPinDisplayName(key) ?? L.T("有新提示"),
         };
 
         /// <summary>

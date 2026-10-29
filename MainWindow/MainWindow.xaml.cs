@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -313,13 +314,17 @@ namespace alpha_island
             _ticker = IslandTicker.Shared(Dispatcher);
             _resourceMonitor = new SystemResourceMonitor(Dispatcher, _ticker, values: _workspace.Resources);
             _runtimeEnabled = isolatedOptions == null;
+            _options = isolatedOptions ?? App.StartupOptions ?? IslandOptions.Load();
+            if (_runtimeEnabled || _options.Extras.ContainsKey("InterfaceLanguage"))
+                L.Initialize(SettingsRegistry.GetText(_options, "InterfaceLanguage", L.SystemLanguage));
+            Language = System.Windows.Markup.XmlLanguage.GetLanguage(L.Language);
             // 单实例：第二次启动直接提示并退出，避免两个岛互相抢钩子
             if (_runtimeEnabled)
             {
                 _mutex = new Mutex(true, "DynamicIslandDemo_SingleInstance_Mutex", out bool isNewInstance);
                 if (!isNewInstance)
                 {
-                    System.Windows.MessageBox.Show("Alpha Island 已经在运行了（请查看右下角托盘图标）。",
+                    System.Windows.MessageBox.Show(L.T("Alpha Island 已经在运行了（请查看右下角托盘图标）。"),
                         "Alpha Island", MessageBoxButton.OK, MessageBoxImage.Information);
                     System.Windows.Application.Current.Shutdown();
                     return;
@@ -406,7 +411,6 @@ namespace alpha_island
             // 而这段时间里音乐胶囊还占着同一块位置（系统提示的叠层就是这个成因）。
             _layers.SyncRequested = SyncNotificationLayers;
 
-            _options = isolatedOptions ?? IslandOptions.Load();
             InitializeLiquidGlass();
             InitializeGreetingPortrait();
 
@@ -543,6 +547,7 @@ namespace alpha_island
                 ApplySettingsRuntimeText(window);
             };
             window.ResetRequested += Settings_ResetRequested;
+            window.RestartRequested += (_, _) => RestartForLanguage();
             window.SetLauncherStatus(_launcherHotkeyStatus);
             window.NotificationCenterRequested += (_, _) =>
             {
@@ -556,8 +561,8 @@ namespace alpha_island
         private void ApplySettingsRuntimeText(SettingsWindow window)
         {
             var audio = _audio;
-            window.UpdateDeviceText(audio?.DeviceName ?? "未检测到输出设备");
-            window.UpdateLyricsSource(_lyrics == null || !_options.LyricsEnabled ? "未启用" : _lyricsDoc?.Source ?? "尚未命中");
+            window.UpdateDeviceText(audio?.DeviceName ?? L.T("未检测到输出设备"));
+            window.UpdateLyricsSource(_lyrics == null || !_options.LyricsEnabled ? L.T("未启用") : _lyricsDoc?.Source ?? L.T("尚未命中"));
         }
 
         /// <summary>
@@ -708,6 +713,7 @@ namespace alpha_island
         private void ExitApplication()
         {
             CancelGameQuietIntro();
+            StopBrowserWindowMonitor();
             _overlayZOrder?.Dispose(); _overlayZOrder = null;
             RememberOpenCardPage();
             StopMediaWindowHandoff();
@@ -813,7 +819,7 @@ namespace alpha_island
             DisplayText = clean.Length > 48 ? clean.Substring(0, 48) + "..." : clean;
 
             var span = DateTime.Now - entry.Timestamp;
-            if (span.TotalSeconds < 60) TimeString = "刚刚";
+            if (span.TotalSeconds < 60) TimeString = L.T("刚刚");
             else if (span.TotalHours < 24) TimeString = entry.Timestamp.ToString("HH:mm");
             else TimeString = entry.Timestamp.ToString("MM/dd HH:mm");
         }

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 namespace alpha_island.Core;
 
 internal sealed record HabitDay(string Date, int? WorkStart = null, int? MeetingStart = null, int? MediaStart = null);
@@ -99,12 +100,12 @@ internal sealed class HabitLearner(TimeZoneInfo zone)
             int centerMinute = cluster.Order().ElementAt(cluster.Length / 2);
             int reminderMinute = (centerMinute + 1440 - (kind == "meeting" ? 10 : 5)) % 1440;
             string time = $"{reminderMinute / 60:00}:{reminderMinute % 60:00}";
-            string frequency = weekday ? "工作日" : "周末";
-            string verb = kind switch { "work"=>"开始专注", "meeting"=>"准备会议", _=>"放松休息" };
-            string repeat = weekday ? "每个工作日" : "每个周末";
-            string note = kind == "meeting" ? "仅根据会议设备使用时段推测，不代表已读取日历。" : "仅根据本机已观察到的类别和时段推测，不会自动修改设置。";
-            output.Add(new(id, $"要在{frequency}{time}提醒你{verb}吗？",
-                $"最近28天的{cluster.Length}个观察日集中在{centerMinute / 60:00}:{centerMinute % 60:00}附近。{note}", $"{repeat}{time}提醒我{verb}"));
+            string frequency = weekday ? L.T("工作日") : L.T("周末");
+            string verb = kind switch { "work"=>L.T("开始专注"), "meeting"=>L.T("准备会议"), _=>L.T("放松休息") };
+            string repeat = weekday ? L.T("每个工作日") : L.T("每个周末");
+            string note = kind == "meeting" ? L.T("仅根据会议设备使用时段推测，不代表已读取日历。") : L.T("仅根据本机已观察到的类别和时段推测，不会自动修改设置。");
+            output.Add(new(id, L.F($"要在{frequency}{time}提醒你{verb}吗？"),
+                L.F($"最近28天的{cluster.Length}个观察日集中在{centerMinute / 60:00}:{centerMinute % 60:00}附近。{note}"), L.F($"{repeat}{time}提醒我{verb}")));
         }
         foreach (bool focus in new[] { true, false })
         {
@@ -115,8 +116,8 @@ internal sealed class HabitLearner(TimeZoneInfo zone)
             int minutes = Math.Clamp((int)(sessions.Select(value => value.Minutes).Order().ElementAt(sessions.Length / 2) / 5d + .5) * 5, 10, focus ? 120 : 180);
             int current = focus ? currentFocus : currentBreak;
             if (Math.Abs(minutes - current) < (focus ? 5 : 15)) continue;
-            output.Add(new(id, focus ? $"将常用专注时长设为{minutes}分钟？" : $"将连续使用休息提醒设为{minutes}分钟？",
-                $"根据{sessions.Length}次、至少3天的有效时长记录提出；只有点击采纳后才改变对应设置。", "", focus ? minutes : 0, focus ? 0 : minutes));
+            output.Add(new(id, focus ? L.F($"将常用专注时长设为{minutes}分钟？") : L.F($"将连续使用休息提醒设为{minutes}分钟？"),
+                L.F($"根据{sessions.Length}次、至少3天的有效时长记录提出；只有点击采纳后才改变对应设置。"), "", focus ? minutes : 0, focus ? 0 : minutes));
         }
         return output.ToArray();
     }

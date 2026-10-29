@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Windows;
 using alpha_island.Core;
@@ -60,7 +61,7 @@ public partial class MainWindow
         bool pinned = key == "music" ? _isPinned : _layers.IsPinned(key);
         SideBubble.BorderBrush = (System.Windows.Media.Brush)FindResource(pinned ? "AccentCyan" : "GlassEdgeBrush");
         string title = key == "system" ? SysNotifyTitle.Text + "\n" + SideBubbleDetail.Text : GetSatelliteDisplayName(key);
-        SideBubble.ToolTip = $"{title}（{(pinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）";
+        SideBubble.ToolTip = L.F($"{title}（{(pinned ? "已独立置顶 · " : "")}左键展开，右键切换置顶）");
     }
 
     // External agent status/approvals have their own pill, independent of the AI chat page.
@@ -74,7 +75,7 @@ public partial class MainWindow
             _agentWindowKey = view.Key;
             string message;
             if (_agentNavigation.TryResolve(view.Owner, out var target, out message)) _ = OpenAgentWindowAsync(target!);
-            view.Root.ToolTip = string.IsNullOrEmpty(message) ? AgentLabel(view.Key) + " · 打开对应助手" : message;
+            view.Root.ToolTip = string.IsNullOrEmpty(message) ? AgentLabel(view.Key) + L.T(" · 打开对应助手") : message;
         }
         else if (AgentSession(key) is { } plugin && _plugins?.PageForActivity(plugin.Owner) is { } activityPage)
             SelectComponent(activityPage);

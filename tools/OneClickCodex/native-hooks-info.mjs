@@ -12,7 +12,7 @@ try {
  let configurationChecked=false,hooksEnabled=null,userHooksAllowed=null;
  try {const {config}=await rpc('config/read',{includeLayers:false});configurationChecked=true;
  hooksEnabled=(config.features?.hooks??config.features?.codex_hooks??true)!==false;
- userHooksAllowed=config.hooks?.allow_managed_hooks_only!==true;}catch{}
+ userHooksAllowed=config.allow_managed_hooks_only!==true&&config.hooks?.allow_managed_hooks_only!==true;}catch{}
  const response=await rpc('hooks/list',{cwds:[cwd]}); const handlers=[];let errors=0,warnings=0;
  for(const entry of response.data??[]){errors+=entry.errors?.length??0;warnings+=entry.warnings?.length??0;for(const h of entry.hooks??[]){if(h.statusMessage?.startsWith('Alpha Island /'))handlers.push({event:h.eventName,enabled:h.enabled===true,trust:h.trustStatus});}}
  console.log(JSON.stringify({available:true,configurationChecked,hooksEnabled,userHooksAllowed,errors,warnings,handlers}));

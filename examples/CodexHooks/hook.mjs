@@ -150,6 +150,11 @@ export async function handleHook(input, rawConfig, { configPath, background = fa
     return {};
   }
   if (activeEvents.has(event)) {
+    if (event === 'PreToolUse' && typeof input.tool_name === 'string'
+        && /(?:^|[./:])request_user_input$/.test(input.tool_name)) {
+      await report(config, key, 'input-wait', 'Codex · 等待你的回复', configPath, background);
+      return {};
+    }
     const detail = event === 'PreToolUse' ? 'Codex · 执行工具' : event === 'PreCompact' ? 'Codex · 整理上下文' : 'Codex · 思考中';
     await report(config, key, event === 'PreToolUse' ? 'working' : 'thinking', detail, configPath, background);
     return {};

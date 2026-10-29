@@ -20,6 +20,12 @@ internal static partial class Program
         Check(Notices(engine.Evaluate(ReminderFrame(now.AddSeconds(65), 66000) with { Agents = [wait] })).Length == 0, "状态续期不重复生成等待提醒");
         Check(engine.Evaluate(ReminderFrame(now.AddSeconds(66), 67000) with { Agents = [wait with { State = AgentRunState.Working }] }).Any(c => c.ResolveKey == notice.Key), "离开等待状态会自动解除旧事项");
         Check(Notices(engine.Evaluate(ReminderFrame(now.AddSeconds(67), 68000) with { Agents = [wait with { State = AgentRunState.Error }] })).Any(n => n.Reminder?.Rule == "agent-error"), "真实错误状态有独立处理入口");
+        var inputEngine = Engine(); var inputWait = wait with { State = AgentRunState.InputWait };
+        inputEngine.Evaluate(ReminderFrame(now) with { Agents = [inputWait] });
+        var inputNotice = Notices(inputEngine.Evaluate(ReminderFrame(now.AddSeconds(61), 62000) with { Agents = [inputWait] })).Single();
+        Check(inputNotice.Body.Contains("等待回复") && !inputNotice.Body.Contains("授权"), "等待用户输入的跟进通知不会误写成工具授权");
+        Check(Notices(inputEngine.Evaluate(ReminderFrame(now.AddSeconds(65), 66000) with { Agents = [inputWait] })).Length == 0, "等待回复的重复快照不会连续堆叠通知");
+        Check(inputEngine.Evaluate(ReminderFrame(now.AddSeconds(66), 67000) with { Agents = [inputWait with { State = AgentRunState.Thinking }] }).Any(c => c.ResolveKey == inputNotice.Key), "回复后自动解除仍需处理的等待通知");
         var completion = Engine(); completion.Evaluate(ReminderFrame(now) with { Agents = [wait with { State = AgentRunState.Working }] });
         completion.RecordEnded(wait.Owner, 41, now.AddSeconds(1), false); completion.RecordEnded(wait.Owner, 41, now.AddSeconds(1), false);
         var ended = Notices(completion.Evaluate(ReminderFrame(now.AddSeconds(5), 6000))).Single();

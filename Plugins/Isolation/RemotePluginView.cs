@@ -156,6 +156,7 @@ internal sealed class RemotePluginView : C.Grid
                         text.FontSize = Math.Clamp(item.FontSize, 1, 120); text.FontFamily = SafeFont(item.FontFamily);
                         text.FontWeight = item.Bold ? FontWeights.SemiBold : FontWeights.Normal;
                         text.TextWrapping = item.Wrap ? TextWrapping.Wrap : TextWrapping.NoWrap;
+                        text.LineHeight = double.IsFinite(item.LineHeight) && item.LineHeight is >= 1 and <= 256 ? item.LineHeight : double.NaN;
                         text.TextAlignment = Enum.TryParse<TextAlignment>(item.Alignment, out var alignment) ? alignment : TextAlignment.Left;
                         break;
                     case C.TextBox input when !_editing.Contains(item.Id):
@@ -294,8 +295,14 @@ internal sealed class RemotePluginView : C.Grid
         if (!Regex.IsMatch(value, "^#[A-Fa-f0-9]{6}([A-Fa-f0-9]{2})?$")) return fallback;
         var color = (Color)ColorConverter.ConvertFromString(value); var brush = new SolidColorBrush(color); brush.Freeze(); return brush;
     }
-    private static FontFamily SafeFont(string value) => new(value is "Segoe UI" or "Segoe UI Variable" or "Segoe MDL2 Assets"
-        or "Segoe Fluent Icons" or "Microsoft YaHei" or "Microsoft YaHei UI" or "Consolas" or "Arial" ? value : "Segoe UI");
+    private static FontFamily SafeFont(string value)
+    {
+        var families = value.Split(',', StringSplitOptions.TrimEntries);
+        bool allowed = value.Length <= 256 && families.Length is >= 1 and <= 8 && families.All(family => family is
+            "Segoe UI" or "Segoe UI Variable" or "Segoe MDL2 Assets" or "Segoe Fluent Icons" or "Microsoft YaHei"
+            or "Microsoft YaHei UI" or "Consolas" or "Arial");
+        return new FontFamily(allowed ? value : "Segoe UI");
+    }
     private static BitmapImage Decode(string value)
     {
         if (value.Length > PluginWire.MaximumPacketBytes) throw new InvalidDataException("插件图像过大");

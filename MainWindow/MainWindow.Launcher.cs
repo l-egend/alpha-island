@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Diagnostics;
 using System.Windows.Input;
 using alpha_island.Controls;
@@ -24,18 +25,18 @@ public partial class MainWindow
         string key = enabled ? shortcut : "";
         if (_launcherRegistrationKey == key && (_launcherHotkey != null || !enabled)) return;
         _launcherHotkey?.Dispose(); _launcherHotkey = null; _launcherRegistrationKey = key;
-        _launcherHotkeyStatus = enabled ? "" : "快速启动热键已关闭";
+        _launcherHotkeyStatus = enabled ? "" : L.T("快速启动热键已关闭");
         if (!enabled) { _launcherWindow?.Hide(); _settingsWindow?.SetLauncherStatus(_launcherHotkeyStatus); return; }
         try
         {
             if (new KeyGestureConverter().ConvertFromInvariantString(shortcut) is not KeyGesture gesture
                 || gesture.Key == Key.None || (gesture.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) == 0)
-                throw new ArgumentException("请使用包含 Ctrl、Alt 或 Win 的组合键");
+                throw new ArgumentException(L.T("请使用包含 Ctrl、Alt 或 Win 的组合键"));
             bool registered = HotkeyService.TryRegisterSystem(new(gesture.Modifiers, gesture.Key), ShowQuickLauncher, out _launcherHotkey, out var error);
-            _launcherHotkeyStatus = registered ? "快速启动热键：" + shortcut : error + "；可从屏幕工具卡打开启动器并修改快捷键";
+            _launcherHotkeyStatus = registered ? L.T("快速启动热键：") + shortcut : error + L.T("；可从屏幕工具卡打开启动器并修改快捷键");
         }
         catch (Exception ex) when (ex is NotSupportedException or ArgumentException or FormatException)
-        { _launcherHotkeyStatus = "快捷键格式无效：" + ex.Message; }
+        { _launcherHotkeyStatus = L.T("快捷键格式无效：") + ex.Message; }
         DiagnosticsReport.RegisterSection("快速启动", () => _launcherHotkeyStatus);
         _settingsWindow?.SetLauncherStatus(_launcherHotkeyStatus);
     }
@@ -55,19 +56,19 @@ public partial class MainWindow
         try
         {
             _launcherApplications = await _launcherIndex.ScanAsync(_utilitiesLifetime.Token); _launcherIndexed = DateTime.UtcNow;
-            if (!_exiting && _launcherModel != null) { RefreshLauncherEntries(); _launcherModel.Status = "↑↓ 选择 · Enter 打开 · Esc 关闭"; }
+            if (!_exiting && _launcherModel != null) { RefreshLauncherEntries(); _launcherModel.Status = L.T("↑↓ 选择 · Enter 打开 · Esc 关闭"); }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { if (_launcherModel != null) _launcherModel.Status = "应用索引失败：" + ex.Message; }
+        catch (Exception ex) { if (_launcherModel != null) _launcherModel.Status = L.T("应用索引失败：") + ex.Message; }
         finally { _launcherIndexing = false; }
     }
     private void RefreshLauncherEntries()
     {
-        var entries = _pages.Pages.Select(page => new LauncherEntry("page:" + page.Id, page.Title, "岛内组件", LauncherKind.Component, page.Id)).ToList();
+        var entries = _pages.Pages.Select(page => new LauncherEntry("page:" + page.Id, page.Title, L.T("岛内组件"), LauncherKind.Component, page.Id)).ToList();
         entries.AddRange(new[] { ("codex", "Codex"), ("antigravity", "Antigravity"), ("deepseek-harness", "DSH / DeepSeek"), ("claude-code", "Claude Code") }
-            .Select(pair => new LauncherEntry("agent:" + pair.Item1, pair.Item2, "切换至已打开的助手窗口", LauncherKind.Agent, "external:" + pair.Item1 + "/launcher")));
+            .Select(pair => new LauncherEntry("agent:" + pair.Item1, pair.Item2, L.T("切换至已打开的助手窗口"), LauncherKind.Agent, "external:" + pair.Item1 + "/launcher")));
         entries.AddRange(_launcherApplications); _launcherModel?.SetEntries(entries);
-        if (_launcherModel != null) _launcherModel.Status = _launcherApplications.Length == 0 ? "正在读取开始菜单应用…" : "↑↓ 选择 · Enter 打开 · Esc 关闭";
+        if (_launcherModel != null) _launcherModel.Status = _launcherApplications.Length == 0 ? L.T("正在读取开始菜单应用…") : L.T("↑↓ 选择 · Enter 打开 · Esc 关闭");
     }
     private async Task ExecuteLauncherAsync(LauncherEntry item)
     {
@@ -81,7 +82,7 @@ public partial class MainWindow
                 if (!_agentNavigation.TryOpen(item.Target, out string message))
                 {
                     var app = _launcherApplications.FirstOrDefault(app => app.Title.Contains(item.Title.Split(' ')[0], StringComparison.OrdinalIgnoreCase));
-                    if (app == null) throw new InvalidOperationException(message + " 请先启动该助手。");
+                    if (app == null) throw new InvalidOperationException(message + L.T(" 请先启动该助手。"));
                     Process.Start(new ProcessStartInfo(app.Target) { UseShellExecute = true });
                 }
                 break;
@@ -89,7 +90,7 @@ public partial class MainWindow
                 string? page = _pages.Pages.FirstOrDefault(page => page.Id.StartsWith("plugin:ai.local-agents/", StringComparison.Ordinal))?.Id;
                 page ??= _pages.IndexOf("plugin:ai.api-chat/chat") >= 0 ? "plugin:ai.api-chat/chat" : null;
                 if (page == null || _plugins == null || !await _plugins.PrefillAsync(page, item.Target))
-                    throw new InvalidOperationException("请在插件设置中启用 AI 对话或本机 Agent；文本尚未发送。");
+                    throw new InvalidOperationException(L.T("请在插件设置中启用 AI 对话或本机 Agent；文本尚未发送。"));
                 SelectComponent(page); break;
         }
         _launcherWindow?.Hide();

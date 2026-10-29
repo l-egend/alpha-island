@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -28,8 +29,8 @@ internal sealed partial class DesktopNotificationStackCard
         IsExpanded = expanded;
         if (expanded && !_built)
         { _built = true; foreach (var message in Group.Items) _messages.Children.Add(_createCard(message)); }
-        _toggleHint.Text = expanded ? "收起" : "展开"; _chevron.Text = expanded ? "\uE70E" : "\uE70D";
-        ToggleButton.ToolTip = expanded ? "收起这叠通知" : "展开这叠通知"; UpdateAccessibility();
+        _toggleHint.Text = expanded ? L.T("收起") : L.T("展开"); _chevron.Text = expanded ? "\uE70E" : "\uE70D";
+        ToggleButton.ToolTip = expanded ? L.T("收起这叠通知") : L.T("展开这叠通知"); UpdateAccessibility();
         long transition = ++_transition;
         StopMotion();
         if (!animate || !IsLoaded || MotionPolicy.InstantMorph || MotionPolicy.PowerSave)

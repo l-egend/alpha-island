@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -15,13 +16,13 @@ internal static class GreetingPresetCatalog
     internal const string Amiya = "amiya";
     internal const string HoshinoSwimsuit = "hoshino-swimsuit";
     internal const string Random = "random";
-    internal const string WelcomeText = "欢迎回来";
+    internal static string WelcomeText => L.T("欢迎回来");
     internal const string Custom = "custom";
     internal const string NailongMedia = "builtin:nailong";
     internal const string AmiyaMedia = "builtin:amiya";
     internal const string HoshinoSwimsuitMedia = "builtin:hoshino-swimsuit";
     internal static readonly string[] Ids = [Logo, Nailong, Amiya, HoshinoSwimsuit, Random];
-    internal static readonly string[] Labels = ["Alpha Island · 轻柔启动音", "奶龙 · 欢笑音效", "阿米娅 · 问候语音", "星野 · 欢迎语音", "随机 · 图片与语音配套"];
+    internal static string[] Labels => [L.T("Alpha Island · 轻柔启动音"), L.T("奶龙 · 欢笑音效"), L.T("阿米娅 · 问候语音"), L.T("星野 · 欢迎语音"), L.T("随机 · 图片与语音配套")];
     internal static string ChooseRandomPreset() => Ids[System.Random.Shared.Next(Ids.Length - 1)];
     internal static bool IsBuiltInAnimation(string? key) => key is NailongMedia or AmiyaMedia or HoshinoSwimsuitMedia;
     internal static bool IsBuiltInSound(string? key) => IsBuiltInAnimation(key);
@@ -63,7 +64,7 @@ internal static class GreetingPresetCatalog
     internal static void Select(IslandOptions options, string id)
     {
         if (id == LegacyRabbit) id = Logo;
-        if (id is not (Logo or Nailong or Amiya or HoshinoSwimsuit or Random)) throw new ArgumentException("未知的欢迎组合。", nameof(id));
+        if (id is not (Logo or Nailong or Amiya or HoshinoSwimsuit or Random)) throw new ArgumentException(L.T("未知的欢迎组合。"), nameof(id));
         SettingsRegistry.Write(options, "GreetingPreset", id);
         SettingsRegistry.Write(options, "GreetingImagePath", "");
         SettingsRegistry.Write(options, "GreetingSoundPath", "");
@@ -74,22 +75,22 @@ internal static class GreetingPresetCatalog
         if (!IsBuiltInAnimation(key)) return key.Length == 0 ? [] : GreetingMediaStore.LoadFrames(key, firstFrameOnly);
         using var stream = OpenResource("Frames.zip", ResourceFolder(key));
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
-        var manifest = archive.GetEntry("delays.json") ?? throw new InvalidDataException("欢迎动画缺少播放时间。");
-        if (manifest.Length > 4096) throw new InvalidDataException("欢迎动画时间表过大。");
+        var manifest = archive.GetEntry("delays.json") ?? throw new InvalidDataException(L.T("欢迎动画缺少播放时间。"));
+        if (manifest.Length > 4096) throw new InvalidDataException(L.T("欢迎动画时间表过大。"));
         using var metadata = manifest.Open();
         int[] delays = JsonSerializer.Deserialize<int[]>(metadata) ?? [];
-        if (delays.Length is < 2 or > 120) throw new InvalidDataException("欢迎动画帧数无效。");
+        if (delays.Length is < 2 or > 120) throw new InvalidDataException(L.T("欢迎动画帧数无效。"));
         var frames = new GreetingGifFrame[firstFrameOnly ? 1 : delays.Length];
         for (int i = 0; i < frames.Length; i++)
         {
-            var entry = archive.GetEntry($"{i:D3}.png") ?? throw new InvalidDataException("欢迎动画帧不完整。");
-            if (entry.Length > 256 * 1024) throw new InvalidDataException("欢迎动画帧过大。");
+            var entry = archive.GetEntry($"{i:D3}.png") ?? throw new InvalidDataException(L.T("欢迎动画帧不完整。"));
+            if (entry.Length > 256 * 1024) throw new InvalidDataException(L.T("欢迎动画帧过大。"));
             using var input = entry.Open();
             using var buffer = new MemoryStream((int)entry.Length); input.CopyTo(buffer); buffer.Position = 0;
             var image = new BitmapImage(); image.BeginInit();
             image.CacheOption = BitmapCacheOption.OnLoad; image.StreamSource = buffer;
             image.DecodePixelWidth = GreetingMediaStore.ImagePixels; image.EndInit(); image.Freeze();
-            if (image.PixelHeight > GreetingMediaStore.ImagePixels) throw new InvalidDataException("欢迎动画尺寸无效。");
+            if (image.PixelHeight > GreetingMediaStore.ImagePixels) throw new InvalidDataException(L.T("欢迎动画尺寸无效。"));
             frames[i] = new GreetingGifFrame(image, TimeSpan.FromMilliseconds(Math.Clamp(delays[i], 20, 1000)));
         }
         return frames;
@@ -104,12 +105,12 @@ internal static class GreetingPresetCatalog
         NailongMedia => "Nailong",
         AmiyaMedia => "Amiya",
         HoshinoSwimsuitMedia => "HoshinoSwimsuit",
-        _ => throw new ArgumentException("未知的欢迎素材。", nameof(key))
+        _ => throw new ArgumentException(L.T("未知的欢迎素材。"), nameof(key))
     };
 
     private static Stream OpenResource(string file, string preset = "Nailong") => typeof(GreetingPresetCatalog).Assembly
         .GetManifestResourceStream($"AlphaIsland.Greeting.{preset}.{file}")
-        ?? throw new FileNotFoundException("内置欢迎素材不可用。");
+        ?? throw new FileNotFoundException(L.T("内置欢迎素材不可用。"));
 
     private static bool MatchesLegacyPair(string image, string sound)
     {

@@ -70,7 +70,7 @@ internal sealed class ChatSessionStore(string? directory = null)
     internal bool Exists(string id) => File.Exists(PathFor(id)) || File.Exists(PathFor(id) + ".bak");
     private static string Title(SessionFile file) => !string.IsNullOrWhiteSpace(file.Title) ? file.Title
         : file.Messages.FirstOrDefault(m => m.Role == ChatMessage.RoleUser)?.Content.Replace('\n', ' ').Trim() is { Length: > 0 } text
-            ? text[..Math.Min(32, text.Length)] : "新对话";
+            ? text[..Math.Min(32, text.Length)] : AlphaIsland.PluginSdk.Localization.UiText.T("新对话");
     internal IReadOnlyList<ChatSessionSummary> List()
     {
         if (!Directory.Exists(DirectoryPath)) return Array.Empty<ChatSessionSummary>();
@@ -89,7 +89,7 @@ internal sealed class ChatSessionStore(string? directory = null)
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
             {
                 // Keep other conversations usable, and keep a damaged one selectable for deletion.
-                sessions.Add(new(id, "无法读取的对话 · " + id, DateTimeOffset.MinValue, 0));
+                sessions.Add(new(id, AlphaIsland.PluginSdk.Localization.UiText.T("无法读取的对话 · ") + id, DateTimeOffset.MinValue, 0));
             }
         }
         return sessions.OrderByDescending(s => s.Updated).ToArray();

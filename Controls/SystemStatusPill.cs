@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -14,7 +15,7 @@ public sealed class SystemStatusPill : Grid
     private readonly StackPanel _lines;
     private string[] _selection = ["cpu", "memory", "power"];
     private double? _cpu, _memory, _watts;
-    private string _powerDescription = "功耗等待采样";
+    private string _powerDescription = L.T("功耗等待采样");
     internal TextBlock ResourceText { get; }
     internal TextBlock PowerText { get; }
     internal string[] DisplayedItems => _selection.ToArray();
@@ -52,7 +53,7 @@ public sealed class SystemStatusPill : Grid
     {
         ResourceText.Text = string.Join("  ·  ", _selection.Where(key => key != "power")
             .Select(key => (key == "cpu" ? "CPU " : "RAM ") + Percent(key == "cpu" ? _cpu : _memory)));
-        PowerText.Text = "CPU＋GPU 功耗 " + (_watts is double watts && double.IsFinite(watts) ? $"{watts:0.0} W" : "— W");
+        PowerText.Text = L.T("CPU＋GPU 功耗 ") + (_watts is double watts && double.IsFinite(watts) ? $"{watts:0.0} W" : "— W");
         ResourceText.Visibility = ResourceText.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         PowerText.Visibility = _selection.Contains("power") ? Visibility.Visible : Visibility.Collapsed;
         bool powerFirst = _selection.Length > 0 && _selection[0] == "power";
@@ -62,7 +63,7 @@ public sealed class SystemStatusPill : Grid
             _lines.Children.Clear(); _lines.Children.Add(first);
             _lines.Children.Add(powerFirst ? ResourceText : PowerText);
         }
-        if (_selection.Length == 0) { ResourceText.Text = "系统状态"; ResourceText.Visibility = Visibility.Visible; }
+        if (_selection.Length == 0) { ResourceText.Text = L.T("系统状态"); ResourceText.Visibility = Visibility.Visible; }
         ToolTip = _powerDescription;
     }
 

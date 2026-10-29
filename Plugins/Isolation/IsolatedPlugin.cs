@@ -45,7 +45,7 @@ internal sealed class IsolatedPlugin : IIslandPlugin
     {
         _context = context; _settingsOnly = settingsOnly;
         var registry = await _session.StartAsync(new(directory, manifest.Assembly, manifest.EntryType, manifest.Id,
-            context.DataDirectory, _configuration(), settingsOnly), context.Lifetime).ConfigureAwait(false);
+            context.DataDirectory, _configuration(), settingsOnly, AlphaIsland.PluginSdk.Localization.UiText.Language), context.Lifetime).ConfigureAwait(false);
         var initial = await _session.Request<RemoteStatus>("status", new { }).ConfigureAwait(false);
         await _dispatcher.InvokeAsync(() =>
         {

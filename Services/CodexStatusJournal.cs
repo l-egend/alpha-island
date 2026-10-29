@@ -22,6 +22,36 @@ internal sealed class CodexStatusJournal
     internal CodexStatusJournal(string endpoint, string? configuration = null, Func<int, int?>? resolveHost = null)
     { _endpoint = endpoint; _configuration = configuration ?? AppPaths.CodexHooksConfigFile; _resolveHost = resolveHost; }
 
+    internal string? NativeObservationHome(out string reason)
+    {
+        reason = "not-configured";
+        try
+        {
+            var info = new FileInfo(_configuration);
+            if (!info.Exists || info.Length > 64 * 1024) return null;
+            using var registration = JsonDocument.Parse(File.ReadAllText(info.FullName));
+            if (Text(registration.RootElement, "endpoint").TrimEnd('/') != _endpoint.TrimEnd('/'))
+            { reason = "endpoint-mismatch"; return null; }
+            // A native turn table has no project path. A restricted scope must stay on hooks.
+            if (!Flag(registration.RootElement, "allProjects")) { reason = "project-scope"; return null; }
+            string preferences = Path.Combine(info.DirectoryName!, "integrations.json");
+            if (File.Exists(preferences))
+            {
+                if (new FileInfo(preferences).Length > 128 * 1024) return null;
+                using var ledger = JsonDocument.Parse(File.ReadAllText(preferences));
+                if (ledger.RootElement.TryGetProperty("providers", out var providers) && providers.TryGetProperty("codex", out var codex)
+                    && codex.TryGetProperty("enabled", out var enabled) && enabled.ValueKind == JsonValueKind.False)
+                { reason = "disabled"; return null; }
+            }
+            reason = "ready";
+            return CodexTurnHistory.ResolveHome(_configuration);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
+        { reason = "configuration-unavailable"; return null; }
+    }
+
+    internal int? NativeObservationHost() => _resolveHost != null ? _resolveHost(0) : CurrentHost();
+
     internal bool Deliver(JsonElement payload, DateTime now, Func<bool> apply)
     {
         string id = Text(payload, "statusEventId"), session = Text(payload, "session");

@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -49,7 +50,10 @@ namespace alpha_island
             port = Math.Clamp(port, 1024, 65535);
 
             // 端口被占用等失败直接抛：宿主会把这条服务标成 Degraded 并在诊断页说明原因。
-            var service = new AgentBridgeService(port, OnApprovalRequested);
+            var service = new AgentBridgeService(port, OnApprovalRequested)
+            {
+                NativeStatusAllowed = () => SettingsRegistry.GetBool(_options, "AgentStatusEnabled", true) && !GameDoNotDisturbActive
+            };
             try
             {
                 service.Start();
@@ -208,7 +212,7 @@ namespace alpha_island
             // 界面从不出现、倒计时照走，agent 那边只能等到超时。
 
             if (ApprovalTitle != null)
-                ApprovalTitle.Text = "agent 请求 " + request.Tool + (_approvalQueue.Count > 0 ? $" · 待处理 {_approvalQueue.Count + 1}" : "");
+                ApprovalTitle.Text = L.T("agent 请求 ") + request.Tool + (_approvalQueue.Count > 0 ? L.F($" · 待处理 {_approvalQueue.Count + 1}") : "");
             if (ApprovalDetail != null)
             {
                 string detail = Shorten(request.Args, 120);
@@ -293,7 +297,7 @@ namespace alpha_island
             var request = _approvalCurrent;
             if (request == null) return;
 
-            string note = approved ? "用户允许" : "用户拒绝";
+            string note = approved ? L.T("用户允许") : L.T("用户拒绝");
             var bridge = _bridge;
 
             if (bridge != null && bridge.Resolve(request.Id, approved, decidedBy, note)) return;
@@ -302,7 +306,7 @@ namespace alpha_island
             if (bridge != null && bridge.TryGetDecision(request.Id, out var actual) && actual != null)
                 HandleApprovalDecided(actual);
             else
-                HandleApprovalDecided(new ApprovalDecision(request.Id, false, "bridge", "请求已失效，未回传允许", false, DateTime.UtcNow));
+                HandleApprovalDecided(new ApprovalDecision(request.Id, false, "bridge", L.T("请求已失效，未回传允许"), false, DateTime.UtcNow));
         }
 
         // ================= 交互 =================
@@ -356,7 +360,7 @@ namespace alpha_island
                 "demo-" + DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture),
                 "file.write",
                 "{\"path\":\"C:\\\\tmp\\\\alpha-report.md\",\"bytes\":2048}",
-                "调试注入：把生成的报告写到磁盘",
+                L.T("调试注入：把生成的报告写到磁盘"),
                 30,
                 DateTime.UtcNow);
 

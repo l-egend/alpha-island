@@ -1,3 +1,4 @@
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -238,7 +239,7 @@ public partial class MainWindow
                     destination.Top + (destination.Height - height) / 2, width, height);
             }
             overlay = new MediaHandoffOverlay(from, destination, snapshot, null, target.Process,
-                opening: true, islandPreview: AgentSurfacePreview(source), fallbackSubtitle: "AI 助手",
+                opening: true, islandPreview: AgentSurfacePreview(source), fallbackSubtitle: L.T("AI 助手"),
                 reveal: () => { if (!_exiting && epoch == _agentHandoffEpoch && service.IsTrackedWindowValid(target.Handle))
                     activated = navigation.Activate(target, out _); },
                 destinationReady: () => service.IsRestoredVisible(target.Handle),

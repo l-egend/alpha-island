@@ -1,4 +1,4 @@
-<Window x:Class="alpha_island.MainWindow"
+<Window xmlns:loc="clr-namespace:AlphaIsland.PluginSdk.Localization;assembly=AlphaIsland.PluginSdk" x:Class="alpha_island.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:icons="clr-namespace:AlphaIsland.PluginSdk;assembly=AlphaIsland.PluginSdk"
         xmlns:controls="clr-namespace:alpha_island.Controls"
@@ -283,7 +283,7 @@
                             <controls:SemanticIcon x:Name="PillUpNextIcon" animation:ActionIconMotion.Kind="Pulse" Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                                        VerticalAlignment="Center"
                                        Foreground="{StaticResource AccentCyan}"/>
-                            <TextBlock x:Name="PillUpNextText" Text="接下来"
+                            <TextBlock x:Name="PillUpNextText" Text="{loc:Text Key=SA52D704CC3AC}"
                                        FontSize="11" FontWeight="SemiBold" Margin="4,0,0,0"
                                        VerticalAlignment="Center"
                                        Foreground="{StaticResource TextPrimary}"/>
@@ -317,7 +317,7 @@
                                HorizontalAlignment="Center" TextAlignment="Center" VerticalAlignment="Center"
                                FontSize="13" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimary}"
-                               Text="欢迎回来"/>
+                               Text="{loc:Text Key=SCB1D97794707}"/>
 
                     <!-- 右侧：品牌徽标 -->
                     <Border Grid.Column="2" Padding="8,4" CornerRadius="10"
@@ -362,12 +362,12 @@
                                FontSize="13" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimary}"
                                TextTrimming="CharacterEllipsis"
-                               Text="蓝牙设备"/>
+                               Text="{loc:Text Key=SBDEA4F0A1CCC}"/>
 
                     <!-- 右侧：连接状态 + 电池图标 + 电量百分比 -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                 VerticalAlignment="Center" Margin="0,0,4,0">
-                        <TextBlock x:Name="BtStatusText" Text="已连接" FontSize="11" Margin="0,0,6,0"
+                        <TextBlock x:Name="BtStatusText" Text="{loc:Text Key=S5BE0323E8ADC}" FontSize="11" Margin="0,0,6,0"
                                    VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}"/>
                         <pluginUi:DeviceBatteryIndicator x:Name="BtBatteryIcon" Width="28" Height="16"
                                                         VerticalAlignment="Center"/>
@@ -383,7 +383,7 @@
                      音量调节时弹出：左侧自适应音量图标、中间音量进度条、右侧数字百分比。 -->
                 <Grid x:Name="VolumeNotifyLayer" Opacity="0" Width="328" Height="32"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                      Cursor="Hand" ToolTip="点击展开音量调节卡片"
+                      Cursor="Hand" ToolTip="{loc:Text Key=S36FDEF39C56F}"
                       MouseLeftButtonDown="VolumeNotifyLayer_MouseLeftButtonDown"
                       IsHitTestVisible="False">
                     <Grid.ColumnDefinitions>
@@ -455,7 +455,7 @@
 
                     <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
                         <TextBlock x:Name="DownloadNotifyTitle" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" FontSize="13" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimary}" Text="正在下载"/>
+                                   Foreground="{StaticResource TextPrimary}" Text="{loc:Text Key=S06B2117D58CC}"/>
                         <TextBlock x:Name="DownloadNotifyDetail" FontSize="10.5" Margin="0,1,0,0"
                                    TextTrimming="CharacterEllipsis"
                                    Foreground="{StaticResource TextSecondary}" Text=""/>
@@ -520,7 +520,7 @@
 
                     <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
                         <TextBlock x:Name="AgentNotifyTitle" FontSize="13" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimary}" Text="思考中"
+                                   Foreground="{StaticResource TextPrimary}" Text="{loc:Text Key=S43CE458CAE49}"
                                    TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="AgentNotifyDetail" FontSize="10.5" Margin="0,1,0,0"
                                    Foreground="{StaticResource TextSecondary}" Text=""
@@ -554,7 +554,7 @@
 
                     <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
                         <TextBlock x:Name="ApprovalTitle" FontSize="12.5" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextPrimary}" Text="agent 请求工具权限"
+                                   Foreground="{StaticResource TextPrimary}" Text="{loc:Text Key=S1013F506764E}"
                                    TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="ApprovalDetail" FontSize="10" Margin="0,1,0,0"
                                    Foreground="{StaticResource TextSecondary}" Text=""
@@ -565,14 +565,14 @@
                         <Button x:Name="ApprovalAllowButton" Style="{StaticResource ThemedButton}"
                                 Background="#3334C759" BorderBrush="#6634C759"
                                 BorderThickness="1" Margin="0,0,6,0" Padding="9,3" MinHeight="24"
-                                ToolTip="仅允许本次操作" Click="ApprovalAllow_Click">
-                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#FFDFFFE6" Text="允许 Y"/>
+                                ToolTip="{loc:Text Key=SE88E602BD959}" Click="ApprovalAllow_Click">
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#FFDFFFE6" Text="{loc:Text Key=S871A65227CCA}"/>
                         </Button>
                         <Button x:Name="ApprovalDenyButton" Style="{StaticResource ThemedButton}"
                                 Background="#33FF5A5F" BorderBrush="#66FF5A5F"
                                 BorderThickness="1" Padding="9,3" MinHeight="24"
                                 Click="ApprovalDeny_Click">
-                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#FFFFE3E3" Text="拒绝 N"/>
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#FFFFE3E3" Text="{loc:Text Key=SBCB31FB4536F}"/>
                         </Button>
                     </StackPanel>
                 </Grid>
@@ -601,7 +601,7 @@
                                FontSize="13" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimary}"
                                TextTrimming="CharacterEllipsis"
-                               Text="已连接电源"/>
+                               Text="{loc:Text Key=S04342BD4C5F6}"/>
 
                     <!-- 右侧：电量百分比 -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,4,0">
@@ -633,16 +633,16 @@
                     <!-- 中间：状态与摘要 -->
                     <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="ClipboardStatusTitle" Text="已复制"
+                            <TextBlock x:Name="ClipboardStatusTitle" Text="{loc:Text Key=S8F6F8D979C98}"
                                        FontSize="12" FontWeight="SemiBold"
                                        Foreground="{StaticResource TextPrimary}"/>
                             <Border x:Name="ClipboardModeBadge" Margin="6,0,0,0" Padding="4,1" CornerRadius="4"
                                     Background="#2600F0FF" VerticalAlignment="Center">
-                                <TextBlock x:Name="ClipboardModeBadgeText" Text="文本" FontSize="9" Foreground="{StaticResource AccentCyan}"/>
+                                <TextBlock x:Name="ClipboardModeBadgeText" Text="{loc:Text Key=SDD81861811E5}" FontSize="9" Foreground="{StaticResource AccentCyan}"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="ClipboardPreviewText" FontSize="10" Foreground="{StaticResource TextSecondary}"
-                                   TextTrimming="CharacterEllipsis" Margin="0,1,0,0" Text="内容预览"/>
+                                   TextTrimming="CharacterEllipsis" Margin="0,1,0,0" Text="{loc:Text Key=SFB12AF752240}"/>
                     </StackPanel>
                 </Grid>
 
@@ -670,9 +670,9 @@
                                 <icons:GlyphIcon Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="16"
                                            VerticalAlignment="Center" Foreground="{StaticResource AccentCyan}"/>
                                 <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock Text="复制暂存" FontSize="12.5" FontWeight="SemiBold"
+                                    <TextBlock Text="{loc:Text Key=SBDE998EEDFE6}" FontSize="12.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}"/>
-                                    <TextBlock Text="拖出时复制" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
+                                    <TextBlock Text="{loc:Text Key=SBB1D6F6F7976}" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -689,9 +689,9 @@
                                 <icons:GlyphIcon Text="&#xE8C6;" FontFamily="Segoe MDL2 Assets" FontSize="16"
                                            VerticalAlignment="Center" Foreground="#FF8855"/>
                                 <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock Text="剪切暂存" FontSize="12.5" FontWeight="SemiBold"
+                                    <TextBlock Text="{loc:Text Key=SE193B6120119}" FontSize="12.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}"/>
-                                    <TextBlock Text="拖出时移动" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
+                                    <TextBlock Text="{loc:Text Key=S9D3569E10CF9}" FontSize="9.5" Foreground="{StaticResource TextTertiary}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -736,7 +736,7 @@
                                                 <Border HorizontalAlignment="Right" VerticalAlignment="Top"
                                                         Padding="2,1" CornerRadius="3" Background="#80FF7043"
                                                         Visibility="{Binding IsCut, Converter={StaticResource BoolToVisConverter}}">
-                                                    <TextBlock Text="剪切" FontSize="7" Foreground="White"/>
+                                                    <TextBlock Text="{loc:Text Key=S410A8E8A6BF2}" FontSize="7" Foreground="White"/>
                                                 </Border>
                                             </Grid>
                                         </Border>
@@ -747,18 +747,18 @@
 
                         <WrapPanel Grid.Column="1" Width="60" Margin="4,0,0,0" VerticalAlignment="Center">
                             <Button x:Name="SendTransferFilesToAgentButton" Style="{StaticResource TransportButton}"
-                                    Width="28" Height="28" Focusable="False" ToolTip="发送至本机 Agent"
-                                    AutomationProperties.Name="发送中转站文件至本机 Agent" Click="SendTransferFilesToAgent_Click">
+                                    Width="28" Height="28" Focusable="False" ToolTip="{loc:Text Key=S17CA54EBA6D7}"
+                                    AutomationProperties.Name="{loc:Text Key=S0C7AABBCBE1E}" Click="SendTransferFilesToAgent_Click">
                                 <icons:GlyphIcon Text="&#xE99A;" FontSize="17" Foreground="{StaticResource AccentCyan}"/>
                             </Button>
                             <Button x:Name="CloseFileTransferButton" Style="{StaticResource TransportButton}"
                                     FocusVisualStyle="{x:Null}" Focusable="False" Width="28" Height="28" Margin="4,0,0,0"
-                                    ToolTip="直接收起中转站" Click="CloseFileTransferButton_Click">
+                                    ToolTip="{loc:Text Key=SFCF8FC0A543F}" Click="CloseFileTransferButton_Click">
                                 <icons:GlyphIcon Text="&#xE711;" FontSize="11" Foreground="#8CFFFFFF"/>
                             </Button>
                             <Button x:Name="ClearFileTransferButton" Style="{StaticResource TransportButton}"
                                     FocusVisualStyle="{x:Null}" Focusable="False" Width="28" Height="28" Margin="0,4,0,0"
-                                    ToolTip="清空中转站所有文件" Click="ClearFileTransferButton_Click">
+                                    ToolTip="{loc:Text Key=S07A72D6C2200}" Click="ClearFileTransferButton_Click">
                                 <icons:GlyphIcon Text="&#xE74D;" FontSize="17" Foreground="#8CFFFFFF"/>
                             </Button>
                         </WrapPanel>
@@ -818,7 +818,7 @@
                                     <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}"
                                                ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                                               TextTrimming="CharacterEllipsis" Text="未在播放"/>
+                                               TextTrimming="CharacterEllipsis" Text="{loc:Text Key=S770DE45DF4A8}"/>
                                     <TextBlock x:Name="ArtistText" FontSize="12.5" Margin="0,4,0,0"
                                                Foreground="{StaticResource TextSecondary}"
                                                ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
@@ -841,12 +841,12 @@
                                         Style="{StaticResource TransportButton}" Width="36" Height="36" FontSize="16"
                                         VerticalAlignment="Center" Visibility="Collapsed"
                                         FocusVisualStyle="{x:Null}" Focusable="False" Content="&#xE8EF;"
-                                        ToolTip="顺序播放" Click="PlaybackOrderButton_Click"/>
+                                        ToolTip="{loc:Text Key=S5BBCAC595BC6}" Click="PlaybackOrderButton_Click"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                     <Button x:Name="PrevButton" Style="{StaticResource TransportButton}"
                                             Width="36" Height="36" FontSize="16" VerticalAlignment="Center"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
-                                            ToolTip="上一曲" Content="&#xE892;" Click="PrevButton_Click"/>
+                                            ToolTip="{loc:Text Key=SEECDC85924D6}" Content="&#xE892;" Click="PrevButton_Click"/>
                                     <Button x:Name="PlayPauseButton" Style="{StaticResource TransportButton}"
                                             Width="42" Height="42" VerticalAlignment="Center"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
@@ -856,12 +856,12 @@
                                     <Button x:Name="NextButton" Style="{StaticResource TransportButton}"
                                             Width="36" Height="36" FontSize="16" VerticalAlignment="Center"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
-                                            ToolTip="下一曲" Content="&#xE893;" Click="NextButton_Click"/>
+                                            ToolTip="{loc:Text Key=S33AAF56B23A8}" Content="&#xE893;" Click="NextButton_Click"/>
                                 </StackPanel>
                                 <Button x:Name="MediaSourcesButton" Grid.Column="2" HorizontalAlignment="Right"
                                         Width="36" Height="36" FontSize="16" VerticalAlignment="Center"
-                                        Content="&#xE70D;" Style="{StaticResource TransportButton}" ToolTip="选择媒体来源"
-                                        Click="MediaSourcesButton_Click" AutomationProperties.Name="选择媒体来源"/>
+                                        Content="&#xE70D;" Style="{StaticResource TransportButton}" ToolTip="{loc:Text Key=S88CF17B7FD6E}"
+                                        Click="MediaSourcesButton_Click" AutomationProperties.Name="{loc:Text Key=S88CF17B7FD6E}"/>
                             </Grid>
 
                             <!-- 行 2：歌词区，与控制行保留清晰的间隔。 -->
@@ -964,11 +964,11 @@
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <icons:GlyphIcon Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="14"
                                                Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center"/>
-                                    <TextBlock Text="剪贴板历史" FontSize="13.5" FontWeight="SemiBold"
+                                    <TextBlock Text="{loc:Text Key=S0E6A80351D44}" FontSize="13.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}" Margin="8,0,6,0"
                                                VerticalAlignment="Center"/>
                                     <Border CornerRadius="8" Background="#2600F0FF" Padding="6,1" VerticalAlignment="Center">
-                                        <TextBlock x:Name="ClipboardCountBadge" Text="0条" FontSize="9.5"
+                                        <TextBlock x:Name="ClipboardCountBadge" Text="{loc:Text Key=S797ECD1B8B14}" FontSize="9.5"
                                                    Foreground="{StaticResource AccentCyan}"/>
                                     </Border>
                                 </StackPanel>
@@ -978,7 +978,7 @@
                                     <Button x:Name="ClearClipboardButton"
                                             Width="28" Height="28" Cursor="Hand"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
-                                            ToolTip="清空剪贴板历史" Click="ClearClipboardButton_Click">
+                                            ToolTip="{loc:Text Key=SFA7634376F65}" Click="ClearClipboardButton_Click">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <Border x:Name="Bg" Width="28" Height="28" CornerRadius="14" Background="#18FFFFFF">
@@ -1010,7 +1010,7 @@
                                             <DataTemplate>
                                                 <Border Margin="2,3,4,3" Padding="10,6" CornerRadius="8"
                                                         Background="#18FFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1"
-                                                        Cursor="Hand" ToolTip="点击复制"
+                                                        Cursor="Hand" ToolTip="{loc:Text Key=S876A1818BF94}"
                                                         MouseLeftButtonDown="ClipboardHistoryItem_MouseLeftButtonDown">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
@@ -1048,14 +1048,14 @@
                                                         <!-- 复制历史内容 -->
                                                         <Button Grid.Column="2" Margin="6,0,4,0" Cursor="Hand"
                                                                 FocusVisualStyle="{x:Null}" Focusable="False"
-                                                                ToolTip="复制内容" Click="CopyClipboardItem_Click">
+                                                                ToolTip="{loc:Text Key=S15A22A401549}" Click="CopyClipboardItem_Click">
                                                             <Button.Template>
                                                                 <ControlTemplate TargetType="Button">
                                                                     <Border x:Name="Bd" CornerRadius="6" Background="#2600F0FF" BorderBrush="#3300F0FF" BorderThickness="1" Padding="7,3">
                                                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                                             <icons:GlyphIcon Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="10"
                                                                                        Foreground="{StaticResource AccentCyan}" Margin="0,0,3,0"/>
-                                                                            <TextBlock Text="复制" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource AccentCyan}"/>
+                                                                            <TextBlock Text="{loc:Text Key=S63D90D977348}" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource AccentCyan}"/>
                                                                         </StackPanel>
                                                                     </Border>
                                                                     <ControlTemplate.Triggers>
@@ -1073,7 +1073,7 @@
                                                         <!-- 删除单项按钮 -->
                                                         <Button Grid.Column="3" Width="24" Height="24" Margin="2,0,0,0" Cursor="Hand"
                                                                 FocusVisualStyle="{x:Null}" Focusable="False"
-                                                                ToolTip="删除此条" Click="DeleteClipboardItem_Click">
+                                                                ToolTip="{loc:Text Key=SB435D3B56699}" Click="DeleteClipboardItem_Click">
                                                             <Button.Template>
                                                                 <ControlTemplate TargetType="Button">
                                                                     <Border x:Name="Bd" Width="24" Height="24" CornerRadius="12" Background="Transparent">
@@ -1104,13 +1104,13 @@
                                             VerticalAlignment="Center" Visibility="Collapsed">
                                     <icons:GlyphIcon Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="26"
                                                Foreground="#3DFFFFFF" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="暂无剪贴板历史" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                    <TextBlock Text="{loc:Text Key=SFF7DC599517C}" FontSize="12" Foreground="{StaticResource TextSecondary}"
                                                Margin="0,6,0,0" HorizontalAlignment="Center"/>
                                 </StackPanel>
                             </Grid>
 
                             <!-- 行 2：底部提示 -->
-                            <TextBlock x:Name="ClipboardHistoryHint" Grid.Row="2" Text="点击复制，再到目标位置粘贴"
+                            <TextBlock x:Name="ClipboardHistoryHint" Grid.Row="2" Text="{loc:Text Key=S92C4FD86560B}"
                                        FontSize="9" Foreground="{StaticResource TextTertiary}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
@@ -1145,9 +1145,9 @@
 
                                 <!-- 标题与当前音频输出设备 -->
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
-                                    <TextBlock Text="系统主音量" FontSize="12.5" FontWeight="SemiBold"
+                                    <TextBlock Text="{loc:Text Key=S23FED14992D4}" FontSize="12.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}"/>
-                                    <TextBlock x:Name="CardVolumeDeviceText" Text="默认输出设备" FontSize="10"
+                                    <TextBlock x:Name="CardVolumeDeviceText" Text="{loc:Text Key=S97D3EF8AE7A9}" FontSize="10"
                                                Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
                                 </StackPanel>
 
@@ -1158,7 +1158,7 @@
 
                                     <Button x:Name="CardVolumeMuteButton" Width="32" Height="32" Cursor="Hand"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
-                                            ToolTip="静音 / 恢复" Click="CardVolumeMuteButton_Click">
+                                            ToolTip="{loc:Text Key=SE3BC045003D3}" Click="CardVolumeMuteButton_Click">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <Border x:Name="Bd" Width="32" Height="32" CornerRadius="16" Background="#26FFFFFF" BorderBrush="#33FFFFFF" BorderThickness="1">
@@ -1198,7 +1198,7 @@
                                     <!-- 减少音量微调按钮 -->
                                     <Button Grid.Column="0" Width="30" Height="30" Cursor="Hand"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
-                                            ToolTip="降低音量 (-5%)" Click="CardVolumeDown_Click">
+                                            ToolTip="{loc:Text Key=S078231F0C727}" Click="CardVolumeDown_Click">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <Border x:Name="Bd" CornerRadius="15" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
@@ -1234,7 +1234,7 @@
                                     <!-- 增加音量微调按钮 -->
                                     <Button Grid.Column="2" Width="30" Height="30" Cursor="Hand"
                                             FocusVisualStyle="{x:Null}" Focusable="False"
-                                            ToolTip="提高音量 (+5%)" Click="CardVolumeUp_Click">
+                                            ToolTip="{loc:Text Key=S85A727CE0611}" Click="CardVolumeUp_Click">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <Border x:Name="Bd" CornerRadius="15" Background="#1FFFFFFF" BorderBrush="#2FFFFFFF" BorderThickness="1">
@@ -1274,8 +1274,8 @@
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                 <icons:GlyphIcon Text="&#xE7F6;" FontFamily="Segoe MDL2 Assets" FontSize="15"
                                                            Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center"/>
-                                                <TextBlock Text="输出设备: " FontSize="13" Foreground="{StaticResource TextTertiary}" Margin="8,0,2,0" VerticalAlignment="Center"/>
-                                                <TextBlock x:Name="CurrentDeviceNameLabel" Text="默认输出设备" FontSize="13" FontWeight="SemiBold"
+                                                <TextBlock Text="{loc:Text Key=SD3A4DE1DAFE6}" FontSize="13" Foreground="{StaticResource TextTertiary}" Margin="8,0,2,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="CurrentDeviceNameLabel" Text="{loc:Text Key=S97D3EF8AE7A9}" FontSize="13" FontWeight="SemiBold"
                                                            Foreground="{StaticResource TextPrimary}" MaxWidth="190" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             </StackPanel>
                                             <icons:GlyphIcon x:Name="AudioDeviceChevron" Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="12"
@@ -1343,7 +1343,7 @@
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                 <icons:GlyphIcon Text="&#xE995;" FontFamily="Segoe MDL2 Assets" FontSize="15"
                                                            Foreground="{StaticResource AccentCyan}" VerticalAlignment="Center"/>
-                                                <TextBlock Text="音量合成器与应用控制" FontSize="13" FontWeight="SemiBold"
+                                                <TextBlock Text="{loc:Text Key=S602A88354BB9}" FontSize="13" FontWeight="SemiBold"
                                                            Foreground="{StaticResource TextPrimary}" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                             </StackPanel>
                                             <icons:GlyphIcon x:Name="VolumeMixerChevron" Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="12"
@@ -1375,7 +1375,7 @@
                                                     <Border Padding="8,4">
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                             <icons:GlyphIcon Text="&#xE7AC;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{StaticResource AccentCyan}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                            <TextBlock Text="打开系统音量合成器设置" FontSize="13" Foreground="{StaticResource AccentCyan}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{loc:Text Key=SD1E5A876DF56}" FontSize="13" Foreground="{StaticResource AccentCyan}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                                         </StackPanel>
                                                     </Border>
                                                 </Button>
@@ -1432,8 +1432,8 @@
                             <Grid Grid.Row="0" Margin="6,4,6,0">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                                    <TextBlock Text="实时网速" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                    <TextBlock x:Name="NetSpeedCardStatusText" Text="等待采样" FontSize="10.5" Foreground="{StaticResource TextSecondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{loc:Text Key=SCA97BBC64F3D}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
+                                    <TextBlock x:Name="NetSpeedCardStatusText" Text="{loc:Text Key=SA3CF429BD3C2}" FontSize="10.5" Foreground="{StaticResource TextSecondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock x:Name="NetSpeedCardAdapterText" Text="—" FontSize="9.5" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                                 <Border Grid.Column="1" Width="60" Height="60" CornerRadius="16" Background="#26223861">
@@ -1443,11 +1443,11 @@
                             <Grid Grid.Row="1" Margin="6,5,6,0">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock Text="↓ 下载" FontSize="10.5" Foreground="#FF745D"/>
+                                    <TextBlock Text="{loc:Text Key=S7505B01C96A0}" FontSize="10.5" Foreground="#FF745D"/>
                                     <TextBlock x:Name="NetSpeedCardDownText" Text="—" FontSize="21" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                    <TextBlock Text="↑ 上传" FontSize="10.5" Foreground="#3D9CF5" HorizontalAlignment="Right"/>
+                                    <TextBlock Text="{loc:Text Key=SCA383B18E769}" FontSize="10.5" Foreground="#3D9CF5" HorizontalAlignment="Right"/>
                                     <TextBlock x:Name="NetSpeedCardUpText" Text="—" FontSize="21" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Grid>
@@ -1456,14 +1456,14 @@
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                     <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="NetSpeedCardPeakText" Text="↓ 下载 · 峰值 —" FontSize="9" Foreground="#FF745D" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock x:Name="NetSpeedCardUpPeakText" Grid.Column="1" Text="↑ 上传 · 峰值 —" FontSize="9" Foreground="#3D9CF5" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right"/>
+                                        <TextBlock x:Name="NetSpeedCardPeakText" Text="{loc:Text Key=S69D0C0851269}" FontSize="9" Foreground="#FF745D" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock x:Name="NetSpeedCardUpPeakText" Grid.Column="1" Text="{loc:Text Key=S724664D21A39}" FontSize="9" Foreground="#3D9CF5" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right"/>
                                     </Grid>
                                     <Grid Grid.Row="1">
                                         <controls:Sparkline x:Name="NetSpeedSparkline" Stroke="#FF745D" Fill="#16FF745D" StrokeThickness="1.6" Capacity="60"/>
                                         <controls:Sparkline x:Name="NetSpeedUpSparkline" Stroke="#3D9CF5" StrokeThickness="1.6" Capacity="60"/>
                                     </Grid>
-                                    <TextBlock x:Name="NetSpeedCardHintText" Grid.Row="2" Text="近60秒 · 上传／下载" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
+                                    <TextBlock x:Name="NetSpeedCardHintText" Grid.Row="2" Text="{loc:Text Key=SC0962B106FA8}" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -1477,8 +1477,8 @@
                             <Grid Grid.Row="0" Margin="6,3,6,4">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="系统状态" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                    <TextBlock x:Name="SystemCardSummaryText" Text="CPU · 内存 · CPU＋GPU功耗" FontSize="10" Foreground="{StaticResource TextTertiary}" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{loc:Text Key=S9C073BBFE1AC}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
+                                    <TextBlock x:Name="SystemCardSummaryText" Text="{loc:Text Key=SE53C16D1D56B}" FontSize="10" Foreground="{StaticResource TextTertiary}" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <controls:BatteryChargePill x:Name="SystemBatterySummary" Grid.Column="1" Compact="True" Height="32" VerticalAlignment="Center" Background="Transparent" Cursor="Hand"/>
                             </Grid>
@@ -1487,20 +1487,20 @@
                                     <Grid.RowDefinitions><RowDefinition Height="54"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock Text="CPU 占用" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
+                                        <TextBlock Text="{loc:Text Key=S4AD3901567CA}" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
                                         <TextBlock x:Name="SysCardCpuValue" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1">
-                                        <TextBlock Text="RAM 内存" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
+                                        <TextBlock Text="{loc:Text Key=S5A2E604F7679}" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
                                         <TextBlock x:Name="SysCardMemValue" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
-                                        <TextBlock x:Name="SysCardMemDetail" Text="等待采样" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock x:Name="SysCardMemDetail" Text="{loc:Text Key=SA3CF429BD3C2}" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                     <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="CPU＋GPU 总功耗" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
-                                            <TextBlock x:Name="SysCardPowerDetail" Text="等待功耗采样" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock x:Name="SysCardBatteryDetail" Text="等待电池采样" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{loc:Text Key=S4AFA5374D5BD}" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                                            <TextBlock x:Name="SysCardPowerDetail" Text="{loc:Text Key=S4E5277A2CE83}" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock x:Name="SysCardBatteryDetail" Text="{loc:Text Key=S1BC98D7B8F01}" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                         <TextBlock x:Name="SysCardPowerValue" Grid.Column="1" Text="— W" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                     </Grid>
@@ -1510,14 +1510,14 @@
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                 <Border CornerRadius="12" Background="#10FFFFFF" BorderBrush="#18FFFFFF" BorderThickness="1" Margin="0,0,3,0">
                                     <StackPanel Margin="10,7">
-                                        <TextBlock Text="无线状态" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
+                                        <TextBlock Text="{loc:Text Key=S49FCF64DF81A}" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
                                         <TextBlock x:Name="SysCardWirelessValue" Text="—" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,3,0,0"/>
                                         <TextBlock x:Name="SysCardWirelessDetail" Text="" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                 </Border>
                                 <Border Grid.Column="1" CornerRadius="12" Background="#10FFFFFF" BorderBrush="#18FFFFFF" BorderThickness="1" Margin="3,0,0,0">
                                     <StackPanel Margin="10,7">
-                                        <TextBlock Text="麦克风 / 摄像头" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
+                                        <TextBlock Text="{loc:Text Key=S2734C1C7846E}" FontSize="10" Foreground="{StaticResource TextTertiary}"/>
                                         <TextBlock x:Name="SysCardPrivacyValue" Text="—" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,3,0,0"/>
                                         <TextBlock x:Name="SysCardPrivacyDetail" Text="" FontSize="9" Foreground="{StaticResource TextTertiary}" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
@@ -1552,7 +1552,7 @@
                             </Border>
 
                             <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="下载状态" FontSize="12" FontWeight="SemiBold"
+                                <TextBlock Text="{loc:Text Key=S3A09E3140742}" FontSize="12" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextPrimary}"/>
                                 <TextBlock x:Name="DownloadCardSummaryText" Text=""
                                            FontSize="9.5" Margin="0,2,0,0"
@@ -1626,7 +1626,7 @@
                             </Grid>
 
                             <TextBlock x:Name="DownloadEmptyText" Grid.Row="0" Grid.RowSpan="3"
-                                       Text="暂无下载任务"
+                                       Text="{loc:Text Key=SA760B56A062A}"
                                        FontSize="10" TextWrapping="Wrap" TextAlignment="Center"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Margin="12,0,12,0"
@@ -1719,7 +1719,7 @@
                 <icons:GlyphIcon x:Name="PinBubbleIcon" Text="&#xE718;" FontFamily="Segoe MDL2 Assets"
                            FontSize="12" Foreground="{StaticResource AccentCyan}"
                            VerticalAlignment="Center"/>
-                <TextBlock x:Name="PinBubbleText" Text="已置顶" FontSize="11" FontWeight="SemiBold"
+                <TextBlock x:Name="PinBubbleText" Text="{loc:Text Key=SFB47DB5E65FF}" FontSize="11" FontWeight="SemiBold"
                            Foreground="{StaticResource TextPrimary}" Margin="5,0,0,0"
                            VerticalAlignment="Center"/>
             </StackPanel>
@@ -1793,7 +1793,7 @@
                 IsHitTestVisible="True"
                 Visibility="Collapsed"
                 Opacity="0"
-                ToolTip="点击恢复媒体播放器（右键置顶/取消置顶）"
+                ToolTip="{loc:Text Key=S999703C97DFE}"
                 PreviewMouseRightButtonUp="MusicOrbBubble_PreviewMouseRightButtonUp"
                 RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform>

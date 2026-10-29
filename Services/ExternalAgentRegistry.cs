@@ -14,7 +14,7 @@ public sealed class ExternalAgentRegistry
         string ParentSession = "", DateTime UpdatedUtc = default, bool NativeHostSession = false,
         [property: System.Text.Json.Serialization.JsonIgnore] string NativeThreadId = "",
         [property: System.Text.Json.Serialization.JsonIgnore] string NativeTurnId = "",
-        [property: System.Text.Json.Serialization.JsonIgnore] DateTime ActivityStartedUtc = default);
+        [property: System.Text.Json.Serialization.JsonIgnore] DateTime ActivityStartedUtc = default, string ObservationSource = "event");
     private readonly object _gate = new();
     private readonly Dictionary<string, Connection> _connections = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _parents = new(StringComparer.Ordinal), _aliases = new(StringComparer.Ordinal);
@@ -41,8 +41,20 @@ public sealed class ExternalAgentRegistry
         int? processId = null, string? artworkFamily = null, string? parentSession = null, string? sessionAlias = null)
         => UpdateCore(source, session, "idle", "", ttlSec, now, out error, processId, artworkFamily, parentSession, sessionAlias, false, true, null, null);
 
+    internal bool ObserveNativeCodex(string session, string thread, string turn, int host, DateTime started, DateTime now, string detail)
+        => UpdateCore("codex", session, "working", detail, 10, now, out _, host, "codex", null, null, true, false, thread, turn, started, "native");
+
+    internal void PauseNativeObservation(DateTime now)
+    {
+        lock (_gate)
+        {
+            foreach (var key in _connections.Where(p => p.Value.ObservationSource == "native").Select(p => p.Key).ToArray()) _connections.Remove(key);
+            Publish();
+        }
+    }
+
     private bool UpdateCore(string source, string session, string state, string detail, int ttlSec, DateTime now, out string error,
-        int? processId, string? artworkFamily, string? parentSession, string? sessionAlias, bool beginsActivity, bool connectOnly, string? nativeThreadId, string? nativeTurnId, DateTime? activityStartedUtc = null)
+        int? processId, string? artworkFamily, string? parentSession, string? sessionAlias, bool beginsActivity, bool connectOnly, string? nativeThreadId, string? nativeTurnId, DateTime? activityStartedUtc = null, string observationSource = "event")
     {
         error = "";
         if (!Identifier.IsMatch(source) || !Identifier.IsMatch(session)
@@ -60,6 +72,9 @@ public sealed class ExternalAgentRegistry
         {
             if (!_accepting) { error = "桥接已关闭"; return false; }
             SweepLocked(now);
+            if (observationSource == "native" && (_finishedTurns.Keys.Any(k => k.Turn == nativeTurnId)
+                || _connections.Values.Any(c => c.Source == "codex" && c.ObservationSource == "event"
+                    && (c.NativeTurnId == nativeTurnId || c.State != "idle" && c.NativeTurnId.Length == 0 && c.ProcessId == processId)))) return false;
             // A SessionStart is readiness, not completion. It can arrive after UserPromptSubmit.
             // Preserve an active owner, parent or transport alias before changing any identity maps.
             if (connectOnly)
@@ -82,7 +97,8 @@ public sealed class ExternalAgentRegistry
                 && string.IsNullOrEmpty(parentSession))
             {
                 var duplicate = _connections.FirstOrDefault(pair => pair.Key != owner && pair.Value.ParentSession.Length == 0
-                    && pair.Value.NativeThreadId == nativeThreadId && pair.Value.NativeTurnId == nativeTurnId);
+                    && pair.Value.NativeTurnId == nativeTurnId && (pair.Value.NativeThreadId == nativeThreadId
+                        || pair.Value.ObservationSource == "native" && pair.Value.ProcessId == processId));
                 if (duplicate.Key != null)
                 {
                     _connections.Remove(owner); _aliases[owner] = duplicate.Key; owner = duplicate.Key;
@@ -90,14 +106,16 @@ public sealed class ExternalAgentRegistry
             }
             _connections.TryGetValue(owner, out var previous);
             if (beginsActivity && previous is { State: not "idle", NativeTurnId.Length: > 0 }
-                && previous.NativeThreadId == nativeThreadId && previous.NativeTurnId == nativeTurnId) beginsActivity = false;
+                && previous.NativeTurnId == nativeTurnId && (previous.NativeThreadId == nativeThreadId
+                    || previous.ObservationSource == "native" && previous.ProcessId == processId)) beginsActivity = false;
             string nativeThread = string.IsNullOrEmpty(nativeThreadId) ? previous?.NativeThreadId ?? "" : nativeThreadId;
             string nativeTurn = string.IsNullOrEmpty(nativeTurnId) ? beginsActivity ? "" : previous?.NativeTurnId ?? "" : nativeTurnId;
             if (source == "codex" && nativeTurn.Length > 0)
             {
                 // A late Stop is just as stale as a late tool heartbeat from the previous turn.
                 if (!beginsActivity && previous is { State: not "idle", NativeTurnId.Length: > 0 }
-                    && (previous.NativeTurnId != nativeTurn || previous.NativeThreadId != nativeThread)) return true;
+                    && (previous.NativeTurnId != nativeTurn || previous.NativeThreadId != nativeThread
+                        && !(previous.ObservationSource == "native" && previous.ProcessId == processId))) return true;
                 if (state != "idle" && _finishedTurns.ContainsKey((nativeThread, nativeTurn))) return true;
                 if (state == "idle" && !connectOnly) _finishedTurns[(nativeThread, nativeTurn)] = now.AddHours(24);
             }
@@ -139,9 +157,10 @@ public sealed class ExternalAgentRegistry
                 parent.Length == 0 ? "" : parent[(parent.IndexOf('/') + 1)..], now, native, source == "codex" ? nativeThread : "", source == "codex" ? nativeTurn : "",
                 state != "idle" && (beginsActivity || previous == null || previous.State == "idle")
                     ? activityStartedUtc is { } started && started <= now && started >= now.AddHours(-24) ? started : now
-                    : previous?.ActivityStartedUtc ?? now);
+                    : previous?.ActivityStartedUtc ?? now, observationSource);
             if (!_observations.ContainsKey(source) && _observations.Count >= 64) _observations.Remove(_observations.OrderBy(p => p.Value.Received).First().Key);
-            _observations.TryGetValue(source, out var observation); _observations[source] = (state, now, observation.Count + 1);
+            if (observationSource == "event")
+            { _observations.TryGetValue(source, out var observation); _observations[source] = (state, now, observation.Count + 1); }
             TrimMetadata(); Publish(beginsActivity && state != "idle" ? root : null); return true;
         }
     }
@@ -169,11 +188,11 @@ public sealed class ExternalAgentRegistry
         for (int depth = 0; depth < 16 && _parents.TryGetValue(owner, out string? parent); depth++) owner = ResolveAlias(parent);
         return owner;
     }
-    private static bool KnownState(string state) => state is "idle" or "thinking" or "working" or "streaming" or "tool-wait" or "error";
+    private static bool KnownState(string state) => state is "idle" or "thinking" or "working" or "streaming" or "tool-wait" or "input-wait" or "error";
     private static AgentRunState State(string state) => state switch
     { "thinking" => AgentRunState.Thinking, "working" => AgentRunState.Working, "streaming" => AgentRunState.Streaming,
-        "tool-wait" => AgentRunState.ToolWait, "error" => AgentRunState.Error, _ => AgentRunState.Idle };
-    private static int Rank(string state) => state switch { "tool-wait" => 5, "error" => 4, "working" => 3, "streaming" => 2, "thinking" => 1, _ => 0 };
+        "tool-wait" => AgentRunState.ToolWait, "input-wait" => AgentRunState.InputWait, "error" => AgentRunState.Error, _ => AgentRunState.Idle };
+    private static int Rank(string state) => state switch { "tool-wait" => 6, "input-wait" => 5, "error" => 4, "working" => 3, "streaming" => 2, "thinking" => 1, _ => 0 };
     private void Publish(string? startedRoot = null)
     {
         var groups = _connections.Where(pair => pair.Value.State != "idle" && !_ended.ContainsKey(Root(pair.Key)))
@@ -209,7 +228,7 @@ public sealed class ExternalAgentRegistry
     {
         foreach (var key in _finishedTurns.Where(pair => pair.Value <= now).Select(pair => pair.Key).ToArray()) _finishedTurns.Remove(key);
         foreach (var pair in _connections.Where(pair => pair.Value.ExpiresUtc <= now
-            && !(pair.Value.NativeHostSession && pair.Value.State is "thinking" or "working" or "streaming" or "tool-wait")
+            && !(pair.Value.ObservationSource != "native" && pair.Value.NativeHostSession && pair.Value.State is "thinking" or "working" or "streaming" or "tool-wait" or "input-wait")
             || pair.Value.State != "idle" && pair.Value.ProcessId is int pid && !AgentHostProcessMonitor.IsAlive(pid, pair.Value.ProcessStartStamp)).ToArray())
             _connections.Remove(pair.Key);
         foreach (string key in _ended.Where(pair => pair.Value <= now).Select(pair => pair.Key).ToArray()) _ended.Remove(key);

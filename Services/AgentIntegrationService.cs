@@ -3,20 +3,47 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using alpha_island.Core;
+using L = AlphaIsland.PluginSdk.Localization.UiText;
 
 namespace alpha_island.Services;
 
-internal sealed record AgentIntegrationInfo(string Id, string Name, bool Detected, string Status, string Detail, string Scope, string Profile, bool AllProjects = false)
+internal sealed record CodexHookHandler(string Event, bool Enabled, string Trust);
+internal sealed record CodexNativeInspection(bool Available, bool ConfigurationChecked, bool? HooksEnabled, bool? UserHooksAllowed,
+    int Errors, int Warnings, CodexHookHandler[]? Handlers);
+internal sealed record AgentIntegrationReadiness(string State, int RegisteredHandlers, bool ConfigurationChecked, bool TrustVerified, CodexNativeInspection? NativeInspection);
+internal sealed record AgentIntegrationInfo(string Id, string Name, bool Detected, string Status, string Detail, string Scope, string Profile, bool AllProjects = false, AgentIntegrationReadiness? Readiness = null)
 {
     public string StatusText => Status switch
     {
-        "configured" => Id == "codex" ? "已接入 · 请在 Codex 中检查 Hooks 信任" : Id == "claude-code" ? "已接入 · 新会话生效，原生授权保留" : "已接入",
-        "available" => "已检测到 · 可接入", "disabled" => "已停用", "removed" => "接入已被移除 · 可手动恢复",
-        "not-installed" => "未检测到应用 · 安装并启动一次后重新检测",
-        "profile-required" => "已检测到 Codex · 请先打开并完成初始化后重新检测",
-        "runtime-missing" => "运行环境缺失 · 请修复安装", "scope-required" => "已检测到 · 请选择接入的项目目录",
-        _ => "接入失败：" + Detail
+        "configured" => Id == "codex" ? CodexReadinessText() : Id == "claude-code" ? L.T("已接入 · 新会话生效，原生授权保留") : L.T("已接入"),
+        "available" => L.T("已检测到 · 可接入"), "disabled" => L.T("已停用"), "removed" => L.T("接入已被移除 · 可手动恢复"),
+        "not-installed" => L.T("未检测到应用 · 安装并启动一次后重新检测"),
+        "profile-required" => L.T("已检测到 Codex · 请先打开并完成初始化后重新检测"),
+        "runtime-missing" => L.T("运行环境缺失 · 请修复安装"), "scope-required" => L.T("已检测到 · 请选择接入的项目目录"),
+        _ => L.F($"接入失败：{Detail}")
     };
+    private string CodexReadinessText()
+    {
+        if (Readiness?.NativeInspection is { Available: true } native)
+        {
+            if (native.HooksEnabled == false) return L.T("已登记 · Codex 已关闭 Hooks；基础状态由本地任务补充");
+            if (native.UserHooksAllowed == false) return L.T("已登记 · Codex 策略限制用户 Hooks");
+            if (native.Errors > 0) return L.T("已登记 · Codex 报告 Hooks 配置错误，请修复接入");
+            if (native.Handlers is { Length: 10 } handlers && handlers.Select(h => h.Event).ToHashSet(StringComparer.Ordinal).SetEquals(new[]
+                { "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "PreCompact", "PostCompact", "Stop", "Interrupt", "SessionEnd" })
+                && handlers.All(h => h.Enabled && h.Trust == "trusted") && native.ConfigurationChecked)
+                return L.T("Hooks 已启用且已信任 · 请新开一轮对话验证状态");
+            return L.T("已登记 · 请在 Codex 的 /hooks 中启用并确认信任，再重开对话");
+        }
+        return L.T(Readiness?.State switch
+        {
+            "hooks-disabled" => "已登记 · Codex 已关闭 Hooks；基础状态由本地任务补充",
+            "policy-blocked" => "已登记 · Codex 策略限制用户 Hooks",
+            "repair-required" => "接入文件、端口或处理器不完整 · 请修复接入",
+            "configuration-unavailable" => "无法读取 Codex 接入配置 · 请检查文件权限",
+            _ => "已登记 · 需在 Codex 确认 Hooks 信任；可检查状态通道"
+        });
+    }
 }
 internal sealed record AgentIntegrationReport(bool RuntimeAvailable, AgentIntegrationInfo[] Providers, string? Error = null);
 
