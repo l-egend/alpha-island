@@ -33,6 +33,13 @@ internal static partial class Program
     private static async Task RunChecks(string[] args)
     {
         IslandLog.FileSinkEnabled = false;
+        if (args.Contains("--notification-sound-only"))
+        {
+            NotificationSoundSignalChecks();
+            if (args.Contains("--play-preview")) NotificationSoundPlaybackChecks();
+            Console.WriteLine($"All {_checks} notification sound signal checks passed.");
+            return;
+        }
         if (args.Contains("--codex-portable-status-only"))
         {
             string portableRoot = Path.Combine(Path.GetTempPath(), "alpha-codex-portable-" + Guid.NewGuid().ToString("N"));

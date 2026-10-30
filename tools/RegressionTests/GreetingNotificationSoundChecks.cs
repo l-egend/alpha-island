@@ -13,8 +13,68 @@ using CheckBox = System.Windows.Controls.CheckBox;
 
 internal static partial class Program
 {
+    private static void NotificationSoundSignalChecks()
+    {
+        using var sound = new WaveFileReader(alpha_island.MainWindow.OpenNotificationSound());
+        Check(sound.TotalTime.TotalSeconds is > .45 and < .55 && sound.WaveFormat.SampleRate == 48000,
+            "内置通知音效格式正确且时长约半秒");
+        var samples = sound.ToSampleProvider();
+        var buffer = new float[4096];
+        double energy = 0, peak = 0;
+        long count = 0;
+        int read;
+        while ((read = samples.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            for (int i = 0; i < read; i++)
+            {
+                energy += buffer[i] * buffer[i];
+                peak = Math.Max(peak, Math.Abs(buffer[i]));
+            }
+            count += read;
+        }
+        double rms = count == 0 ? 0 : Math.Sqrt(energy / count);
+        Check(rms > .02 && peak is > .1 and < .98,
+            "内置通知音效包含可听信号且没有削波");
+    }
+
+    private static void NotificationSoundPlaybackChecks()
+    {
+        using var capture = new WasapiLoopbackCapture();
+        var recorded = new List<byte>();
+        capture.DataAvailable += (_, args) =>
+        {
+            lock (recorded) recorded.AddRange(args.Buffer.AsSpan(0, args.BytesRecorded).ToArray());
+        };
+        capture.StartRecording();
+        System.Threading.Thread.Sleep(150);
+        using var player = new GreetingAudioPlayer(System.Windows.Threading.Dispatcher.CurrentDispatcher,
+            defaultSoundFactory: alpha_island.MainWindow.OpenNotificationSound);
+        player.Play("", 25);
+        Check(player.IsPlaying, "默认通知音通过真实音频设备启动播放");
+        System.Threading.Thread.Sleep(900);
+        capture.StopRecording();
+        System.Threading.Thread.Sleep(100);
+        byte[] bytes;
+        lock (recorded) bytes = recorded.ToArray();
+        using var stream = new RawSourceWaveStream(new MemoryStream(bytes), capture.WaveFormat);
+        var samples = stream.ToSampleProvider();
+        var buffer = new float[4096];
+        double energy = 0;
+        long count = 0;
+        int read;
+        while ((read = samples.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            for (int i = 0; i < read; i++) energy += buffer[i] * buffer[i];
+            count += read;
+        }
+        double rms = count == 0 ? 0 : Math.Sqrt(energy / count);
+        Console.WriteLine($"Default notification at 25%: output samples={count}, RMS={rms:F6}");
+        Check(rms > .0001, "系统音频回环检测到非静音输出");
+    }
+
     private static void GreetingNotificationSoundChecks(alpha_island.MainWindow main, Grid root, string testRoot)
     {
+        NotificationSoundSignalChecks();
         using (var sound = new WaveFileReader(alpha_island.MainWindow.OpenNotificationSound()))
             Check(sound.TotalTime.TotalSeconds is > .45 and < .55 && sound.WaveFormat.SampleRate == 48000,
                 "内置通知提示音可独立读取，时长约半秒");
